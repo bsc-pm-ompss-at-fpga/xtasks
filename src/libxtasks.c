@@ -37,7 +37,22 @@ xtasks_stat xtasksFini()
    return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_id const accId,
+xtasks_stat xtasksGetNumAccs(size_t * count)
+{
+   return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle * array, size_t * count)
+{
+   return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * info)
+{
+   return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
     xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
     return XTASKS_ENOSYS;

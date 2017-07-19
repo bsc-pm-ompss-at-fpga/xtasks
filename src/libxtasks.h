@@ -56,8 +56,15 @@ typedef void*    xtasks_task_handle;
 typedef uint64_t xtasks_task_id;
 typedef uint64_t xtasks_arg_val;
 typedef uint32_t xtasks_arg_id;
+typedef void*    xtasks_acc_handle;
 typedef uint32_t xtasks_acc_id;
+typedef uint32_t xtasks_acc_type;
 typedef uint64_t xtasks_ins_timestamp;
+
+typedef struct {
+    xtasks_acc_id   id;               ///< Accelerator identifier
+    xtasks_acc_type type;             ///< Accelerator type identifier
+} xtasks_acc_info;
 
 typedef struct {
     xtasks_ins_timestamp start;        ///< Timestamp start
@@ -77,11 +84,29 @@ xtasks_stat xtasksInit();
 xtasks_stat xtasksFini();
 
 /*!
+ * \brief Get the number of available accelerators in the system
+ */
+xtasks_stat xtasksGetNumAccs(size_t * count);
+
+/*!
+ * \brief Get the accelerator handles for the accelerators in the system
+ * \param[in]  maxCount   Number of accelerator handles that will be retrieved
+ * \param[out] array      Array (with >= maxCount entries) that will hold the accelerator handles
+ * \param[out] count      Number of handles copied to the array
+ */
+xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle * array, size_t * count);
+
+/*!
+ * \brief Get information of an accelerator
+ */
+xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * info);
+
+/*!
  * \brief Create a new task
  * \param[in]   compute
  * \param[out]  handle   Task handler
  */
-xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_id const accId,
+xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
     xtasks_comp_flags const compute, xtasks_task_handle * handle);
 
 /*!
