@@ -24,7 +24,7 @@ libxtasks.o: ./src/libxtasks.c
 	$(CC_) $(CFLAGS_) -c $^
 
 libxtasks.so: libxtasks.o
-	$(CC_) -shared -Wl,-soname,$@ -o $@ $^ $(LDFLAGS_)
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,$@ -o $@ $^ $(LDFLAGS_)
 
 install: libxtasks.so ./src/libxtasks.h
 	mkdir -p $(PREFIX)/lib
