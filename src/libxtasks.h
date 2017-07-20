@@ -38,12 +38,13 @@ extern "C" {
 typedef enum {
     XTASKS_SUCCESS = 0,       ///< Operation finised sucessfully
     XTASKS_ENOSYS,            ///< Function not implemented
+    XTASKS_EINVAL,            ///< Invalid operation arguments
     XTASKS_ERROR              ///< Operation finished with sone error
 } xtasks_stat;
 
 typedef enum {
-    XDMA_COMPUTE_DISABLE = 0,
-    XDMA_COMPUTE_ENABLE  = 1
+    XTASKS_COMPUTE_DISABLE = 0,
+    XTASKS_COMPUTE_ENABLE  = 1
 } xtasks_comp_flags;
 
 typedef enum {
@@ -52,18 +53,20 @@ typedef enum {
     XTASKS_GLOBAL  = 2
 } xtasks_arg_flags;
 
-typedef void*    xtasks_task_handle;
-typedef uint64_t xtasks_task_id;
-typedef uint64_t xtasks_arg_val;
-typedef uint32_t xtasks_arg_id;
-typedef void*    xtasks_acc_handle;
-typedef uint32_t xtasks_acc_id;
-typedef uint32_t xtasks_acc_type;
-typedef uint64_t xtasks_ins_timestamp;
+typedef void *       xtasks_task_handle;
+typedef uint64_t     xtasks_task_id;
+typedef uint64_t     xtasks_arg_val;
+typedef uint32_t     xtasks_arg_id;
+typedef void *       xtasks_acc_handle;
+typedef uint32_t     xtasks_acc_id;
+typedef uint32_t     xtasks_acc_type;
+typedef const char * xtasks_acc_desc;
+typedef uint64_t     xtasks_ins_timestamp;
 
 typedef struct {
     xtasks_acc_id   id;               ///< Accelerator identifier
     xtasks_acc_type type;             ///< Accelerator type identifier
+    xtasks_acc_desc description;      ///< Accelerator description
 } xtasks_acc_info;
 
 typedef struct {
