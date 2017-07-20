@@ -17,7 +17,7 @@ ifeq ($(LIBXTASKS_SUPPORT_),YES)
 	LDFLAGS_ += -L$(LIBXTASKS_LIB_DIR) -lxtasks
 endif
 
-TARGETS = t01.test
+TARGETS = t01.test t02.test
 
 all: $(TARGETS)
 

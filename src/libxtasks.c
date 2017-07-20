@@ -167,24 +167,39 @@ xtasks_stat xtasksFini()
 xtasks_stat xtasksGetNumAccs(size_t * count)
 {
     if (count == NULL) return XTASKS_EINVAL;
+
     *count = _numAccs;
+
     return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle * array, size_t * count)
 {
-    return XTASKS_ENOSYS;
+    if (array == NULL || count == NULL) return XTASKS_EINVAL;
+
+    size_t tmp = maxCount > _numAccs ? _numAccs : maxCount;
+    for (size_t i = 0; i < tmp; ++i) {
+        array[i] = (xtasks_acc_handle)(&_accs[i]);
+    }
+    *count = tmp;
+
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * info)
 {
-    return XTASKS_ENOSYS;
+    if (info == NULL) return XTASKS_EINVAL;
+
+    acc_t * ptr = (acc_t *)handle;
+    *info = ptr->info;
+
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
     xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
-     return XTASKS_ENOSYS;
+    return XTASKS_ENOSYS;
 }
 
 xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
