@@ -39,6 +39,7 @@ typedef enum {
     XTASKS_SUCCESS = 0,       ///< Operation finised sucessfully
     XTASKS_ENOSYS,            ///< Function not implemented
     XTASKS_EINVAL,            ///< Invalid operation arguments
+    XTASKS_ENOMEM,            ///< Not enough memory to execute the operation
     XTASKS_ERROR              ///< Operation finished with sone error
 } xtasks_stat;
 
@@ -107,7 +108,7 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * i
 /*!
  * \brief Create a new task
  * \param[in]   compute
- * \param[out]  handle   Task handler
+ * \param[out]  handle   Task handle
  */
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
     xtasks_comp_flags const compute, xtasks_task_handle * handle);
@@ -147,7 +148,7 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id);
 /*!
  * \brief Get instrumentation timestamps for a task
  */
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times * times);
+xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times);
 
 #ifdef __cplusplus
 }
