@@ -26,11 +26,29 @@ libxtasks.o: ./src/libxtasks.c
 libxtasks.so: libxtasks.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,$@ -o $@ $^ $(LDFLAGS_)
 
-install: libxtasks.so ./src/libxtasks.h
+.PHONY: libxtasks_version.h
+libxtasks_version.h:
+	@echo "#ifndef __LIBXTASKS_VERSION_H__" >libxtasks_version.h
+	@echo "#define __LIBXTASKS_VERSION_H__" >>libxtasks_version.h
+	@echo "" >>libxtasks_version.h
+	@echo "/* Build commit" >>libxtasks_version.h
+	git show -s >>libxtasks_version.h
+	@echo "*/" >>libxtasks_version.h
+	@echo "#define XTASKS_COMMIT_INFO \\" >>libxtasks_version.h
+	@git show -s --format=%H >>libxtasks_version.h
+	@echo "" >>libxtasks_version.h
+	@echo "/* Build branch and status" >>libxtasks_version.h
+	git status -b -s >>libxtasks_version.h
+	@echo "*/" >>libxtasks_version.h
+	@echo "" >>libxtasks_version.h
+	@echo "#endif" >>libxtasks_version.h
+
+install: libxtasks.so ./src/libxtasks.h libxtasks_version.h
 	mkdir -p $(PREFIX)/lib
 	cp libxtasks.so $(PREFIX)/lib
 	mkdir -p $(PREFIX)/include
 	cp ./src/libxtasks.h $(PREFIX)/include
+	cp ./libxtasks_version.h $(PREFIX)/include
 
 .PHONY: clean
 clean:
