@@ -351,8 +351,15 @@ xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
 {
     task_t * task = (task_t *)(*handle);
     *handle = NULL;
+
+    xdma_status retD, retS;
+    retD = xdmaReleaseTransfer(&task->descriptorTx);
+    retS = xdmaReleaseTransfer(&task->syncTx);
+
+    __sync_synchronize(); //Execute previous operations before the next instruction
     task->accel = NULL;
-    return XTASKS_SUCCESS;
+
+    return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
 xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
