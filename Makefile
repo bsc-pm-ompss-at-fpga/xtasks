@@ -27,7 +27,7 @@ LIBPICOS_SUPPORT_ = $(if $(and $(wildcard $(LIBPICOS_INC_DIR)/libpicos.h ), \
 ifeq ($(LIBXDMA_SUPPORT_),YES)
 	CFLAGS_  +=
 	LDFLAGS_ +=
-	TARGETS_ += libxtasks-stream.so
+	TARGETS_ += libxtasks-stream.so libxtasks-taskmanager.so
 endif
 ifeq ($(LIBPICOS_SUPPORT_),YES)
 	CFLAGS_  +=
@@ -37,6 +37,12 @@ endif
 
 .PHONY: all
 all: $(TARGETS_)
+
+libxtasks-taskmanager.o: ./src/libxtasks-taskmanager.c
+	$(CC_) $(CFLAGS_) $(LIBXDMA_INCS_) -c $^
+
+libxtasks-taskmanager.so: libxtasks-taskmanager.o
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,$@ -o $@ $^ $(LDFLAGS_) $(LIBXDMA_LIBS_)
 
 libxtasks-stream.o: ./src/libxtasks-stream.c
 	$(CC_) $(CFLAGS_) $(LIBXDMA_INCS_) -c $^
