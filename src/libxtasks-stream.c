@@ -125,16 +125,16 @@ xtasks_stat xtasksInit()
 
     //Open libxdma
     if (xdmaOpen() != XDMA_SUCCESS) {
-        err_0: __sync_sub_and_fetch(&_init_cnt, 1);
+        ERR_0: __sync_sub_and_fetch(&_init_cnt, 1);
         return XTASKS_ERROR;
     }
 
     //Get the number of devices from libxdma
     int xdmaDevices;
     if (xdmaGetNumDevices(&xdmaDevices) != XDMA_SUCCESS) {
-        err_1: _numAccs = 0;
+        ERR_1: _numAccs = 0;
         xdmaClose();
-        goto err_0;
+        goto ERR_0;
     }
     _numAccs = (size_t)xdmaDevices;
 
@@ -156,9 +156,9 @@ xtasks_stat xtasksInit()
             accMapPath = strrchr(accMapPath, '/'); //< 3rd, exec file in current dir
             if (accMapPath == NULL) {
                 printErrorMsgCfgFile();
-                err_2: free(buffer);
+                ERR_2: free(buffer);
                 free(_accs);
-                goto err_1;
+                goto ERR_1;
             }
             accMapPath++;
         }
@@ -168,12 +168,12 @@ xtasks_stat xtasksInit()
     FILE * accMapFile = fopen(accMapPath, "r");
     if (accMapFile == NULL) {
         fprintf(stderr, "ERROR: Cannot open file %s to read current FPGA configuration\n", accMapPath);
-        goto err_2;
+        goto ERR_2;
     }
     //NOTE: Assuming that the lines contain <128 characters
     buffer = fgets(buffer, STR_BUFFER_SIZE, accMapFile); //< Ignore 1st line, headers
     if (buffer == NULL) {
-        goto err_2;
+        goto ERR_2;
     }
     xtasks_acc_type t;
     size_t num, total;
@@ -203,7 +203,7 @@ xtasks_stat xtasksInit()
     xdma_device devs[_numAccs];
     int numAccs = _numAccs;
     if (xdmaGetDevices(numAccs, &devs[0], &xdmaDevices) != XDMA_SUCCESS || xdmaDevices != numAccs) {
-        goto err_1;
+        goto ERR_1;
     }
     for (size_t i = 0; i < _numAccs; ++i) {
         _accs[i].xdmaDev = devs[i];
@@ -213,29 +213,29 @@ xtasks_stat xtasksInit()
 
     //Init HW instrumentation
     if (initHWIns() != XTASKS_SUCCESS) {
-        goto err_2;
+        goto ERR_2;
     }
 
     //Allocate the tasks buffer
     xdma_status s;
     s = xdmaAllocateKernelBuffer((void**)&_tasksBuff, &_tasksBuffHandle, NUM_RUN_TASKS*sizeof(task_t));
     if (s != XDMA_SUCCESS) {
-        err_3: _tasksBuff = NULL;
+        ERR_3: _tasksBuff = NULL;
         _tasksBuffPhy = NULL;
-        goto err_2;
+        goto ERR_2;
     }
     unsigned long phyAddr;
     s = xdmaGetDMAAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
-        err_4: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
-        goto err_3;
+        ERR_4: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
+        goto ERR_3;
     }
     _tasksBuffPhy = (hw_task_t *)phyAddr;
 
     //Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
     if (_tasks == NULL) {
-        goto err_4;
+        goto ERR_4;
     }
     memset(_tasks, 0, NUM_RUN_TASKS*sizeof(task_t));
 
