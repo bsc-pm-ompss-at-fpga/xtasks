@@ -42,7 +42,9 @@
 #define INS_NUM_ENTRIES  (INS_BUFFER_SIZE/sizeof(xtasks_ins_times))
 #define NUM_RUN_TASKS       INS_NUM_ENTRIES ///< Maximum number of concurrently running tasks
 #define HW_TASK_DEST_ID_PS  0x0000001F      ///< Processing System identifier for the destId field
+#define HW_TASK_DEST_ID_TM  0x00000011      ///< Task manager identifier for the destId field
 
+//! \brief HW accelerator representation
 typedef struct {
     xdma_device     xdmaDev;
     xdma_channel    inChannel;
@@ -51,12 +53,14 @@ typedef struct {
     xtasks_acc_info info;
 } acc_t;
 
-typedef struct {
+//! \brief Task argument representation in task_info
+typedef struct __attribute__ ((__packed__)) {
     xtasks_arg_flags  cacheFlags;          ///< Flags
     xtasks_arg_id     paramId;             ///< Argument ID
     xtasks_arg_val    address;             ///< Address
 } hw_arg_t;
 
+//! \brief Task information for the accelerator
 typedef struct __attribute__ ((__packed__)) {
     struct {
         uint64_t timer;                    ///< Timer address for instrumentation
@@ -117,32 +121,53 @@ static xtasks_stat initHWIns()
     return XDMA_SUCCESS;
 }
 
+static xtasks_stat finiHWIns()
+{
+    xdma_status s = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+    _insBuff = NULL;
+    _insBuffPhy = NULL;
+    return s == XDMA_SUCCESS ? XTASKS_SUCCESS : XTASKS_ERROR;
+}
+
 xtasks_stat xtasksInit()
 {
     //Handle multiple inits
     int init_cnt = __sync_fetch_and_add(&_init_cnt, 1);
     if (init_cnt > 0) return XTASKS_SUCCESS;
 
+    xtasks_stat ret = XTASKS_SUCCESS;
+
     //Open libxdma
     if (xdmaOpen() != XDMA_SUCCESS) {
-        ERR_0: __sync_sub_and_fetch(&_init_cnt, 1);
-        return XTASKS_ERROR;
+        ret = XTASKS_ERROR;
+        INIT_ERR_0: __sync_sub_and_fetch(&_init_cnt, 1);
+        return ret;
     }
 
     //Get the number of devices from libxdma
     int xdmaDevices;
     if (xdmaGetNumDevices(&xdmaDevices) != XDMA_SUCCESS) {
-        ERR_1: _numAccs = 0;
+        ret = XTASKS_ERROR;
+        INIT_ERR_1: _numAccs = 0;
         xdmaClose();
-        goto ERR_0;
+        goto INIT_ERR_0;
     }
     _numAccs = (size_t)xdmaDevices;
 
     //Preallocate accelerators array
     _accs = malloc(sizeof(acc_t)*_numAccs);
+    if (_accs == NULL) {
+        ret = XTASKS_ENOMEM;
+        goto INIT_ERR_1;
+    }
 
     //Generate the configuration file path
     char * buffer = malloc(sizeof(char)*STR_BUFFER_SIZE);
+    if (buffer == NULL) {
+        ret = XTASKS_ENOMEM;
+        INIT_ERR_2: free(_accs);
+        goto INIT_ERR_1;
+    }
     const char * accMapPath = getenv("XTASKS_CONFIG_FILE"); //< 1st, environment var
     if (accMapPath == NULL) {
         accMapPath = (const char *)getauxval(AT_EXECFN); //< Get executable file path
@@ -156,9 +181,9 @@ xtasks_stat xtasksInit()
             accMapPath = strrchr(accMapPath, '/'); //< 3rd, exec file in current dir
             if (accMapPath == NULL) {
                 printErrorMsgCfgFile();
-                ERR_2: free(buffer);
-                free(_accs);
-                goto ERR_1;
+                ret = XTASKS_ERROR;
+                INIT_ERR_3: free(buffer);
+                goto INIT_ERR_2;
             }
             accMapPath++;
         }
@@ -168,12 +193,15 @@ xtasks_stat xtasksInit()
     FILE * accMapFile = fopen(accMapPath, "r");
     if (accMapFile == NULL) {
         fprintf(stderr, "ERROR: Cannot open file %s to read current FPGA configuration\n", accMapPath);
-        goto ERR_2;
+        ret = XTASKS_EFILE;
+        goto INIT_ERR_3;
     }
     //NOTE: Assuming that the lines contain <128 characters
     buffer = fgets(buffer, STR_BUFFER_SIZE, accMapFile); //< Ignore 1st line, headers
     if (buffer == NULL) {
-        goto ERR_2;
+        ret = XTASKS_ERROR;
+        fclose(accMapFile);
+        goto INIT_ERR_3;
     }
     xtasks_acc_type t;
     size_t num, total;
@@ -203,7 +231,8 @@ xtasks_stat xtasksInit()
     xdma_device devs[_numAccs];
     int numAccs = _numAccs;
     if (xdmaGetDevices(numAccs, &devs[0], &xdmaDevices) != XDMA_SUCCESS || xdmaDevices != numAccs) {
-        goto ERR_1;
+        ret = XTASKS_EFILE;
+        goto INIT_ERR_2;
     }
     for (size_t i = 0; i < _numAccs; ++i) {
         _accs[i].xdmaDev = devs[i];
@@ -213,41 +242,38 @@ xtasks_stat xtasksInit()
 
     //Init HW instrumentation
     if (initHWIns() != XTASKS_SUCCESS) {
-        goto ERR_2;
+        ret = XTASKS_EFILE;
+        goto INIT_ERR_2;
     }
 
     //Allocate the tasks buffer
     xdma_status s;
-    s = xdmaAllocateKernelBuffer((void**)&_tasksBuff, &_tasksBuffHandle, NUM_RUN_TASKS*sizeof(task_t));
+    s = xdmaAllocateKernelBuffer((void**)&_tasksBuff, &_tasksBuffHandle, NUM_RUN_TASKS*sizeof(hw_task_t));
     if (s != XDMA_SUCCESS) {
-        ERR_3: _tasksBuff = NULL;
+        ret = XTASKS_ENOMEM;
+        INIT_ERR_4: finiHWIns();
+        _tasksBuff = NULL;
         _tasksBuffPhy = NULL;
-        goto ERR_2;
+        goto INIT_ERR_2;
     }
     unsigned long phyAddr;
     s = xdmaGetDMAAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
-        ERR_4: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
-        goto ERR_3;
+        ret = XTASKS_ERROR;
+        INIT_ERR_5: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
+        goto INIT_ERR_4;
     }
     _tasksBuffPhy = (hw_task_t *)phyAddr;
 
     //Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
     if (_tasks == NULL) {
-        goto ERR_4;
+        ret = XTASKS_ENOMEM;
+        goto INIT_ERR_5;
     }
     memset(_tasks, 0, NUM_RUN_TASKS*sizeof(task_t));
 
-    return XTASKS_SUCCESS;
-}
-
-static xtasks_stat finiHWIns()
-{
-    xdma_status s = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
-    _insBuff = NULL;
-    _insBuffPhy = NULL;
-    return s == XDMA_SUCCESS ? XTASKS_SUCCESS : XTASKS_ERROR;
+    return ret;
 }
 
 xtasks_stat xtasksFini()
