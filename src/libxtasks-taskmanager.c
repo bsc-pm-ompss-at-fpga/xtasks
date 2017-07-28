@@ -45,8 +45,8 @@
 #define FINI_QUEUE_ADDR         0x80008000
 #define READY_QUEUE_LEN         1024
 #define FINI_QUEUE_LEN          1024
-#define VALID_ENTRY_MASK        0x01
-#define FINI_ENTRY_FREE         0
+#define VALID_ENTRY_MASK        0x80
+#define FREE_ENTRY_MASK         0
 #define HW_TASK_HEAD_BYTES      24              //NOTE: Actually 32 bytes, but taskID is not taken into account when computing taskSize
 #define HW_TASK_NUM_ARGS        14              //NOTE: (256 - HW_TASK_HEAD_BYTES)/sizeof(task_info_arg_t)
 #define INS_BUFFER_SIZE         8192            ///< 2 pages
@@ -511,11 +511,23 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 
 xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 {
-    return XTASKS_ENOSYS;
+    task_t * task = (task_t *)(handle);
+    size_t tries = 0;
+    size_t const MAX_WAIT_TASKS_TRIES = 2048;
+
+    while (task->tmTask.valid == 0 && tries++ < MAX_WAIT_TASKS_TRIES) {
+        xtasks_task_id id;
+        xtasksTryGetFinishedTask(&id);
+    }
+    return tries > MAX_WAIT_TASKS_TRIES ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
 {
+    if (id == NULL) {
+        return XTASKS_EINVAL;
+    }
+
     // Get a non-empty slot into the manager finished queue
     size_t idx, next;
     do {
@@ -531,9 +543,12 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
     task_t * task = (task_t *)tmp;
     *id = task->id;
 
+    //Mark the task as executed (using the valid field as it is not used in the cached copy)
+    task->tmTask.valid = 1;
+
     //Free the buffer slot
     __sync_synchronize();
-    _finiQueue[idx].valid = FINI_ENTRY_FREE;
+    _finiQueue[idx].valid = FREE_ENTRY_MASK;
 
     return XDMA_SUCCESS;
 }
@@ -549,3 +564,20 @@ xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_
 
     return XTASKS_SUCCESS;
 }
+
+#ifdef XTASKS_DEBUG
+ready_task_t readyQueue(size_t const idx)
+{
+    return _readyQueue[idx];
+}
+
+fini_task_t finiQueue(size_t const idx)
+{
+    return _finiQueue[idx];
+}
+
+task_info_t tasksBuffer(size_t const idx)
+{
+    return _tasksBuff[idx];
+}
+#endif
