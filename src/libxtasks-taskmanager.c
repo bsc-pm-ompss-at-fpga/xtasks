@@ -198,6 +198,7 @@ xtasks_stat xtasksInit()
     if (accMapPath == NULL) {
         accMapPath = (const char *)getauxval(AT_EXECFN); //< Get executable file path
         if ((strlen(accMapPath) + 14) > STR_BUFFER_SIZE) {
+            //Resize the buffer if not large enough
             free(buffer);
             buffer = malloc(sizeof(char)*(strlen(accMapPath) + 14));
         }
@@ -212,6 +213,20 @@ xtasks_stat xtasksInit()
                 goto INIT_ERR_1;
             }
             accMapPath++;
+
+            /** LEGACY FALLBACK **/
+            if (access(accMapPath, R_OK) == -1) {
+                strcpy(buffer, (const char *)getauxval(AT_EXECFN));
+                accMapPath = strcat(buffer, ".nanox.config"); //< 4th, exec file but .nanox.config
+                if (access(accMapPath, R_OK) == -1) {
+                    printErrorMsgCfgFile();
+                    ret = XTASKS_ERROR;
+                    goto INIT_ERR_2;
+                }
+                fprintf(stderr, "WARNING: Using '%s' as xTasks config for legacy ", accMapPath);
+                fprintf(stderr, "(the preferred extension is .xtasks.config).\n");
+            }
+            /** END OF FALLBACK **/
         }
     }
 
