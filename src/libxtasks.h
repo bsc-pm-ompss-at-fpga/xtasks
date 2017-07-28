@@ -40,6 +40,9 @@ typedef enum {
     XTASKS_ENOSYS,            ///< Function not implemented
     XTASKS_EINVAL,            ///< Invalid operation arguments
     XTASKS_ENOMEM,            ///< Not enough memory to execute the operation
+    XTASKS_EFILE,             ///< Operation finished after fail a file operation
+    XTASKS_ENOENTRY,          ///< Operation failed because no entry could be reserved
+    XTASKS_PENDING,           ///< Operation not finished yet
     XTASKS_ERROR              ///< Operation finished with sone error
 } xtasks_stat;
 

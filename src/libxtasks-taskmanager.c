@@ -34,50 +34,77 @@
 #include <string.h>
 #include <unistd.h>
 #include <stddef.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 
-#define STR_BUFFER_SIZE     128
-#define HW_TASK_HEAD_BYTES  24              ///< Size of hw_task_t without the args field
-#define HW_TASK_NUM_ARGS    14              ///< (256 - TASK_INFO_HEAD_BYTES)/sizeof(xdma_task_arg)
-#define INS_BUFFER_SIZE     8192            ///< 2 pages
-#define INS_NUM_ENTRIES  (INS_BUFFER_SIZE/sizeof(xtasks_ins_times))
-#define NUM_RUN_TASKS       INS_NUM_ENTRIES ///< Maximum number of concurrently running tasks
-#define HW_TASK_DEST_ID_PS  0x0000001F      ///< Processing System identifier for the destId field
-#define HW_TASK_DEST_ID_TM  0x00000011      ///< Task manager identifier for the destId field
+#define STR_BUFFER_SIZE         128
+#define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
+
+#define GPIOCTRL_FILEPATH       "/dev/gpioctrl"
+#define READY_QUEUE_ADDR        0x80004000
+#define FINI_QUEUE_ADDR         0x80008000
+#define READY_QUEUE_LEN         1024
+#define FINI_QUEUE_LEN          1024
+#define VALID_ENTRY_MASK        0x80
+#define FREE_ENTRY_MASK         0
+#define HW_TASK_HEAD_BYTES      24              //NOTE: Actually 32 bytes, but taskID is not taken into account when computing taskSize
+#define HW_TASK_NUM_ARGS        14              //NOTE: (256 - HW_TASK_HEAD_BYTES)/sizeof(task_info_arg_t)
+#define INS_BUFFER_SIZE         8192            ///< 2 pages
+#define INS_NUM_ENTRIES         (INS_BUFFER_SIZE/sizeof(xtasks_ins_times))
+#define NUM_RUN_TASKS           INS_NUM_ENTRIES ///< Maximum number of concurrently running tasks
+#define HW_TASK_DEST_ID_PS      0x0000001F      ///< Processing System identifier for the destId field
+#define HW_TASK_DEST_ID_TM      0x00000011      ///< Task manager identifier for the destId field
 
 //! \brief HW accelerator representation
 typedef struct {
-    xdma_device     xdmaDev;
-    xdma_channel    inChannel;
-    xdma_channel    outChannel;
     char            descBuffer[STR_BUFFER_SIZE];
     xtasks_acc_info info;
 } acc_t;
 
+//! \brief Ready task buffer element representation
+typedef struct __attribute__ ((__packed__)) {
+    uint64_t   taskPointer;  //[0  :63 ] Pointer to the Task info structure
+    uint16_t   argsBitmask;  //[64 :79 ] Bitmask defining if the arguments are ready or not
+    uint16_t   _padding1;
+    uint8_t    size;         //[96 :103] Size of Task Info structure in words (of 64 bits)
+    uint8_t    _padding2;
+    uint8_t    destID;       //[112:119] Destination ID where the task will be sent
+    uint8_t    valid;        //[120:127] Valid Entry
+} ready_task_t;
+
+//! \brief Finished task buffer representation
+typedef struct __attribute__ ((__packed__)) {
+    uint64_t  taskID;        //[0  :63 ] Task identifier sent to the ready queue
+    uint32_t  accID;         //[64 :95 ] Accelerator ID that executed the task
+    uint8_t   _padding[3];
+    uint8_t   valid;         //[120:127] Valid Entry
+} fini_task_t;
+
 //! \brief Task argument representation in task_info
 typedef struct __attribute__ ((__packed__)) {
-    xtasks_arg_flags  cacheFlags;          ///< Flags
-    xtasks_arg_id     paramId;             ///< Argument ID
-    xtasks_arg_val    address;             ///< Address
-} hw_arg_t;
+    uint32_t cacheFlags; //[0  :31 ] Flags
+    uint32_t paramId;	 //[32 :63 ] Argument ID
+    uint64_t address;	 //[64 :127] Address
+} task_info_arg_t;
 
 //! \brief Task information for the accelerator
 typedef struct __attribute__ ((__packed__)) {
+    uint64_t taskID;                          //[0  :63 ] Task identifier
     struct {
-        uint64_t timer;                    ///< Timer address for instrumentation
-        uint64_t buffer;                   ///< Buffer address to store instrumentation info
+        uint64_t timer;                       //[64 :127] Timer address for instrumentation
+        uint64_t buffer;                      //[128:191] Buffer address to store instrumentation info
     } profile;
-    xtasks_comp_flags compute;             ///< Compute flag
-    uint32_t destID;                       ///< Where the accelerator will send the comp. signal
-    hw_arg_t args[HW_TASK_NUM_ARGS];       ///< Task arguments info
-} hw_task_t;
+    uint32_t compute;                         //[192:223] Compute flag
+    uint32_t destID;                          //[224:255] Destination ID where the accelerator will send the 'complete' signal
+    task_info_arg_t args[HW_TASK_NUM_ARGS]; //[   :   ] Task arguments info
+} task_info_t;
 
+//! \brief Internal library task information
 typedef struct {
     xtasks_task_id          id;            ///< External task identifier
-    hw_task_t *             hwTask;        ///< Pointer to the hw_task_t struct
+    task_info_t *           hwTask;        ///< Pointer to the task_info_t struct
     size_t                  argsCnt;       ///< Number of arguments in the task
-    acc_t *                 accel;         ///< Accelerator where the task will run
-    xdma_transfer_handle    descriptorTx;  ///< Task descriptor transfer handle
-    xdma_transfer_handle    syncTx;        ///< Task sync transfer handle
+    ready_task_t            tmTask;        ///< Cached task information that will be sent to the TM
     xdma_buf_handle         taskHandle;    ///< Task buffer handle (only used if: argsCnt > HW_TASK_NUM_ARGS)
 } task_t;
 
@@ -88,10 +115,15 @@ static uint64_t             _insTimerAddr;      ///< Physical address of HW inst
 static xtasks_ins_times *   _insBuff;           ///< Buffer for the HW instrumentation
 static xtasks_ins_times *   _insBuffPhy;        ///< Physical address of _insBuff
 static xdma_buf_handle      _insBuffHandle;     ///< Handle of _insBuff in libxdma
-static hw_task_t *          _tasksBuff;         ///< Buffer to send the HW tasks
-static hw_task_t *          _tasksBuffPhy;      ///< Physical address of _tasksBuff
+static task_info_t *        _tasksBuff;         ///< Buffer to send the HW tasks
+static task_info_t *        _tasksBuffPhy;      ///< Physical address of _tasksBuff
 static xdma_buf_handle      _tasksBuffHandle;   ///< Handle of _tasksBuff in libxdma
 static task_t *             _tasks;             ///< Array with internal task information
+static int                  _gpioctrlFd;        ///< File descriptior of gpioctrl device
+static ready_task_t        *_readyQueue;        ///< Buffer for the ready tasks
+static size_t               _readyQueueIdx;     ///< Writing index of the _readyQueue
+static fini_task_t         *_finiQueue;         ///< Buffer for the finished tasks
+static size_t               _finiQueueIdx;      ///< Reading index of the _finiQueue
 
 static void printErrorMsgCfgFile()
 {
@@ -107,6 +139,7 @@ static xtasks_stat initHWIns()
     xdma_status s;
     s = xdmaAllocateKernelBuffer((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
     if (s != XDMA_SUCCESS) {
+        INITINS_ERR_0: xdmaClose();
         return XTASKS_ERROR;
     }
     unsigned long phyAddr;
@@ -114,7 +147,7 @@ static xtasks_stat initHWIns()
     if (s != XDMA_SUCCESS) {
         xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
         _insBuff = NULL;
-        return XTASKS_ERROR;
+        goto INITINS_ERR_0;
     }
     _insBuffPhy = (xtasks_ins_times *)phyAddr;
     _insTimerAddr = (uint64_t)xdmaGetInstrumentationTimerAddr();
@@ -123,10 +156,11 @@ static xtasks_stat initHWIns()
 
 static xtasks_stat finiHWIns()
 {
-    xdma_status s = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+    xdma_status s0;
+    s0 = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
     _insBuff = NULL;
     _insBuffPhy = NULL;
-    return s == XDMA_SUCCESS ? XTASKS_SUCCESS : XTASKS_ERROR;
+    return s0 == XDMA_SUCCESS ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
 xtasks_stat xtasksInit()
@@ -144,34 +178,27 @@ xtasks_stat xtasksInit()
         return ret;
     }
 
-    //Get the number of devices from libxdma
-    int xdmaDevices;
-    if (xdmaGetNumDevices(&xdmaDevices) != XDMA_SUCCESS) {
-        ret = XTASKS_ERROR;
-        INIT_ERR_1: _numAccs = 0;
-        xdmaClose();
-        goto INIT_ERR_0;
-    }
-    _numAccs = (size_t)xdmaDevices;
-
     //Preallocate accelerators array
+    _numAccs = DEF_ACCS_LEN;
     _accs = malloc(sizeof(acc_t)*_numAccs);
     if (_accs == NULL) {
         ret = XTASKS_ENOMEM;
-        goto INIT_ERR_1;
+        goto INIT_ERR_0;
     }
 
     //Generate the configuration file path
     char * buffer = malloc(sizeof(char)*STR_BUFFER_SIZE);
     if (buffer == NULL) {
         ret = XTASKS_ENOMEM;
-        INIT_ERR_2: free(_accs);
-        goto INIT_ERR_1;
+        INIT_ERR_1: free(_accs);
+        _numAccs = 0;
+        goto INIT_ERR_0;
     }
     const char * accMapPath = getenv("XTASKS_CONFIG_FILE"); //< 1st, environment var
     if (accMapPath == NULL) {
         accMapPath = (const char *)getauxval(AT_EXECFN); //< Get executable file path
         if ((strlen(accMapPath) + 14) > STR_BUFFER_SIZE) {
+            //Resize the buffer if not large enough
             free(buffer);
             buffer = malloc(sizeof(char)*(strlen(accMapPath) + 14));
         }
@@ -182,8 +209,8 @@ xtasks_stat xtasksInit()
             if (accMapPath == NULL) {
                 printErrorMsgCfgFile();
                 ret = XTASKS_ERROR;
-                INIT_ERR_3: free(buffer);
-                goto INIT_ERR_2;
+                INIT_ERR_2: free(buffer);
+                goto INIT_ERR_1;
             }
             accMapPath++;
 
@@ -208,22 +235,30 @@ xtasks_stat xtasksInit()
     if (accMapFile == NULL) {
         fprintf(stderr, "ERROR: Cannot open file %s to read current FPGA configuration\n", accMapPath);
         ret = XTASKS_EFILE;
-        goto INIT_ERR_3;
+        goto INIT_ERR_2;
     }
     //NOTE: Assuming that the lines contain <128 characters
     buffer = fgets(buffer, STR_BUFFER_SIZE, accMapFile); //< Ignore 1st line, headers
     if (buffer == NULL) {
         ret = XTASKS_ERROR;
         fclose(accMapFile);
-        goto INIT_ERR_3;
+        goto INIT_ERR_2;
     }
     xtasks_acc_type t;
     size_t num, total;
     total = 0;
     while (fscanf(accMapFile, "%u %u %s", &t, &num, buffer) == 3) { //< Parse the file
-    //while (fgets(buffer, STR_BUFFER_SIZE, accMapFile)) {
+        //while (fgets(buffer, STR_BUFFER_SIZE, accMapFile)) {
         total += num;
-        for (size_t i = total - num; i < total && total <= _numAccs; ++i) {
+        if (total > _numAccs) {
+            //_accs array is not big enough -> double its capacity
+            acc_t * oldAccs = _accs;
+            _numAccs = 2*_numAccs;
+            _accs = malloc(sizeof(acc_t)*_numAccs);
+            memcpy(_accs, oldAccs, sizeof(acc_t)*(total - num));
+            free(oldAccs);
+        }
+        for (size_t i = total - num; i < total; ++i) {
             _accs[i].info.id = i;
             _accs[i].info.type = t;
             _accs[i].info.description = _accs[i].descBuffer;
@@ -232,58 +267,63 @@ xtasks_stat xtasksInit()
     }
     fclose(accMapFile);
     free(buffer);
-
-    //Update number of accelerators
-    if (total > _numAccs) {
-        fprintf(stderr, "WARN: xTasks configuration file contains %u ", total);
-        fprintf(stderr, "accelerators, but only %u FPGA devices have been found\n", _numAccs);
-        fprintf(stderr, "      Using only the first accelerators of configuration file\n");
-    }
     _numAccs = (total < _numAccs) ? total : _numAccs;
 
-    //Get device and channel handles from libxdma for each accelerator
-    xdma_device devs[_numAccs];
-    int numAccs = _numAccs;
-    if (xdmaGetDevices(numAccs, &devs[0], &xdmaDevices) != XDMA_SUCCESS || xdmaDevices != numAccs) {
+    //Map the Task Manager queue into library memory
+    _gpioctrlFd = open(GPIOCTRL_FILEPATH, O_RDWR, (mode_t) 0600);
+    if (_gpioctrlFd == -1) {
         ret = XTASKS_EFILE;
-        goto INIT_ERR_2;
+        goto INIT_ERR_1;
     }
-    for (size_t i = 0; i < _numAccs; ++i) {
-        _accs[i].xdmaDev = devs[i];
-        xdmaGetDeviceChannel(devs[i], XDMA_TO_DEVICE, &_accs[i].inChannel);
-        xdmaGetDeviceChannel(devs[i], XDMA_FROM_DEVICE, &_accs[i].outChannel);
+    _readyQueueIdx = 0; //NOTE: This may not be true if the Manager is not restarted
+    _readyQueue = (ready_task_t *)mmap(NULL, sizeof(ready_task_t)*READY_QUEUE_LEN,
+        PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, READY_QUEUE_ADDR);
+    if (_readyQueue == MAP_FAILED) {
+        ret = XTASKS_EFILE;
+        INIT_ERR_3: close(_gpioctrlFd);
+        goto INIT_ERR_1;
+    }
+    _finiQueueIdx = 0; //NOTE: This may not be true if the Manager is not restarted
+    _finiQueue = (fini_task_t *)mmap(NULL, sizeof(fini_task_t)*FINI_QUEUE_LEN,
+        PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, FINI_QUEUE_ADDR);
+    if (_finiQueue == MAP_FAILED) {
+        ret = XTASKS_EFILE;
+        INIT_ERR_4: munmap(_readyQueue, sizeof(ready_task_t)*READY_QUEUE_LEN);
+        goto INIT_ERR_3;
     }
 
-    //Init HW instrumentation
+    //Init the HW instrumentation
     if (initHWIns() != XTASKS_SUCCESS) {
         ret = XTASKS_EFILE;
-        goto INIT_ERR_2;
+        INIT_ERR_5: munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
+        goto INIT_ERR_4;
     }
 
-    //Allocate the tasks buffer
+    //Allocate the task_info buffer
     xdma_status s;
-    s = xdmaAllocateKernelBuffer((void**)&_tasksBuff, &_tasksBuffHandle, NUM_RUN_TASKS*sizeof(hw_task_t));
+    s = xdmaAllocateKernelBuffer((void**)&_tasksBuff, &_tasksBuffHandle,
+        NUM_RUN_TASKS*sizeof(task_info_t));
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
-        INIT_ERR_4: finiHWIns();
+        INIT_ERR_6: finiHWIns();
         _tasksBuff = NULL;
         _tasksBuffPhy = NULL;
-        goto INIT_ERR_2;
+        goto INIT_ERR_5;
     }
     unsigned long phyAddr;
     s = xdmaGetDMAAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
-        INIT_ERR_5: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
-        goto INIT_ERR_4;
+        INIT_ERR_7: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
+        goto INIT_ERR_6;
     }
-    _tasksBuffPhy = (hw_task_t *)phyAddr;
+    _tasksBuffPhy = (task_info_t *)phyAddr;
 
     //Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
     if (_tasks == NULL) {
         ret = XTASKS_ENOMEM;
-        goto INIT_ERR_5;
+        goto INIT_ERR_7;
     }
     memset(_tasks, 0, NUM_RUN_TASKS*sizeof(task_t));
 
@@ -296,6 +336,8 @@ xtasks_stat xtasksFini()
     int init_cnt = __sync_sub_and_fetch(&_init_cnt, 1);
     if (init_cnt > 0) return XTASKS_SUCCESS;
 
+    xtasks_stat ret = XTASKS_SUCCESS;
+
     //Free tasks array
     free(_tasks);
 
@@ -307,18 +349,35 @@ xtasks_stat xtasksFini()
     _tasksBuff = NULL;
     _tasksBuffPhy = NULL;
 
-    //Finialize HW instrumentation
+    //Finialize the HW instrumentation
     if (finiHWIns() != XTASKS_SUCCESS) {
-        return XTASKS_ERROR;
+        ret = XTASKS_ERROR;
     }
 
+    //Unmap the Task Manager queues
+    int status = munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
+    if (status < 0) {
+        ret = XTASKS_EFILE;
+    }
+    status = munmap(_readyQueue, sizeof(ready_task_t)*READY_QUEUE_LEN);
+    if (status < 0) {
+        ret = XTASKS_EFILE;
+    }
+    status = close(_gpioctrlFd);
+    if (status == -1) {
+        ret = XTASKS_EFILE;
+    }
+
+    //Free the accelerators array
     _numAccs = 0;
     free(_accs);
+
+    //Close xdma library
     if (xdmaClose() != XDMA_SUCCESS) {
-        return XTASKS_ERROR;
+        ret = XTASKS_ERROR;
     }
 
-    return XTASKS_SUCCESS;
+    return ret;
 }
 
 xtasks_stat xtasksGetNumAccs(size_t * count)
@@ -353,11 +412,11 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * i
     return XTASKS_SUCCESS;
 }
 
-static int getFreeTaskEntry(acc_t * accel)
+static int getFreeTaskEntry()
 {
     for (int i = 0; i < NUM_RUN_TASKS; ++i) {
-        if (_tasks[i].accel == NULL) {
-            if (__sync_bool_compare_and_swap(&_tasks[i].accel, 0, accel)) {
+        if (_tasks[i].hwTask == NULL) {
+            if (__sync_bool_compare_and_swap(&_tasks[i].hwTask, 0, &_tasksBuff[i])) {
                 return i;
             }
         }
@@ -369,19 +428,24 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
     acc_t * accel = (acc_t *)accId;
-    int idx = getFreeTaskEntry(accel);
+    int idx = getFreeTaskEntry();
     if (idx < 0) {
         return XTASKS_ENOMEM;
     }
 
     _tasks[idx].id = id;
-    _tasks[idx].hwTask = &_tasksBuff[idx];
+    //_tasks[idx].hwTask = &_tasksBuff[idx]; //NOTE: Done in getFreeTaskEntry()
     _tasks[idx].argsCnt = 0;
-    //_tasks[idx].accel = accel; //NOTE: Done in getFreeTaskEntry()
+    _tasks[idx].hwTask->taskID = (uintptr_t)(&_tasks[idx]);
     _tasks[idx].hwTask->profile.timer = _insTimerAddr;
     _tasks[idx].hwTask->profile.buffer = (uintptr_t)(&_insBuffPhy[idx]);
     _tasks[idx].hwTask->compute = compute;
-    _tasks[idx].hwTask->destID = HW_TASK_DEST_ID_PS;
+    _tasks[idx].hwTask->destID = HW_TASK_DEST_ID_TM;
+    _tasks[idx].tmTask.taskPointer = (uintptr_t)(&_tasksBuffPhy[idx]);
+    _tasks[idx].tmTask.argsBitmask = 0xFFFF; //All will be ready
+    //_tasks[idx].tmTask.size = ?¿; //Computed at submit
+    _tasks[idx].tmTask.destID = accel->info.id;
+    _tasks[idx].tmTask.valid = 0; //Not ready yet
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
@@ -391,15 +455,10 @@ xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
 {
     task_t * task = (task_t *)(*handle);
     *handle = NULL;
+    //__sync_synchronize(); //Execute previous operations before the next instruction
+    task->hwTask = NULL;
 
-    xdma_status retD, retS;
-    retD = xdmaReleaseTransfer(&task->descriptorTx);
-    retS = xdmaReleaseTransfer(&task->syncTx);
-
-    __sync_synchronize(); //Execute previous operations before the next instruction
-    task->accel = NULL;
-
-    return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
@@ -442,32 +501,71 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
 
-    size_t size = HW_TASK_HEAD_BYTES + task->argsCnt*sizeof(hw_arg_t);
-    unsigned int descOffset = (uintptr_t)(task->hwTask) - (uintptr_t)(_tasksBuff);
-    xdma_status retD, retS;
-    retD = xdmaSubmitKBuffer(_tasksBuffHandle, size, descOffset,
-           XDMA_ASYNC, task->accel->xdmaDev, task->accel->inChannel, &task->descriptorTx);
-    retS = xdmaSubmitKBuffer(_tasksBuffHandle, sizeof(uint64_t),
-           descOffset + offsetof(hw_task_t, compute),
-           XDMA_ASYNC, task->accel->xdmaDev, task->accel->outChannel, &task->syncTx);
+    // Get an empty slot into the manager ready queue
+    size_t idx, next;
+    do {
+        idx = _readyQueueIdx;
+        if (_readyQueue[idx].valid == VALID_ENTRY_MASK) {
+            return XTASKS_ENOENTRY;
+        }
+        next = (idx+1)%READY_QUEUE_LEN;
+    } while ( !__sync_bool_compare_and_swap(&_readyQueueIdx, idx, next) );
 
-    return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
+    // Copy the task info structure into kernel memory
+    // NOTE: For now, already there
+
+    // Copy the ready task structure into the BRAM
+    task->tmTask.size = (HW_TASK_HEAD_BYTES + task->argsCnt*sizeof(task_info_arg_t)) /
+        sizeof(uint64_t);
+    memcpy(&_readyQueue[idx], &task->tmTask, sizeof(ready_task_t));
+    __sync_synchronize();
+    _readyQueue[idx].valid = VALID_ENTRY_MASK;
+
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
+    size_t tries = 0;
+    size_t const MAX_WAIT_TASKS_TRIES = 2048;
 
-    xdma_status retD, retS;
-    retD = xdmaWaitTransfer(task->descriptorTx);
-    retS = xdmaWaitTransfer(task->syncTx);
-
-    return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
+    while (task->tmTask.valid == 0 && tries++ < MAX_WAIT_TASKS_TRIES) {
+        xtasks_task_id id;
+        xtasksTryGetFinishedTask(&id);
+    }
+    return tries > MAX_WAIT_TASKS_TRIES ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
 {
-    return XTASKS_ENOSYS;
+    if (id == NULL) {
+        return XTASKS_EINVAL;
+    }
+
+    // Get a non-empty slot into the manager finished queue
+    size_t idx, next;
+    do {
+        idx = _finiQueueIdx;
+        if (_finiQueue[idx].valid != VALID_ENTRY_MASK) {
+            return XTASKS_PENDING;
+        }
+        next = (idx+1)%FINI_QUEUE_LEN;
+    } while ( !__sync_bool_compare_and_swap(&_finiQueueIdx, idx, next) );
+
+    //Extract the information from the finished buffer
+    uintptr_t tmp = _finiQueue[idx].taskID;
+    task_t * task = (task_t *)tmp;
+    *id = task->id;
+
+    //Mark the task as executed (using the valid field as it is not used in the cached copy)
+    task->tmTask.valid = 1;
+
+    //Free the buffer slot
+    __sync_synchronize();
+    _finiQueue[idx].valid = FREE_ENTRY_MASK;
+
+    return XDMA_SUCCESS;
 }
 
 xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
@@ -481,3 +579,20 @@ xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_
 
     return XTASKS_SUCCESS;
 }
+
+#ifdef XTASKS_DEBUG
+ready_task_t readyQueue(size_t const idx)
+{
+    return _readyQueue[idx];
+}
+
+fini_task_t finiQueue(size_t const idx)
+{
+    return _finiQueue[idx];
+}
+
+task_info_t tasksBuffer(size_t const idx)
+{
+    return _tasksBuff[idx];
+}
+#endif

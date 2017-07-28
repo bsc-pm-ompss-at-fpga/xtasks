@@ -27,7 +27,7 @@ LIBPICOS_SUPPORT_ = $(if $(and $(wildcard $(LIBPICOS_INC_DIR)/libpicos.h ), \
 ifeq ($(LIBXDMA_SUPPORT_),YES)
 	CFLAGS_  +=
 	LDFLAGS_ +=
-	TARGETS_ += libxtasks-stream.so
+	TARGETS_ += libxtasks-stream.so libxtasks-taskmanager.so
 endif
 ifeq ($(LIBPICOS_SUPPORT_),YES)
 	CFLAGS_  +=
@@ -37,6 +37,12 @@ endif
 
 .PHONY: all
 all: $(TARGETS_)
+
+libxtasks-taskmanager.o: ./src/libxtasks-taskmanager.c
+	$(CC_) $(CFLAGS_) $(LIBXDMA_INCS_) -c $^
+
+libxtasks-taskmanager.so: libxtasks-taskmanager.o
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,$@ -o $@ $^ $(LDFLAGS_) $(LIBXDMA_LIBS_)
 
 libxtasks-stream.o: ./src/libxtasks-stream.c
 	$(CC_) $(CFLAGS_) $(LIBXDMA_INCS_) -c $^
@@ -51,21 +57,18 @@ libxtasks-picos.so: libxtasks-picos.o
 	$(CC_) -shared -Wl,-rpath=$(LIBPICOS_LIB_DIR),-soname,$@ -o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
 
 .PHONY: libxtasks_version.h
-libxtasks_version.h:
-	@echo "#ifndef __LIBXTASKS_VERSION_H__" >libxtasks_version.h
-	@echo "#define __LIBXTASKS_VERSION_H__" >>libxtasks_version.h
-	@echo "" >>libxtasks_version.h
-	@echo "/* Build commit" >>libxtasks_version.h
-	git show -s >>libxtasks_version.h
-	@echo "*/" >>libxtasks_version.h
-	@echo "#define XTASKS_COMMIT_INFO \\" >>libxtasks_version.h
-	@git show -s --format=%H >>libxtasks_version.h
-	@echo "" >>libxtasks_version.h
-	@echo "/* Build branch and status" >>libxtasks_version.h
-	git status -b -s >>libxtasks_version.h
-	@echo "*/" >>libxtasks_version.h
-	@echo "" >>libxtasks_version.h
-	@echo "#endif" >>libxtasks_version.h
+libxtasks_version.h: ./src/libxtasks_version.h
+	@head -n 6 $^ >$@
+	@echo "/* Build commit" >>$@
+	git show -s >>$@
+	@echo "*/" >>$@
+	@echo "#define LIBXTASKS_VER_COMMIT \\" >>$@
+	@git show -s --format=%H >>$@
+	@echo "" >>$@
+	@echo "/* Build branch and status" >>$@
+	git status -b -s >>$@
+	@echo "*/" >>$@
+	@tail -n 2 $^ >>$@
 
 install: $(TARGETS_) ./src/libxtasks.h libxtasks_version.h
 	mkdir -p $(PREFIX)/lib
