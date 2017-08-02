@@ -28,6 +28,7 @@
 #include "libxtasks.h"
 
 #include <libxdma.h>
+#include <libxdma_version.h>
 #include <sys/auxv.h>
 #include <elf.h>
 #include <stdio.h>
@@ -54,6 +55,11 @@
 #define NUM_RUN_TASKS           INS_NUM_ENTRIES ///< Maximum number of concurrently running tasks
 #define HW_TASK_DEST_ID_PS      0x0000001F      ///< Processing System identifier for the destId field
 #define HW_TASK_DEST_ID_TM      0x00000011      ///< Task manager identifier for the destId field
+
+//! Check that libxdma version is compatible
+#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 1
+# error Installed libxdma is not supported (use >= 1.0)
+#endif
 
 //! \brief HW accelerator representation
 typedef struct {
