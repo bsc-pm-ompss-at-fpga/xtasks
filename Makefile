@@ -57,7 +57,7 @@ libxtasks-picos.so: libxtasks-picos.o
 	$(CC_) -shared -Wl,-rpath=$(LIBPICOS_LIB_DIR),-soname,$@ -o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
 
 .PHONY: libxtasks_version.h
-libxtasks_version.h: ./src/libxtasks_version.h
+libxtasks_version.h: ./src/libxtasks_version_template.h
 	@head -n 6 $^ >$@
 	@echo "/* Build commit" >>$@
 	git show -s >>$@
@@ -75,7 +75,7 @@ install: $(TARGETS_) ./src/libxtasks.h libxtasks_version.h
 	cp libxtasks-*.so $(PREFIX)/lib
 	mkdir -p $(PREFIX)/include
 	cp ./src/libxtasks.h $(PREFIX)/include
-	cp ./libxtasks_version.h $(PREFIX)/include
+	cp libxtasks_version.h $(PREFIX)/include
 	@echo "====================================== NOTE ======================================"
 	@echo "Remember to create the symlink $(PREFIX)/lib/libxtasks.so to your desired backend!"
 	@echo "For example: pushd $(PREFIX)/lib; ln -s libxtasks-stream.so libxtasks.so; popd;"
