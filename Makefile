@@ -15,7 +15,7 @@ LIBXDMA_SUPPORT_ = $(if $(and $(wildcard $(LIBXDMA_INC_DIR)/libxdma.h ), \
 	$(wildcard $(LIBXDMA_LIB_DIR)/libxdma.so )),YES,NO)
 
 ## Check libpicos installation
-#LIBPICOS_DIR      ?= /opt/install-arm/libpicos
+LIBPICOS_DIR      ?= /opt/install-arm/libpicos
 LIBPICOS_INC_DIR  ?= $(LIBPICOS_DIR)/include
 LIBPICOS_LIB_DIR  ?= $(LIBPICOS_DIR)/lib
 LIBPICOS_INCS_     = -I$(LIBPICOS_INC_DIR)
