@@ -42,19 +42,19 @@ libxtasks-taskmanager.o: ./src/libxtasks-taskmanager.c
 	$(CC_) $(CFLAGS_) $(LIBXDMA_INCS_) -c $^
 
 libxtasks-taskmanager.so: libxtasks-taskmanager.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,$@ -o $@ $^ $(LDFLAGS_) $(LIBXDMA_LIBS_)
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_) $(LIBXDMA_LIBS_)
 
 libxtasks-stream.o: ./src/libxtasks-stream.c
 	$(CC_) $(CFLAGS_) $(LIBXDMA_INCS_) -c $^
 
 libxtasks-stream.so: libxtasks-stream.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,$@ -o $@ $^ $(LDFLAGS_) $(LIBXDMA_LIBS_)
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_) $(LIBXDMA_LIBS_)
 
 libxtasks-picos.o: ./src/libxtasks-picos.c
 	$(CC_) $(CFLAGS_) $(LIBPICOS_INCS_) -c $^
 
 libxtasks-picos.so: libxtasks-picos.o
-	$(CC_) -shared -Wl,-rpath=$(LIBPICOS_LIB_DIR),-soname,$@ -o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
+	$(CC_) -shared -Wl,-rpath=$(LIBPICOS_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
 
 .PHONY: libxtasks_version.h
 libxtasks_version.h: ./src/libxtasks_version_template.h
