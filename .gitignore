@@ -1,4 +1,4 @@
 *.o
 *.so
 *.a
-/libxtasks_version.h
+libxtasks_version.h

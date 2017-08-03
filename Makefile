@@ -15,7 +15,7 @@ LIBXDMA_SUPPORT_ = $(if $(and $(wildcard $(LIBXDMA_INC_DIR)/libxdma.h ), \
 	$(wildcard $(LIBXDMA_LIB_DIR)/libxdma.so )),YES,NO)
 
 ## Check libpicos installation
-#LIBPICOS_DIR      ?= /opt/install-arm/libpicos
+LIBPICOS_DIR      ?= /opt/install-arm/libpicos
 LIBPICOS_INC_DIR  ?= $(LIBPICOS_DIR)/include
 LIBPICOS_LIB_DIR  ?= $(LIBPICOS_DIR)/lib
 LIBPICOS_INCS_     = -I$(LIBPICOS_INC_DIR)
@@ -57,12 +57,12 @@ libxtasks-picos.so: libxtasks-picos.o
 	$(CC_) -shared -Wl,-rpath=$(LIBPICOS_LIB_DIR),-soname,$@ -o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
 
 .PHONY: libxtasks_version.h
-libxtasks_version.h: ./src/libxtasks_version.h
+libxtasks_version.h: ./src/libxtasks_version_template.h
 	@head -n 6 $^ >$@
 	@echo "/* Build commit" >>$@
 	git show -s >>$@
 	@echo "*/" >>$@
-	@echo "#define LIBXTASKS_VER_COMMIT \\" >>$@
+	@echo "#define LIBXTASKS_VERSION_COMMIT \\" >>$@
 	@git show -s --format=%H >>$@
 	@echo "" >>$@
 	@echo "/* Build branch and status" >>$@
@@ -75,7 +75,7 @@ install: $(TARGETS_) ./src/libxtasks.h libxtasks_version.h
 	cp libxtasks-*.so $(PREFIX)/lib
 	mkdir -p $(PREFIX)/include
 	cp ./src/libxtasks.h $(PREFIX)/include
-	cp ./libxtasks_version.h $(PREFIX)/include
+	cp libxtasks_version.h $(PREFIX)/include
 	@echo "====================================== NOTE ======================================"
 	@echo "Remember to create the symlink $(PREFIX)/lib/libxtasks.so to your desired backend!"
 	@echo "For example: pushd $(PREFIX)/lib; ln -s libxtasks-stream.so libxtasks.so; popd;"
