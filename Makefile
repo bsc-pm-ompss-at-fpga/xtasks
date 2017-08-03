@@ -62,7 +62,7 @@ libxtasks_version.h: ./src/libxtasks_version_template.h
 	@echo "/* Build commit" >>$@
 	git show -s >>$@
 	@echo "*/" >>$@
-	@echo "#define LIBXTASKS_VER_COMMIT \\" >>$@
+	@echo "#define LIBXTASKS_VERSION_COMMIT \\" >>$@
 	@git show -s --format=%H >>$@
 	@echo "" >>$@
 	@echo "/* Build branch and status" >>$@
