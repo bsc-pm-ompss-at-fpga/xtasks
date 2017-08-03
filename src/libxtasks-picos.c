@@ -263,6 +263,9 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
 
     _tasks[idx].id = id;
     //_tasks[idx].picosTask.taskID = (uintptr_t)&_tasks[i]; //NOTE: Done in getFreeTaskEntry()
+    //NOTE: Set the upper bit of taskID as the 32 high bits cannot be 0x00000000
+    //      We are assuming that in a 64bit architecture the highest bit will not be used
+    _tasks[idx].picosTask.taskID |= 0x8000000000000000;
     _tasks[idx].picosTask.numDeps = accel->picosArchMask;
 
     *handle = (xtasks_task_handle)&_tasks[idx];
@@ -344,6 +347,8 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
     if (picosGetExecTask(&t) == PICOS_SUCCESS) {
         uint64_t tId;
         picosGetTaskID(&t, &tId);
+        //NOTE: Clear highest bit. See xtasksCreateTask()
+        tId &= 0x7FFFFFFFFFFFFFFF;
         uintptr_t tPtr = (uintptr_t)tId;
         task_t * task = (task_t *)(tPtr);
 
