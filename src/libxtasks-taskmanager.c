@@ -538,14 +538,15 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 
     while (task->tmTask.valid == 0 && tries++ < MAX_WAIT_TASKS_TRIES) {
         xtasks_task_id id;
-        xtasksTryGetFinishedTask(&id);
+        xtasks_task_handle h;
+        xtasksTryGetFinishedTask(&h, &id);
     }
     return tries > MAX_WAIT_TASKS_TRIES ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
+xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id)
 {
-    if (id == NULL) {
+    if (id == NULL || handle == NULL) {
         return XTASKS_EINVAL;
     }
 
@@ -563,6 +564,7 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
     uintptr_t tmp = _finiQueue[idx].taskID;
     task_t * task = (task_t *)tmp;
     *id = task->id;
+    *handle = (xtasks_task_handle)task;
 
     //Mark the task as executed (using the valid field as it is not used in the cached copy)
     task->tmTask.valid = 1;

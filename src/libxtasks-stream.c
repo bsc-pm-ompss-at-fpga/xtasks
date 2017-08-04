@@ -471,7 +471,7 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
     return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
-xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
+xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id)
 {
     return XTASKS_ENOSYS;
 }

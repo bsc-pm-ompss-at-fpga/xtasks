@@ -332,14 +332,15 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 
     while (task->picosTask.numDeps != NUM_DEPS_EXEC_MASK && tries++ < MAX_WAIT_TASKS_TRIES) {
         xtasks_task_id id;
-        xtasksTryGetFinishedTask(&id);
+        xtasks_task_handle h;
+        xtasksTryGetFinishedTask(&h, &id);
     }
     return tries > MAX_WAIT_TASKS_TRIES ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
+xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id)
 {
-    if (id == NULL) {
+    if (id == NULL || handle == NULL) {
         return XTASKS_EINVAL;
     }
 
@@ -356,6 +357,7 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
         task->picosTask.numDeps = NUM_DEPS_EXEC_MASK;
 
         *id = task->id;
+        *handle = (xtasks_task_handle)task;
         return XTASKS_SUCCESS;
     }
 

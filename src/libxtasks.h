@@ -146,7 +146,7 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle);
 /*!
  * \brief Try to get a task which execution finished
  */
-xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id);
+xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id);
 
 /*!
  * \brief Get instrumentation timestamps for a task
