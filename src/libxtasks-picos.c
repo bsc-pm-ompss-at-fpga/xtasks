@@ -328,7 +328,7 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
     size_t tries = 0;
-    size_t const MAX_WAIT_TASKS_TRIES = 2048;
+    size_t const MAX_WAIT_TASKS_TRIES = 0xFFFFFFFF;
 
     while (task->picosTask.numDeps != NUM_DEPS_EXEC_MASK && tries++ < MAX_WAIT_TASKS_TRIES) {
         xtasks_task_id id;
