@@ -150,7 +150,7 @@ xtasks_stat xtasksInit()
     xtasks_acc_type t;
     size_t num, total;
     total = 0;
-    while (fscanf(accMapFile, "%u %u %s", &t, &num, buffer) == 3) { //< Parse the file
+    while (fscanf(accMapFile, "%u %zu %s", &t, &num, buffer) == 3) { //< Parse the file
         //while (fgets(buffer, STR_BUFFER_SIZE, accMapFile)) {
         total += num;
         if (total > _numAccs) {
