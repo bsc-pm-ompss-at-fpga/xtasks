@@ -226,7 +226,7 @@ xtasks_stat xtasksInit()
     xtasks_acc_type t;
     size_t num, total;
     total = 0;
-    while (fscanf(accMapFile, "%u %u %s", &t, &num, buffer) == 3) { //< Parse the file
+    while (fscanf(accMapFile, "%u %zu %s", &t, &num, buffer) == 3) { //< Parse the file
     //while (fgets(buffer, STR_BUFFER_SIZE, accMapFile)) {
         total += num;
         for (size_t i = total - num; i < total && total <= _numAccs; ++i) {
@@ -241,8 +241,8 @@ xtasks_stat xtasksInit()
 
     //Update number of accelerators
     if (total > _numAccs) {
-        fprintf(stderr, "WARN: xTasks configuration file contains %u ", total);
-        fprintf(stderr, "accelerators, but only %u FPGA devices have been found\n", _numAccs);
+        fprintf(stderr, "WARN: xTasks configuration file contains %zu ", total);
+        fprintf(stderr, "accelerators, but only %zu FPGA devices have been found\n", _numAccs);
         fprintf(stderr, "      Using only the first accelerators of configuration file\n");
     }
     _numAccs = (total < _numAccs) ? total : _numAccs;
@@ -471,7 +471,7 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
     return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
-xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
+xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id)
 {
     return XTASKS_ENOSYS;
 }
