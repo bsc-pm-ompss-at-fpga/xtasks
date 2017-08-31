@@ -26,6 +26,7 @@
 */
 
 #include "libxtasks.h"
+#include "util/queue.h"
 
 #include <libxdma.h>
 #include <libxdma_version.h>
@@ -37,6 +38,8 @@
 #include <stddef.h>
 
 #define STR_BUFFER_SIZE     128
+#define MAX_CNT_FIN_TASKS   16              ///< Max. number of finished tasks processed for other accels before return
+
 #define HW_TASK_HEAD_BYTES  24              ///< Size of hw_task_t without the args field
 #define HW_TASK_NUM_ARGS    14              ///< (256 - TASK_INFO_HEAD_BYTES)/sizeof(xdma_task_arg)
 #define INS_BUFFER_SIZE     8192            ///< 2 pages
@@ -57,6 +60,8 @@ typedef struct {
     xdma_channel    outChannel;
     char            descBuffer[STR_BUFFER_SIZE];
     xtasks_acc_info info;
+    queue_t *       tasksQueue;
+    unsigned int    tasksQueueLock;
 } acc_t;
 
 //! \brief Task argument representation in task_info
@@ -258,6 +263,10 @@ xtasks_stat xtasksInit()
         _accs[i].xdmaDev = devs[i];
         xdmaGetDeviceChannel(devs[i], XDMA_TO_DEVICE, &_accs[i].inChannel);
         xdmaGetDeviceChannel(devs[i], XDMA_FROM_DEVICE, &_accs[i].outChannel);
+
+        //Init the tasks queue
+        _accs[i].tasksQueue = queueInit();
+        _accs[i].tasksQueueLock = 0;
     }
 
     //Init HW instrumentation
@@ -318,6 +327,12 @@ xtasks_stat xtasksFini()
         return XTASKS_ERROR;
     }
 
+    //Finialize accelerators' structures
+    for (size_t i = 0; i < _numAccs; ++i) {
+        queueFini(_accs[i].tasksQueue);
+    }
+
+    //Free the accelerators array
     _numAccs = 0;
     free(_accs);
     if (xdmaClose() != XDMA_SUCCESS) {
@@ -456,6 +471,7 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     retS = xdmaSubmitKBuffer(_tasksBuffHandle, sizeof(uint64_t),
            descOffset + offsetof(hw_task_t, compute),
            XDMA_ASYNC, task->accel->xdmaDev, task->accel->outChannel, &task->syncTx);
+    queuePush(task->accel->tasksQueue, (void *)task);
 
     return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
@@ -471,9 +487,58 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
     return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
+#if 0
+static xtasks_stat xtasksTryWaitTask(task_t * const task)
+{
+    xdma_status retD, retS;
+    retD = xdmaTestTransfer(task->descriptorTx);
+    retS = xdmaTestTransfer(task->syncTx);
+
+    return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS :
+           (retD == XDMA_PENDING || retS == XDMA_PENDING) ? XTASKS_PENDING : XTASKS_ERROR;
+}
+#endif
+
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id)
 {
-    return XTASKS_ENOSYS;
+    xtasks_stat ret = XTASKS_PENDING;
+    for (size_t i = 0; i < _numAccs && ret == XTASKS_PENDING; ++i) {
+        ret = xtasksTryGetFinishedTaskAccel(&_accs[i], handle, id);
+    }
+    return ret;
+}
+
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
+    xtasks_task_handle * task, xtasks_task_id * id)
+{
+    acc_t * acc = (acc_t *)accel;
+
+    xtasks_stat ret = XTASKS_PENDING;
+#if 0
+    task_t * t = NULL;
+    if (acc->tasksQueueLock == 0 && __sync_lock_test_and_set(&acc->tasksQueueLock, 1) == 0) {
+        //NOTE: Only pop the task if finished -> atomically get the front, test and ¿pop?
+        t = (task_t *)queueFront(acc->tasksQueue);
+        if (t != NULL) {
+            ret = xtasksTryWaitTask(t);
+            if (ret != XTASKS_PENDING) {
+                //NOTE: Remove the task from the queue if it has finished or an error ocurred
+                queuePop(acc->tasksQueue);
+                *task = (xtasks_task_handle)t;
+                *id = (xtasks_task_id)t->id;
+            }
+        }
+        __sync_lock_release(&acc->tasksQueueLock);
+    }
+#else
+    task_t * t = (task_t *)queueTryPop(acc->tasksQueue);
+    if (t != NULL) {
+        ret = xtasksWaitTask(t);
+        *task = (xtasks_task_handle)t;
+        *id = (xtasks_task_id)t->id;
+    }
+#endif
+    return ret;
 }
 
 xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
