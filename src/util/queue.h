@@ -40,8 +40,8 @@ typedef struct node_t {
 } node_t;
 
 typedef struct {
-    node_t    *_head;
-    node_t    *_tail;
+    node_t * volatile _head;
+    node_t * volatile _tail;
 } queue_t;
 
 /**
