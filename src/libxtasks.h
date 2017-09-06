@@ -149,6 +149,12 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle);
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id);
 
 /*!
+ * \brief Try to get a task which execution finished for an accelerator
+ */
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
+    xtasks_task_handle * task, xtasks_task_id * id);
+
+/*!
  * \brief Get instrumentation timestamps for a task
  */
 xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times);

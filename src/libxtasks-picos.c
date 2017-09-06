@@ -26,6 +26,7 @@
 */
 
 #include "libxtasks.h"
+#include "util/queue.h"
 
 #include <libpicos.h>
 #include <sys/auxv.h>
@@ -37,6 +38,7 @@
 
 #define STR_BUFFER_SIZE         128
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
+#define MAX_CNT_FIN_TASKS       16              ///< Max. number of finished tasks processed for other accels before return
 #define NUM_RUN_TASKS           256             ///< Maximum number of concurrently running tasks
 #define NUM_DEPS_EXEC_MASK      0xFFFFFFFF      ///< Mask used to set numDeps field and mark task as executed
 
@@ -45,11 +47,13 @@ typedef struct {
     uint32_t        picosArchMask;
     char            descBuffer[STR_BUFFER_SIZE];
     xtasks_acc_info info;
+    queue_t *       finishedQueue;
 } acc_t;
 
 //! \brief Internal library task information
 typedef struct {
     xtasks_task_id          id;            ///< External task identifier
+    acc_t *                 accel;         ///< Accelerator where the task will run
     picos_task              picosTask;     ///< Picos task representation
 } task_t;
 
@@ -173,6 +177,11 @@ xtasks_stat xtasksInit()
     free(buffer);
     _numAccs = (total < _numAccs) ? total : _numAccs;
 
+    //Init accelerators' structures
+    for (size_t i = 0; i < _numAccs; ++i) {
+        _accs[i].finishedQueue = queueInit();
+    }
+
     //Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
     if (_tasks == NULL) {
@@ -195,6 +204,12 @@ xtasks_stat xtasksFini()
     //Free tasks array
     free(_tasks);
 
+    //Finialize accelerators' structures
+    for (size_t i = 0; i < _numAccs; ++i) {
+        queueFini(_accs[i].finishedQueue);
+    }
+
+    //Free the accelerators array
     _numAccs = 0;
     free(_accs);
 
@@ -262,6 +277,7 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     }
 
     _tasks[idx].id = id;
+    _tasks[idx].accel = accel;
     //_tasks[idx].picosTask.taskID = (uintptr_t)&_tasks[i]; //NOTE: Done in getFreeTaskEntry()
     //NOTE: Set the upper bit of taskID as the 32 high bits cannot be 0x00000000
     //      We are assuming that in a 64bit architecture the highest bit will not be used
@@ -362,6 +378,40 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id
     }
 
     return XTASKS_PENDING;
+}
+
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
+    xtasks_task_handle * task, xtasks_task_id * id)
+{
+    acc_t * acc = (acc_t *)accel;
+
+    //1st: Try get a finished task from the accel queue
+    task_t * t = (task_t *)queueTryPop(acc->finishedQueue);
+    if (t == NULL) {
+        unsigned int cnt = 0;
+        xtasks_task_handle xTask;
+        xtasks_task_id xId;
+        //2nd: Try to fetch a task from the finished queue
+        while (cnt < MAX_CNT_FIN_TASKS && xtasksTryGetFinishedTask(&xTask, &xId) == XTASKS_SUCCESS) {
+            ++cnt;
+            t = (task_t *)xTask;
+            if (t->accel == acc) {
+                //The task was executed in the accelerator
+                *task = xTask;
+                *id = xId;
+                break;
+            } else {
+                //The task was not executed in the accelerator
+                queuePush(t->accel->finishedQueue, (void *)t);
+                t = NULL;
+            }
+        }
+    } else {
+        *task = (xtasks_task_handle)t;
+        *id = (xtasks_task_id)t->id;
+    }
+
+    return t == NULL ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)

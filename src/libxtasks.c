@@ -92,6 +92,12 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
     return XTASKS_ENOSYS;
 }
 
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
+    xtasks_task_handle * task, xtasks_task_id * id)
+{
+    return XTASKS_ENOSYS;
+}
+
 xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
 {
     return XTASKS_ENOSYS;
