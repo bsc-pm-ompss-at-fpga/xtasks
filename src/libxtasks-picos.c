@@ -54,7 +54,8 @@ typedef struct {
 typedef struct {
     xtasks_task_id          id;            ///< External task identifier
     acc_t *                 accel;         ///< Accelerator where the task will run
-    picos_task              picosTask;     ///< Picos task representation
+    __attribute__((aligned(8))) picos_task
+                            picosTask;     ///< Picos task representation
 } task_t;
 
 static int _init_cnt = 0;   ///< Counter of calls to init/fini
@@ -255,8 +256,8 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * i
 
 static int getFreeTaskEntry()
 {
-    int ini = rand();
-    for (int i = (ini + 1)%NUM_RUN_TASKS; i != ini; i = (i+1)%NUM_RUN_TASKS) {
+    int ini = rand()%NUM_RUN_TASKS;
+    for (int i = (ini+1)%NUM_RUN_TASKS; i != ini; i = (i+1)%NUM_RUN_TASKS) {
         if (_tasks[i].picosTask.taskID == 0) {
             uint64_t taskID = (uintptr_t)&_tasks[i];
             if (__sync_bool_compare_and_swap(&_tasks[i].picosTask.taskID, 0, taskID)) {
@@ -326,7 +327,8 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
     }
 
     for (size_t i = 0; i < num; ++i, ++idx) {
-        task->picosTask.deps[idx].address = values[i];
+        //NOTE: Picos expects the HIGH and LOW parts in the other way
+        task->picosTask.deps[idx].address = values[i] << 32 | values[i] >> 32;
         task->picosTask.deps[idx].direction = PICOS_INOUT; //NOTE: Just in case, mark argument as inout
     }
     task->picosTask.numDeps += num;
