@@ -327,7 +327,8 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
     }
 
     for (size_t i = 0; i < num; ++i, ++idx) {
-        task->picosTask.deps[idx].address = values[i];
+        //NOTE: Picos expects the HIGH and LOW parts in the other way
+        task->picosTask.deps[idx].address = values[i] << 32 | values[i] >> 32;
         task->picosTask.deps[idx].direction = PICOS_INOUT; //NOTE: Just in case, mark argument as inout
     }
     task->picosTask.numDeps += num;
