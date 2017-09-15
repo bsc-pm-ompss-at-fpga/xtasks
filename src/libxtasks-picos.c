@@ -346,12 +346,15 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
     size_t tries = 0;
-    size_t const MAX_WAIT_TASKS_TRIES = 0xFFFFFFFF;
+    size_t const MAX_WAIT_TASKS_TRIES = 16;
 
     while (task->picosTask.numDeps != NUM_DEPS_EXEC_MASK && tries++ < MAX_WAIT_TASKS_TRIES) {
         xtasks_task_id id;
         xtasks_task_handle h;
-        xtasksTryGetFinishedTask(&h, &id);
+        xtasks_stat s = xtasksTryGetFinishedTask(&h, &id);
+        if (s != XTASKS_SUCCESS && s != XTASKS_PENDING) {
+            return XTASKS_ERROR;
+        }
     }
     return tries > MAX_WAIT_TASKS_TRIES ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
@@ -363,7 +366,8 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id
     }
 
     picos_task t;
-    if (picosGetExecTask(&t) == PICOS_SUCCESS) {
+    picos_status s = picosGetExecTask(&t);
+    if (s == PICOS_SUCCESS) {
         uint64_t tId;
         picosGetTaskID(&t, &tId);
         //NOTE: Clear highest bit. See xtasksCreateTask()
@@ -377,9 +381,11 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id
         *id = task->id;
         *handle = (xtasks_task_handle)task;
         return XTASKS_SUCCESS;
+    } else if (s == PICOS_BUSY) {
+        return XTASKS_PENDING;
     }
 
-    return XTASKS_PENDING;
+    return XTASKS_ERROR;
 }
 
 xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
