@@ -166,8 +166,14 @@ xtasks_stat xtasksInit()
             memcpy(_accs, oldAccs, sizeof(acc_t)*(total - num));
             free(oldAccs);
         }
+        uint32_t mask = ((1 << num) - 1) << (31 - total);
         for (size_t i = total - num; i < total; ++i) {
-            _accs[i].picosArchMask = 1 << (30 - i); //NOTE: ACC0 sets bit30, ACC1 sets bit29, etc.
+            //NOTE: Using the same mask for all accels of same type to allow picos balance execution.
+            //      This can be an issue if the queues to retrieve tasks are different for each accelerator
+            //      because the library is breaking the request of executing a task in one accel.
+            //      Therefore, the task may become finished in a different accel!
+            //_accs[i].picosArchMask = 1 << (30 - i); //NOTE: ACC0 sets bit30, ACC1 sets bit29, etc.
+            _accs[i].picosArchMask = mask;
             _accs[i].info.id = i;
             _accs[i].info.type = t;
             _accs[i].info.description = _accs[i].descBuffer;
