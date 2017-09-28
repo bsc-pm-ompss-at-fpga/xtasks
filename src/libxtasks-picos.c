@@ -142,7 +142,13 @@ xtasks_stat xtasksInit()
     uint32_t forcedMask = 0;
     const char * envMask = getenv("XTASKS_PICOS_ARCHMASK");
     if (envMask != NULL) {
-        forcedMask = atoi(envMask);
+        if (envMask[0] == '0' && envMask[1] != '\0' && (envMask[1] == 'x' || envMask[1] == 'X')) {
+            //The mask is a hexadecimal number
+            forcedMask = strtoul(envMask, NULL, 16);
+        } else {
+            //The mask seems to be a decimal number
+            forcedMask = atoi(envMask);
+        }
         forcedMask = forcedMask << 24; //The mask is 8bit and it's value goes to the upper bits
     }
 
