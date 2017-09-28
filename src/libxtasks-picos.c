@@ -138,6 +138,14 @@ xtasks_stat xtasksInit()
         }
     }
 
+    //Check if architecture mask should be forced
+    uint32_t forcedMask = 0;
+    const char * envMask = getenv("XTASKS_PICOS_ARCHMASK");
+    if (envMask != NULL) {
+        forcedMask = atoi(envMask);
+        forcedMask = forcedMask << 24; //The mask is 8bit and it's value goes to the upper bits
+    }
+
     //Open the configuration file and parse it
     FILE * accMapFile = fopen(accMapPath, "r");
     if (accMapFile == NULL) {
@@ -166,7 +174,7 @@ xtasks_stat xtasksInit()
             memcpy(_accs, oldAccs, sizeof(acc_t)*(total - num));
             free(oldAccs);
         }
-        uint32_t mask = ((1 << num) - 1) << (31 - total);
+        uint32_t mask = forcedMask ? forcedMask : ((1 << num) - 1) << (31 - total);
         for (size_t i = total - num; i < total; ++i) {
             //NOTE: Using the same mask for all accels of same type to allow picos balance execution.
             //      This can be an issue if the queues to retrieve tasks are different for each accelerator
