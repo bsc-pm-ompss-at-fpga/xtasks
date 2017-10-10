@@ -160,17 +160,23 @@ static xtasks_stat initHWIns()
         goto INITINS_ERR_0;
     }
     _insBuffPhy = (xtasks_ins_times *)phyAddr;
+    s = xdmaInitHWInstrumentation();
+    if (s != XDMA_SUCCESS) {
+        xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+        return XTASKS_ERROR;
+    }
     _insTimerAddr = (uint64_t)xdmaGetInstrumentationTimerAddr();
     return XDMA_SUCCESS;
 }
 
 static xtasks_stat finiHWIns()
 {
-    xdma_status s0;
-    s0 = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+    xdma_status s0, s1;
+    s0 = xdmaFiniHWInstrumentation();
+    s1 = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
     _insBuff = NULL;
     _insBuffPhy = NULL;
-    return s0 == XDMA_SUCCESS ? XTASKS_SUCCESS : XTASKS_ERROR;
+    return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
 xtasks_stat xtasksInit()
