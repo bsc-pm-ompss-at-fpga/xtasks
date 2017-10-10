@@ -171,11 +171,12 @@ static xtasks_stat initHWIns()
 
 static xtasks_stat finiHWIns()
 {
-    xdma_status s0;
-    s0 = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+    xdma_status s0, s1;
+    s0 = xdmaFiniHWInstrumentation();
+    s1 = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
     _insBuff = NULL;
     _insBuffPhy = NULL;
-    return s0 == XDMA_SUCCESS ? XTASKS_SUCCESS : XTASKS_ERROR;
+    return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
 xtasks_stat xtasksInit()
