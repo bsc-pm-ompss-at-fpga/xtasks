@@ -46,6 +46,7 @@
 #define GPIOCTRL_FILEPATH       "/dev/gpioctrl"
 #define READY_QUEUE_ADDR        0x80004000
 #define FINI_QUEUE_ADDR         0x80008000
+#define ASYNC_RST_ADDR          0x8000C000
 #define READY_QUEUE_LEN         1024
 #define FINI_QUEUE_LEN          1024
 #define VALID_ENTRY_MASK        0x80
@@ -134,6 +135,7 @@ static ready_task_t        *_readyQueue;        ///< Buffer for the ready tasks
 static size_t               _readyQueueIdx;     ///< Writing index of the _readyQueue
 static fini_task_t         *_finiQueue;         ///< Buffer for the finished tasks
 static size_t               _finiQueueIdx;      ///< Reading index of the _finiQueue
+static uint32_t volatile   *_AsyncRst;          ///< Register to reset indexes of _readyQueue and _finiQueue
 
 static void printErrorMsgCfgFile()
 {
@@ -141,6 +143,15 @@ static void printErrorMsgCfgFile()
     fprintf(stderr, "current FPGA configuration\n");
     fprintf(stderr, "       However, XTASKS_CONFIG_FILE environment variable was not defined and");
     fprintf(stderr, "library was not able to build the filename based on the application binary\n");
+}
+
+static inline __attribute__((always_inline)) xtasks_stat resetQueueIdx()
+{
+// Nudge one register
+    *_AsyncRst = 0x00;
+    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
+    *_AsyncRst = 0x01;
+    return XTASKS_SUCCESS;
 }
 
 static xtasks_stat initHWIns()
@@ -297,6 +308,7 @@ xtasks_stat xtasksInit()
         ret = XTASKS_EFILE;
         goto INIT_ERR_1;
     }
+
     _readyQueueIdx = 0; //NOTE: This may not be true if the Manager is not restarted
     _readyQueue = (ready_task_t *)mmap(NULL, sizeof(ready_task_t)*READY_QUEUE_LEN,
         PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, READY_QUEUE_ADDR);
@@ -305,6 +317,7 @@ xtasks_stat xtasksInit()
         INIT_ERR_3: close(_gpioctrlFd);
         goto INIT_ERR_1;
     }
+
     _finiQueueIdx = 0; //NOTE: This may not be true if the Manager is not restarted
     _finiQueue = (fini_task_t *)mmap(NULL, sizeof(fini_task_t)*FINI_QUEUE_LEN,
         PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, FINI_QUEUE_ADDR);
@@ -314,11 +327,24 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_3;
     }
 
-    //Init the HW instrumentation
-    if (initHWIns() != XTASKS_SUCCESS) {
+    _AsyncRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, ASYNC_RST_ADDR);
+    if (_AsyncRst == MAP_FAILED) {
         ret = XTASKS_EFILE;
         INIT_ERR_5: munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
         goto INIT_ERR_4;
+    }
+
+    //Reset _readyQueue and _finiQueue indexes
+    if (resetQueueIdx() != XTASKS_SUCCESS) {
+        ret = XTASKS_EFILE;
+        INIT_ERR_6: munmap((void *)_AsyncRst, sizeof(uint32_t));
+        goto INIT_ERR_5;
+    }
+
+    //Init the HW instrumentation
+    if (initHWIns() != XTASKS_SUCCESS) {
+        ret = XTASKS_EFILE;
+        goto INIT_ERR_6;
     }
 
     //Allocate the task_info buffer
@@ -327,17 +353,17 @@ xtasks_stat xtasksInit()
         NUM_RUN_TASKS*sizeof(task_info_t));
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
-        INIT_ERR_6: finiHWIns();
+        INIT_ERR_7: finiHWIns();
         _tasksBuff = NULL;
         _tasksBuffPhy = NULL;
-        goto INIT_ERR_5;
+        goto INIT_ERR_6;
     }
     unsigned long phyAddr;
     s = xdmaGetDMAAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
-        INIT_ERR_7: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
-        goto INIT_ERR_6;
+        INIT_ERR_8: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
+        goto INIT_ERR_7;
     }
     _tasksBuffPhy = (task_info_t *)phyAddr;
 
@@ -345,7 +371,7 @@ xtasks_stat xtasksInit()
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
     if (_tasks == NULL) {
         ret = XTASKS_ENOMEM;
-        goto INIT_ERR_7;
+        goto INIT_ERR_8;
     }
     memset(_tasks, 0, NUM_RUN_TASKS*sizeof(task_t));
 
@@ -370,6 +396,7 @@ xtasks_stat xtasksFini()
     }
     _tasksBuff = NULL;
     _tasksBuffPhy = NULL;
+    _AsyncRst = NULL;
 
     //Finialize the HW instrumentation
     if (finiHWIns() != XTASKS_SUCCESS) {
@@ -382,6 +409,10 @@ xtasks_stat xtasksFini()
         ret = XTASKS_EFILE;
     }
     status = munmap(_readyQueue, sizeof(ready_task_t)*READY_QUEUE_LEN);
+    if (status < 0) {
+        ret = XTASKS_EFILE;
+    }
+    status = munmap((void *)_AsyncRst, sizeof(uint32_t));
     if (status < 0) {
         ret = XTASKS_EFILE;
     }
