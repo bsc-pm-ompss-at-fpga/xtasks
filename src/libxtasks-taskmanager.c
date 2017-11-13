@@ -135,7 +135,7 @@ static ready_task_t        *_readyQueue;        ///< Buffer for the ready tasks
 static size_t               _readyQueueIdx;     ///< Writing index of the _readyQueue
 static fini_task_t         *_finiQueue;         ///< Buffer for the finished tasks
 static size_t               _finiQueueIdx;      ///< Reading index of the _finiQueue
-static uint32_t volatile   *_AsyncRst;          ///< Register to reset indexes of _readyQueue and _finiQueue
+static uint32_t volatile   *_asyncRst;          ///< Register to reset indexes of _readyQueue and _finiQueue
 
 static void printErrorMsgCfgFile()
 {
@@ -147,10 +147,10 @@ static void printErrorMsgCfgFile()
 
 static inline __attribute__((always_inline)) xtasks_stat resetQueueIdx()
 {
-// Nudge one register
-    *_AsyncRst = 0x00;
+    //Nudge one register
+    *_asyncRst = 0x00;
     for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
-    *_AsyncRst = 0x01;
+    *_asyncRst = 0x01;
     return XTASKS_SUCCESS;
 }
 
@@ -302,14 +302,14 @@ xtasks_stat xtasksInit()
         _accs[i].finishedQueue = queueInit();
     }
 
-    //Map the Task Manager queue into library memory
+    //Open and map the Task Manager queues into library memory
     _gpioctrlFd = open(GPIOCTRL_FILEPATH, O_RDWR, (mode_t) 0600);
     if (_gpioctrlFd == -1) {
         ret = XTASKS_EFILE;
         goto INIT_ERR_1;
     }
 
-    _readyQueueIdx = 0; //NOTE: This may not be true if the Manager is not restarted
+    _readyQueueIdx = 0;
     _readyQueue = (ready_task_t *)mmap(NULL, sizeof(ready_task_t)*READY_QUEUE_LEN,
         PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, READY_QUEUE_ADDR);
     if (_readyQueue == MAP_FAILED) {
@@ -318,7 +318,7 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_1;
     }
 
-    _finiQueueIdx = 0; //NOTE: This may not be true if the Manager is not restarted
+    _finiQueueIdx = 0;
     _finiQueue = (fini_task_t *)mmap(NULL, sizeof(fini_task_t)*FINI_QUEUE_LEN,
         PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, FINI_QUEUE_ADDR);
     if (_finiQueue == MAP_FAILED) {
@@ -327,8 +327,9 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_3;
     }
 
-    _AsyncRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, ASYNC_RST_ADDR);
-    if (_AsyncRst == MAP_FAILED) {
+    _asyncRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE,
+        MAP_SHARED, _gpioctrlFd, ASYNC_RST_ADDR);
+    if (_asyncRst == MAP_FAILED) {
         ret = XTASKS_EFILE;
         INIT_ERR_5: munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
         goto INIT_ERR_4;
@@ -337,7 +338,7 @@ xtasks_stat xtasksInit()
     //Reset _readyQueue and _finiQueue indexes
     if (resetQueueIdx() != XTASKS_SUCCESS) {
         ret = XTASKS_EFILE;
-        INIT_ERR_6: munmap((void *)_AsyncRst, sizeof(uint32_t));
+        INIT_ERR_6: munmap((void *)_asyncRst, sizeof(uint32_t));
         goto INIT_ERR_5;
     }
 
@@ -396,7 +397,6 @@ xtasks_stat xtasksFini()
     }
     _tasksBuff = NULL;
     _tasksBuffPhy = NULL;
-    _AsyncRst = NULL;
 
     //Finialize the HW instrumentation
     if (finiHWIns() != XTASKS_SUCCESS) {
@@ -412,7 +412,7 @@ xtasks_stat xtasksFini()
     if (status < 0) {
         ret = XTASKS_EFILE;
     }
-    status = munmap((void *)_AsyncRst, sizeof(uint32_t));
+    status = munmap((void *)_asyncRst, sizeof(uint32_t));
     if (status < 0) {
         ret = XTASKS_EFILE;
     }
