@@ -26,18 +26,15 @@
 */
 
 #include "libxtasks.h"
+#include "util/common.h"
 #include "util/queue.h"
 
 #include <libxdma.h>
 #include <libxdma_version.h>
-#include <sys/auxv.h>
 #include <elf.h>
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
 #include <stddef.h>
 
-#define STR_BUFFER_SIZE     128
 #define MAX_CNT_FIN_TASKS   16              ///< Max. number of finished tasks processed for other accels before return
 
 #define HW_TASK_HEAD_BYTES  24              ///< Size of hw_task_t without the args field
@@ -103,14 +100,6 @@ static hw_task_t *          _tasksBuff;         ///< Buffer to send the HW tasks
 static hw_task_t *          _tasksBuffPhy;      ///< Physical address of _tasksBuff
 static xdma_buf_handle      _tasksBuffHandle;   ///< Handle of _tasksBuff in libxdma
 static task_t *             _tasks;             ///< Array with internal task information
-
-static void printErrorMsgCfgFile()
-{
-    fprintf(stderr, "ERROR: xTasks Library requires reading a '.xtasks.config' file to obtain the");
-    fprintf(stderr, "current FPGA configuration\n");
-    fprintf(stderr, "       However, XTASKS_CONFIG_FILE environment variable was not defined and");
-    fprintf(stderr, "library was not able to build the filename based on the application binary\n");
-}
 
 static xtasks_stat initHWIns()
 {
@@ -182,53 +171,21 @@ xtasks_stat xtasksInit()
     }
 
     //Generate the configuration file path
-    char * buffer = malloc(sizeof(char)*STR_BUFFER_SIZE);
+    char * buffer = getConfigFilePath();
     if (buffer == NULL) {
-        ret = XTASKS_ENOMEM;
+        printErrorMsgCfgFile();
+        ret = XTASKS_EFILE;
         INIT_ERR_2: free(_accs);
         goto INIT_ERR_1;
     }
-    const char * accMapPath = getenv("XTASKS_CONFIG_FILE"); //< 1st, environment var
-    if (accMapPath == NULL) {
-        accMapPath = (const char *)getauxval(AT_EXECFN); //< Get executable file path
-        if ((strlen(accMapPath) + 14) > STR_BUFFER_SIZE) {
-            free(buffer);
-            buffer = malloc(sizeof(char)*(strlen(accMapPath) + 14));
-        }
-        strcpy(buffer, accMapPath);
-        accMapPath = strcat(buffer, ".xtasks.config"); //< 2nd, exec file
-        if (access(accMapPath, R_OK) == -1) {
-            accMapPath = strrchr(accMapPath, '/'); //< 3rd, exec file in current dir
-            if (accMapPath == NULL) {
-                printErrorMsgCfgFile();
-                ret = XTASKS_ERROR;
-                INIT_ERR_3: free(buffer);
-                goto INIT_ERR_2;
-            }
-            accMapPath++;
-
-            /** LEGACY FALLBACK **/
-            if (access(accMapPath, R_OK) == -1) {
-                strcpy(buffer, (const char *)getauxval(AT_EXECFN));
-                accMapPath = strcat(buffer, ".nanox.config"); //< 4th, exec file but .nanox.config
-                if (access(accMapPath, R_OK) == -1) {
-                    printErrorMsgCfgFile();
-                    ret = XTASKS_ERROR;
-                    goto INIT_ERR_2;
-                }
-                fprintf(stderr, "WARNING: Using '%s' as xTasks config for legacy ", accMapPath);
-                fprintf(stderr, "(the preferred extension is .xtasks.config).\n");
-            }
-            /** END OF FALLBACK **/
-        }
-    }
 
     //Open the configuration file and parse it
-    FILE * accMapFile = fopen(accMapPath, "r");
+    FILE * accMapFile = fopen(buffer, "r");
     if (accMapFile == NULL) {
-        fprintf(stderr, "ERROR: Cannot open file %s to read current FPGA configuration\n", accMapPath);
+        fprintf(stderr, "ERROR: Cannot open file %s to read current FPGA configuration\n", buffer);
         ret = XTASKS_EFILE;
-        goto INIT_ERR_3;
+        INIT_ERR_3: free(buffer);
+        goto INIT_ERR_2;
     }
     //NOTE: Assuming that the lines contain <128 characters
     buffer = fgets(buffer, STR_BUFFER_SIZE, accMapFile); //< Ignore 1st line, headers
