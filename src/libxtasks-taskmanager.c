@@ -70,13 +70,13 @@ typedef struct {
 
 //! \brief Ready task buffer element representation
 typedef struct __attribute__ ((__packed__)) {
-    uint64_t   taskPointer;  //[0  :63 ] Pointer to the Task info structure
-    uint16_t   argsBitmask;  //[64 :79 ] Bitmask defining if the arguments are ready or not
+    uint64_t   taskInfoAddr;  //[0  :63 ] Physical address to the Task info structure
+    uint16_t   argsBitmask;   //[64 :79 ] Bitmask defining if the arguments are ready or not
     uint16_t   _padding1;
-    uint8_t    size;         //[96 :103] Size of Task Info structure in words (of 64 bits)
+    uint8_t    taskSize;      //[96 :103] Size of Task Info structure in words (of 64 bits)
     uint8_t    _padding2;
-    uint8_t    destID;       //[112:119] Destination ID where the task will be sent
-    uint8_t    valid;        //[120:127] Valid Entry
+    uint8_t    accID;         //[112:119] Accelerator ID where the task will be sent
+    uint8_t    valid;         //[120:127] Valid Entry
 } ready_task_t;
 
 //! \brief Finished task buffer representation
@@ -89,21 +89,21 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief Task argument representation in task_info
 typedef struct __attribute__ ((__packed__)) {
-    uint32_t cacheFlags; //[0  :31 ] Flags
-    uint32_t paramId;	 //[32 :63 ] Argument ID
-    uint64_t address;	 //[64 :127] Address
+    uint32_t argCached; //[0  :31 ] Flags
+    uint32_t argID;     //[32 :63 ] Argument ID
+    uint64_t argAddr;   //[64 :127] Address
 } task_info_arg_t;
 
 //! \brief Task information for the accelerator
 typedef struct __attribute__ ((__packed__)) {
-    uint64_t taskID;                          //[0  :63 ] Task identifier
+    uint64_t taskID;                         //[0  :63 ] Task identifier
     struct {
-        uint64_t timer;                       //[64 :127] Timer address for instrumentation
-        uint64_t buffer;                      //[128:191] Buffer address to store instrumentation info
+        uint64_t timerAddr;                  //[64 :127] Timer address for instrumentation
+        uint64_t bufferAddr;                 //[128:191] Buffer address to store instrumentation info
     } profile;
-    uint32_t compute;                         //[192:223] Compute flag
-    uint32_t destID;                          //[224:255] Destination ID where the accelerator will send the 'complete' signal
-    task_info_arg_t args[HW_TASK_NUM_ARGS]; //[   :   ] Task arguments info
+    uint32_t compute;                        //[192:223] Compute flag
+    uint32_t destID;                         //[224:255] Destination ID where the accelerator will send the 'complete' signal
+    task_info_arg_t args[HW_TASK_NUM_ARGS];  //[   :   ] Task arguments info
 } task_info_t;
 
 //! \brief Internal library task information
@@ -452,14 +452,14 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     _tasks[idx].argsCnt = 0;
     _tasks[idx].accel = accel;
     _tasks[idx].hwTask->taskID = (uintptr_t)(&_tasks[idx]);
-    _tasks[idx].hwTask->profile.timer = _insTimerAddr;
-    _tasks[idx].hwTask->profile.buffer = (uintptr_t)(&_insBuffPhy[idx]);
+    _tasks[idx].hwTask->profile.timerAddr = _insTimerAddr;
+    _tasks[idx].hwTask->profile.bufferAddr = (uintptr_t)(&_insBuffPhy[idx]);
     _tasks[idx].hwTask->compute = compute;
     _tasks[idx].hwTask->destID = HW_TASK_DEST_ID_TM;
-    _tasks[idx].tmTask.taskPointer = (uintptr_t)(&_tasksBuffPhy[idx]);
+    _tasks[idx].tmTask.taskInfoAddr = (uintptr_t)(&_tasksBuffPhy[idx]);
     _tasks[idx].tmTask.argsBitmask = 0xFFFF; //All will be ready
     //_tasks[idx].tmTask.size = ?¿; //Computed at submit
-    _tasks[idx].tmTask.destID = accel->info.id;
+    _tasks[idx].tmTask.accID = accel->info.id;
     _tasks[idx].tmTask.valid = 0; //Not ready yet
 
     *handle = (xtasks_task_handle)&_tasks[idx];
@@ -486,9 +486,9 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
     }
 
     size_t idx = task->argsCnt++;
-    task->hwTask->args[idx].cacheFlags = flags;
-    task->hwTask->args[idx].paramId = idx;
-    task->hwTask->args[idx].address = value;
+    task->hwTask->args[idx].argCached = flags;
+    task->hwTask->args[idx].argID = idx;
+    task->hwTask->args[idx].argAddr = value;
 
     return XTASKS_SUCCESS;
 }
@@ -503,9 +503,9 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
     }
 
     for (size_t i = 0, idx = task->argsCnt; i < num; ++i, ++idx) {
-        task->hwTask->args[idx].cacheFlags = flags;
-        task->hwTask->args[idx].paramId = idx;
-        task->hwTask->args[idx].address = values[i];
+        task->hwTask->args[idx].argCached = flags;
+        task->hwTask->args[idx].argID = idx;
+        task->hwTask->args[idx].argAddr = values[i];
     }
     task->argsCnt += num;
 
@@ -530,7 +530,7 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     // NOTE: For now, already there
 
     // Copy the ready task structure into the BRAM
-    task->tmTask.size = (HW_TASK_HEAD_BYTES + task->argsCnt*sizeof(task_info_arg_t)) /
+    task->tmTask.taskSize = (HW_TASK_HEAD_BYTES + task->argsCnt*sizeof(task_info_arg_t)) /
         sizeof(uint64_t);
     memcpy(&_readyQueue[idx], &task->tmTask, sizeof(ready_task_t));
     __sync_synchronize();
