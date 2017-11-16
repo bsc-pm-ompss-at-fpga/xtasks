@@ -200,7 +200,7 @@ xtasks_stat xtasksInit()
     while (fscanf(accMapFile, "%u %zu %s", &t, &num, buffer) == 3) { //< Parse the file
     //while (fgets(buffer, STR_BUFFER_SIZE, accMapFile)) {
         total += num;
-        for (size_t i = total - num; i < total && total <= _numAccs; ++i) {
+        for (size_t i = total - num; i < total && i < _numAccs; ++i) {
             _accs[i].info.id = i;
             _accs[i].info.type = t;
             _accs[i].info.description = _accs[i].descBuffer;
