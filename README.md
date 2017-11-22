@@ -34,10 +34,10 @@ The supported variables are:
  - `CROSS_COMPILE`
  - `CFLAGS`
  - `LDFLAGS`
- - `LIBXDMA_DIR`. Installation directory of libxdma library (Default: `/opt/install-arm/libxdma`)
+ - `LIBXDMA_DIR`. Installation directory of libxdma library
     - `LIBXDMA_INC_DIR`. Installation directory of includes for libxdma (Default: `$LIBXDMA_DIR/include`)
     - `LIBXDMA_LIB_DIR`. Installation directory of OS libraries for libxdma (Default: `$LIBXDMA_DIR/lib`)
- - `LIBPICOS_DIR`. Installation directory of libpicos library (Default: `/opt/install-arm/libpicos`)
+ - `LIBPICOS_DIR`. Installation directory of libpicos library
     - `LIBPICOS_INC_DIR`. Installation directory of includes for libpicos (Default: `$LIBPICOS_DIR/include`)
     - `LIBPICOS_LIB_DIR`. Installation directory of OS libraries for libpicos (Default: `$LIBPICOS_DIR/lib`)
 
