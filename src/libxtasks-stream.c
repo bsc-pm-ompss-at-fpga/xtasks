@@ -107,11 +107,13 @@ static xtasks_stat initHWIns()
     xdma_status s;
     s = xdmaAllocateKernelBuffer((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
     if (s != XDMA_SUCCESS) {
+        PRINT_ERROR("Cannot allocate kernel buffer for instrumentation");
         return XTASKS_ERROR;
     }
     unsigned long phyAddr;
     s = xdmaGetDMAAddress(_insBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
+        PRINT_ERROR("Cannot get physical address of instrumentation buffer");
         xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
         _insBuff = NULL;
         return XTASKS_ERROR;
@@ -149,6 +151,7 @@ xtasks_stat xtasksInit()
     //Open libxdma
     if (xdmaOpen() != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
+        PRINT_ERROR("xdmaOpen failed");
         INIT_ERR_0: __sync_sub_and_fetch(&_init_cnt, 1);
         return ret;
     }
@@ -157,6 +160,7 @@ xtasks_stat xtasksInit()
     int xdmaDevices;
     if (xdmaGetNumDevices(&xdmaDevices) != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
+        PRINT_ERROR("xdmaGetNumDevices failed");
         INIT_ERR_1: _numAccs = 0;
         xdmaClose();
         goto INIT_ERR_0;
@@ -167,14 +171,15 @@ xtasks_stat xtasksInit()
     _accs = malloc(sizeof(acc_t)*_numAccs);
     if (_accs == NULL) {
         ret = XTASKS_ENOMEM;
+        PRINT_ERROR("Cannot allocate memory for accelerators info");
         goto INIT_ERR_1;
     }
 
     //Generate the configuration file path
     char * buffer = getConfigFilePath();
     if (buffer == NULL) {
-        printErrorMsgCfgFile();
         ret = XTASKS_EFILE;
+        printErrorMsgCfgFile();
         INIT_ERR_2: free(_accs);
         goto INIT_ERR_1;
     }
@@ -182,8 +187,8 @@ xtasks_stat xtasksInit()
     //Open the configuration file and parse it
     FILE * accMapFile = fopen(buffer, "r");
     if (accMapFile == NULL) {
-        fprintf(stderr, "ERROR: Cannot open file %s to read current FPGA configuration\n", buffer);
         ret = XTASKS_EFILE;
+        PRINT_ERROR("Cannot open FPGA configuration file");
         INIT_ERR_3: free(buffer);
         goto INIT_ERR_2;
     }
@@ -191,6 +196,7 @@ xtasks_stat xtasksInit()
     buffer = fgets(buffer, STR_BUFFER_SIZE, accMapFile); //< Ignore 1st line, headers
     if (buffer == NULL) {
         ret = XTASKS_ERROR;
+        PRINT_ERROR("First line of FPGA configuration file is not valid");
         fclose(accMapFile);
         goto INIT_ERR_3;
     }
@@ -238,6 +244,7 @@ xtasks_stat xtasksInit()
     //Init HW instrumentation
     if (initHWIns() != XTASKS_SUCCESS) {
         ret = XTASKS_EFILE;
+        //NOTE: PRINT_ERROR done inside the function
         goto INIT_ERR_2;
     }
 
@@ -246,6 +253,7 @@ xtasks_stat xtasksInit()
     s = xdmaAllocateKernelBuffer((void**)&_tasksBuff, &_tasksBuffHandle, NUM_RUN_TASKS*sizeof(hw_task_t));
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
+        PRINT_ERROR("Cannot allocate kernel memory for task information");
         INIT_ERR_4: finiHWIns();
         _tasksBuff = NULL;
         _tasksBuffPhy = NULL;
@@ -255,6 +263,7 @@ xtasks_stat xtasksInit()
     s = xdmaGetDMAAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
+        PRINT_ERROR("Cannot get physical address of task info. region");
         INIT_ERR_5: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
         goto INIT_ERR_4;
     }
@@ -264,6 +273,7 @@ xtasks_stat xtasksInit()
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
     if (_tasks == NULL) {
         ret = XTASKS_ENOMEM;
+        PRINT_ERROR("Cannot allocate memory for tasks");
         goto INIT_ERR_5;
     }
     memset(_tasks, 0, NUM_RUN_TASKS*sizeof(task_t));

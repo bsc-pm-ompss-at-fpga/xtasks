@@ -71,6 +71,7 @@ xtasks_stat xtasksInit()
     //Initialize libpicos
     if (picosInitializeDef() != PICOS_SUCCESS) {
         ret = XTASKS_ERROR;
+        PRINT_ERROR("picosInitialize failed");
         return ret;
     }
 
@@ -79,6 +80,7 @@ xtasks_stat xtasksInit()
     _accs = malloc(sizeof(acc_t)*_numAccs);
     if (_accs == NULL) {
         ret = XTASKS_ENOMEM;
+        PRINT_ERROR("Cannot allocate memory for accelerators info");
         INIT_ERR_0: picosShutdown();
         return ret;
     }
@@ -86,8 +88,8 @@ xtasks_stat xtasksInit()
     //Generate the configuration file path
     char * buffer = getConfigFilePath();
     if (buffer == NULL) {
-        printErrorMsgCfgFile();
         ret = XTASKS_EFILE;
+        printErrorMsgCfgFile();
         INIT_ERR_1: free(_accs);
         _numAccs = 0;
         goto INIT_ERR_0;
@@ -110,8 +112,8 @@ xtasks_stat xtasksInit()
     //Open the configuration file and parse it
     FILE * accMapFile = fopen(buffer, "r");
     if (accMapFile == NULL) {
-        fprintf(stderr, "ERROR: Cannot open file %s to read current FPGA configuration\n", buffer);
         ret = XTASKS_EFILE;
+        PRINT_ERROR("Cannot open FPGA configuration file");
         INIT_ERR_2: free(buffer);
         goto INIT_ERR_1;
     }
@@ -119,6 +121,7 @@ xtasks_stat xtasksInit()
     buffer = fgets(buffer, STR_BUFFER_SIZE, accMapFile); //< Ignore 1st line, headers
     if (buffer == NULL) {
         ret = XTASKS_ERROR;
+        PRINT_ERROR("First line of FPGA configuration file is not valid");
         fclose(accMapFile);
         goto INIT_ERR_2;
     }
@@ -163,6 +166,7 @@ xtasks_stat xtasksInit()
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
     if (_tasks == NULL) {
         ret = XTASKS_ENOMEM;
+        PRINT_ERROR("Cannot allocate kernel memory for task information");
         goto INIT_ERR_1;
     }
     memset(_tasks, 0, NUM_RUN_TASKS*sizeof(task_t));

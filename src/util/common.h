@@ -35,6 +35,8 @@
 #include <sys/auxv.h>
 
 #define STR_BUFFER_SIZE     128
+#define PRINT_ERROR(_str_)  fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
+//#define PRINT_ERROR(_str_)
 
 #define XTASKS_EXTENSION ".xtasks.config"
 #define NANOX_EXTENSION ".nanox.config"
