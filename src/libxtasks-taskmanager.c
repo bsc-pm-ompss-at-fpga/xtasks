@@ -281,6 +281,11 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_1;
     }
 
+    //Ensure that readyQueue is empty
+    for (size_t idx = 0; idx < READY_QUEUE_LEN; ++idx) {
+        _readyQueue[idx].valid = FREE_ENTRY_MASK;
+    }
+
     _finiQueueIdx = 0;
     _finiQueue = (fini_task_t *)mmap(NULL, sizeof(fini_task_t)*FINI_QUEUE_LEN,
         PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, FINI_QUEUE_ADDR);
@@ -474,7 +479,7 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     _tasks[idx].tmTask.argsBitmask = 0xFFFF; //All will be ready
     //_tasks[idx].tmTask.size = ?¿; //Computed at submit
     _tasks[idx].tmTask.accID = accel->info.id;
-    _tasks[idx].tmTask.valid = 0; //Not ready yet
+    _tasks[idx].tmTask.valid = FREE_ENTRY_MASK; //Not ready yet
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
