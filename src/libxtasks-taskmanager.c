@@ -50,7 +50,7 @@
 #define FREE_ENTRY_MASK         0
 #define HW_TASK_HEAD_BYTES      24              //NOTE: Actually 32 bytes, but taskID is not taken into account when computing taskSize
 #define HW_TASK_NUM_ARGS        14              //NOTE: (256 - HW_TASK_HEAD_BYTES)/sizeof(task_info_arg_t)
-#define INS_BUFFER_SIZE         8192            ///< 2 pages
+#define INS_BUFFER_SIZE         (4096*8)        ///< 8 pages
 #define INS_NUM_ENTRIES         (INS_BUFFER_SIZE/sizeof(xtasks_ins_times))
 #define NUM_RUN_TASKS           INS_NUM_ENTRIES ///< Maximum number of concurrently running tasks
 #define HW_TASK_DEST_ID_PS      0x0000001F      ///< Processing System identifier for the destId field
