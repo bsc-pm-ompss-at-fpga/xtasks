@@ -71,6 +71,7 @@ typedef struct {
     xtasks_acc_id   id;               ///< Accelerator identifier
     xtasks_acc_type type;             ///< Accelerator type identifier
     xtasks_acc_desc description;      ///< Accelerator description
+    size_t          freq;             ///< Accelerator frequency (in MHz)
 } xtasks_acc_info;
 
 typedef struct {
