@@ -52,3 +52,22 @@ Only the supported back-ends are compiled depending on their dependencies.
 make PREFIX=/opt/install-arm/libxtasks install
 ```
 Note that the install step does not create the `libxtasks.so` in the `$PREFIX/lib` directory. You have to create it using one of the compiled back-end libraries.
+
+### Configuration File
+
+xTasks Library reads the current FPGA configuration at each application launch from a formated file.
+The library looks for this file in the following locatations with the descriped filenames and also with the same preference order:
+ 1) Path provided in the `XTASKS_CONFIG_FILE` environment variable.
+ 2) File with name `xtasks.config` in the current folder.
+ 3) File with name `<binary name>.xtasks.config' in the current folder.
+ 4) File with name '<binary name>.xtasks.config' in the same folder of applciation binary.
+
+##### File Format
+
+The configuration file is expected to have the following format:
+ - First line contains the headers info.
+ - One line for each accelerator type with the following information separated by tabs.
+   - Accelerator type identifier (interger number).
+   - Number of instances of such type (positive integer number).
+   - Working frequency in MHz (integer number).
+   - Description (string, max. 128 chars).
