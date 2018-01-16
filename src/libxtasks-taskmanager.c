@@ -237,7 +237,7 @@ xtasks_stat xtasksInit()
     int retFscanf;
     size_t num, total, freq;
     total = 0;
-    while ((retFscanf = fscanf(accMapFile, "%u %zu %zu %s", &t, &num, &freq, buffer)) == 4) { //< Parse the file
+    while ((retFscanf = fscanf(accMapFile, "%u %zu %s %zu", &t, &num, buffer, &freq)) == 4) { //< Parse the file
         //while (fgets(buffer, STR_BUFFER_SIZE, accMapFile)) {
         total += num;
         if (total > _numAccs) {
