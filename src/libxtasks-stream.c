@@ -202,9 +202,10 @@ xtasks_stat xtasksInit()
     }
     xtasks_acc_type t;
     int retFscanf;
-    size_t num, total, freq;
+    float freq;
+    size_t num, total;
     total = 0;
-    while ((retFscanf = fscanf(accMapFile, "%u %zu %s %zu", &t, &num, buffer, &freq)) == 4) { //< Parse the file
+    while ((retFscanf = fscanf(accMapFile, "%u %zu %s %f", &t, &num, buffer, &freq)) == 4) { //< Parse the file
     //while (fgets(buffer, STR_BUFFER_SIZE, accMapFile)) {
         total += num;
         for (size_t i = total - num; i < total && i < _numAccs; ++i) {
