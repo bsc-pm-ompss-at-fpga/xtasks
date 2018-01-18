@@ -69,5 +69,5 @@ The configuration file is expected to have the following format:
  - One line for each accelerator type with the following information separated by tabs.
    - Accelerator type identifier (interger number).
    - Number of instances of such type (positive integer number).
-   - Working frequency in MHz (integer number).
    - Description (string, max. 128 chars).
+   - Working frequency in MHz (floating point number).
