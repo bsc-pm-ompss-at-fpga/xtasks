@@ -59,8 +59,8 @@ xTasks Library reads the current FPGA configuration at each application launch f
 The library looks for this file in the following locatations with the descriped filenames and also with the same preference order:
  1) Path provided in the `XTASKS_CONFIG_FILE` environment variable.
  2) File with name `xtasks.config` in the current folder.
- 3) File with name `<binary name>.xtasks.config' in the current folder.
- 4) File with name '<binary name>.xtasks.config' in the same folder of applciation binary.
+ 3) File with name `<binary name>.xtasks.config` in the current folder.
+ 4) File with name `<binary name>.xtasks.config` in the same folder of applciation binary.
 
 ##### File Format
 
