@@ -201,20 +201,28 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_3;
     }
     xtasks_acc_type t;
+    int retFscanf;
+    float freq;
     size_t num, total;
     total = 0;
-    while (fscanf(accMapFile, "%u %zu %s", &t, &num, buffer) == 3) { //< Parse the file
+    while ((retFscanf = fscanf(accMapFile, "%u %zu %s %f", &t, &num, buffer, &freq)) == 4) { //< Parse the file
     //while (fgets(buffer, STR_BUFFER_SIZE, accMapFile)) {
         total += num;
         for (size_t i = total - num; i < total && i < _numAccs; ++i) {
             _accs[i].info.id = i;
             _accs[i].info.type = t;
+            _accs[i].info.freq = freq;
             _accs[i].info.description = _accs[i].descBuffer;
             strcpy(_accs[i].descBuffer, buffer);
         }
     }
     fclose(accMapFile);
     free(buffer);
+
+    if (retFscanf != EOF) {
+        //Looks like the configuration file doesn't match the expected format
+        fprintf(stderr, "WARN: xTasks configuration file may be not well formated.\n");
+    }
 
     //Update number of accelerators
     if (total > _numAccs) {
