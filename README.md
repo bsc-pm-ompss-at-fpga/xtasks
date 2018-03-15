@@ -16,7 +16,7 @@ Moreover, the installation path of some required libraries must be provided duri
 |     | stream | taskmanager | picos |
 | --- | :----: | :---------: | :---: |
 | [libxdma](https://pm.bsc.es/gitlab/ompss-at-fpga/xdma) (version >= 1.0) | X | X |   |
-| [libpicos](https://pm.bsc.es/gitlab/jbosch/picos) (minimum commit [`3189090d`](https://pm.bsc.es/gitlab/jbosch/picos/commit/3189090d6513932fd530856ae4d3aac871a604f4)) |   |   | X |
+| [libpicos](https://pm.bsc.es/gitlab/picos/libpicos) (minimum commit [`3189090d`](https://pm.bsc.es/gitlab/picos/libpicos/commit/3189090d6513932fd530856ae4d3aac871a604f4)) |   |   | X |
 | [autoVivado](https://pm.bsc.es/gitlab/ompss-at-fpga/autoVivado) (bitstream generated using minimum commit [`ea99f20e`](https://pm.bsc.es/gitlab/ompss-at-fpga/autoVivado/commit/ea99f20e112f1c6721ac6767823f84bc78bb66c8)) |   | X |   |
 
 ##### Instructions
