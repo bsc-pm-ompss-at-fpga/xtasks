@@ -41,9 +41,15 @@
 #define MAX_CNT_FIN_TASKS       16              ///< Max. number of finished tasks processed for other accels before return
 
 #define GPIOCTRL_FILEPATH       "/dev/gpioctrl"
-#define READY_QUEUE_ADDR        0x80004000
-#define FINI_QUEUE_ADDR         0x80008000
-#define ASYNC_RST_ADDR          0x8000C000
+#if __aarch64__
+# define READY_QUEUE_ADDR        0xB0004000
+# define FINI_QUEUE_ADDR         0xB0008000
+# define ASYNC_RST_ADDR          0xB000C000
+#else //ARMv5
+# define READY_QUEUE_ADDR        0x80004000
+# define FINI_QUEUE_ADDR         0x80008000
+# define ASYNC_RST_ADDR          0x8000C000
+#endif
 #define READY_QUEUE_LEN         1024
 #define FINI_QUEUE_LEN          1024
 #define VALID_ENTRY_MASK        0x80
