@@ -460,10 +460,8 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
-xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
+static xtasks_stat xtasksWaitTaskInternal(task_t * task)
 {
-    task_t * task = (task_t *)(handle);
-
     xdma_status retD, retS;
     retD = xdmaWaitTransfer(task->descriptorTx);
     retS = xdmaWaitTransfer(task->syncTx);
@@ -471,17 +469,20 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
     return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
-#if 0
-static xtasks_stat xtasksTryWaitTask(task_t * const task)
+xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 {
-    xdma_status retD, retS;
-    retD = xdmaTestTransfer(task->descriptorTx);
-    retS = xdmaTestTransfer(task->syncTx);
+    task_t * task = (task_t *)(handle);
 
-    return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS :
-           (retD == XDMA_PENDING || retS == XDMA_PENDING) ? XTASKS_PENDING : XTASKS_ERROR;
+    if (task != (task_t *)queueFront(task->accel->tasksQueue)) {
+        //Only waiting for the first task of the queue is supported
+        return XTASKS_PENDING;
+    } else if (task != (task_t *)queueTryPop(task->accel->tasksQueue)) {
+        //Some other thread stoled the task from the queue (in previous check tasks matched)
+        return XTASKS_ERROR;
+    }
+
+    return xtasksWaitTaskInternal(task);
 }
-#endif
 
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id)
 {
@@ -517,7 +518,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
 #else
     task_t * t = (task_t *)queueTryPop(acc->tasksQueue);
     if (t != NULL) {
-        ret = xtasksWaitTask(t);
+        ret = xtasksWaitTaskInternal(t);
         *task = (xtasks_task_handle)t;
         *id = (xtasks_task_id)t->id;
     }
