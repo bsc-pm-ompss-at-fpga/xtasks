@@ -17,7 +17,7 @@ Moreover, the installation path of some required libraries must be provided duri
 | --- | :----: | :---------: | :---: |
 | [libxdma](https://pm.bsc.es/gitlab/ompss-at-fpga/xdma) (version >= 1.0) | X | X |   |
 | [libpicos](https://pm.bsc.es/gitlab/picos/libpicos) (minimum commit [`3189090d`](https://pm.bsc.es/gitlab/picos/libpicos/commit/3189090d6513932fd530856ae4d3aac871a604f4)) |   |   | X |
-| [autoVivado](https://pm.bsc.es/gitlab/ompss-at-fpga/autoVivado) (bitstream generated using minimum commit [`ea99f20e`](https://pm.bsc.es/gitlab/ompss-at-fpga/autoVivado/commit/ea99f20e112f1c6721ac6767823f84bc78bb66c8)) |   | X |   |
+| [autoVivado](https://pm.bsc.es/gitlab/ompss-at-fpga/autoVivado) (bitstream generated using minimum commit [`934a3e27`](https://pm.bsc.es/gitlab/ompss-at-fpga/autoVivado/commit/934a3e27e580e5a4bd6138d8c3428c5d910b06ad)) |   | X |   |
 
 ##### Instructions
 1. Clone the repository or download the latest stable version.
@@ -71,3 +71,13 @@ The configuration file is expected to have the following format:
    - Number of instances of such type (positive integer number).
    - Description (string, max. 128 chars).
    - Working frequency in MHz (floating point number).
+ 
+### Additional info
+##### Execution requirements
+
+Additional requirements during execution, not during libxtasks build.
+
+|     | stream | taskmanager | picos |
+| --- | :----: | :---------: | :---: |
+| [XDMA Driver](https://pm.bsc.es/gitlab/ompss-at-fpga/xdma) | X | X | X |
+| [TaskManager Driver](https://pm.bsc.es/gitlab/ompss-at-fpga/taskmanager-driver) |   | X |   |
