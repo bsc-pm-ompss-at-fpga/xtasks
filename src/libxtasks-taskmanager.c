@@ -40,16 +40,21 @@
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 #define MAX_CNT_FIN_TASKS       16              ///< Max. number of finished tasks processed for other accels before return
 
-#define GPIOCTRL_FILEPATH       "/dev/gpioctrl"
-#if __aarch64__
-# define READY_QUEUE_ADDR        0xB0004000
-# define FINI_QUEUE_ADDR         0xB0008000
-# define ASYNC_RST_ADDR          0xB000C000
-#else //ARMv5
-# define READY_QUEUE_ADDR        0x80004000
-# define FINI_QUEUE_ADDR         0x80008000
-# define ASYNC_RST_ADDR          0x8000C000
-#endif
+//#define GPIOCTRL_FILEPATH       "/dev/gpioctrl"
+//#if __aarch64__
+//# define READY_QUEUE_ADDR        0xB0004000
+//# define FINI_QUEUE_ADDR         0xB0008000
+//# define ASYNC_RST_ADDR          0xB000C000
+//#else //ARMv5
+//# define READY_QUEUE_ADDR        0x80004000
+//# define FINI_QUEUE_ADDR         0x80008000
+//# define ASYNC_RST_ADDR          0x8000C000
+//#endif
+
+#define READY_QUEUE_PATH        "/dev/taskmanager/ready_queue"
+#define FINI_QUEUE_PATH         "/dev/taskmanager/finished_queue"
+#define ASYNC_RST_PATH          "/dev/taskmanager/ctrl"
+
 #define READY_QUEUE_LEN         1024
 #define FINI_QUEUE_LEN          1024
 #define VALID_ENTRY_MASK        0x80
@@ -134,7 +139,9 @@ static task_info_t *        _tasksBuff;         ///< Buffer to send the HW tasks
 static task_info_t *        _tasksBuffPhy;      ///< Physical address of _tasksBuff
 static xdma_buf_handle      _tasksBuffHandle;   ///< Handle of _tasksBuff in libxdma
 static task_t *             _tasks;             ///< Array with internal task information
-static int                  _gpioctrlFd;        ///< File descriptior of gpioctrl device
+static int                  _readyQFd;          ///< File descriptior of gpioctrl device
+static int                  _finiQFd;           ///< File descriptior of gpioctrl device
+static int                  _ctrlFd;            ///< File descriptior of gpioctrl device
 static ready_task_t        *_readyQueue;        ///< Buffer for the ready tasks
 static size_t               _readyQueueIdx;     ///< Writing index of the _readyQueue
 static fini_task_t         *_finiQueue;         ///< Buffer for the finished tasks
@@ -279,20 +286,28 @@ xtasks_stat xtasksInit()
     }
 
     //Open and map the Task Manager queues into library memory
-    _gpioctrlFd = open(GPIOCTRL_FILEPATH, O_RDWR, (mode_t) 0600);
-    if (_gpioctrlFd == -1) {
+    _readyQFd = open(READY_QUEUE_PATH, O_RDWR, (mode_t) 0600);
+    _finiQFd = open(FINI_QUEUE_PATH, O_RDWR, (mode_t) 0600);
+    _ctrlFd = open(ASYNC_RST_PATH, O_RDWR, (mode_t) 0600);
+    if (_readyQFd < 0 || _finiQFd < 0 || _ctrlFd < 0) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot open gpioctrl");
+        PRINT_ERROR("Cannot open taskmanager device files");
+        close(_readyQFd);
+        close(_finiQFd);
+        close(_ctrlFd);
         goto INIT_ERR_1;
     }
 
     _readyQueueIdx = 0;
     _readyQueue = (ready_task_t *)mmap(NULL, sizeof(ready_task_t)*READY_QUEUE_LEN,
-        PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, READY_QUEUE_ADDR);
+        PROT_READ | PROT_WRITE, MAP_SHARED, _readyQFd, 0);
     if (_readyQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map ready queue of Task Manager");
-        INIT_ERR_3: close(_gpioctrlFd);
+        INIT_ERR_3:
+        close(_readyQFd);
+        close(_finiQFd);
+        close(_ctrlFd);
         goto INIT_ERR_1;
     }
 
@@ -303,7 +318,7 @@ xtasks_stat xtasksInit()
 
     _finiQueueIdx = 0;
     _finiQueue = (fini_task_t *)mmap(NULL, sizeof(fini_task_t)*FINI_QUEUE_LEN,
-        PROT_READ | PROT_WRITE, MAP_SHARED, _gpioctrlFd, FINI_QUEUE_ADDR);
+        PROT_READ | PROT_WRITE, MAP_SHARED, _finiQFd, 0);
     if (_finiQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map finish queue of Task Manager");
@@ -312,7 +327,7 @@ xtasks_stat xtasksInit()
     }
 
     _asyncRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE,
-        MAP_SHARED, _gpioctrlFd, ASYNC_RST_ADDR);
+        MAP_SHARED, _ctrlFd, 0);
     if (_asyncRst == MAP_FAILED) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map control registers of Task Manager");
@@ -406,8 +421,12 @@ xtasks_stat xtasksFini()
     if (status < 0) {
         ret = XTASKS_EFILE;
     }
-    status = close(_gpioctrlFd);
-    if (status == -1) {
+    int statusRd, statusFi, statusCtrl;
+    statusRd = close(_readyQFd);
+    statusFi = close(_finiQFd);
+    statusCtrl = close(_ctrlFd);
+
+    if (statusRd == -1 || statusFi == -1 || statusCtrl == -1) {
         ret = XTASKS_EFILE;
     }
 
