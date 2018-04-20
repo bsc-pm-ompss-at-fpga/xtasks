@@ -602,6 +602,7 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
         xtasks_task_id id;
         xtasks_task_handle h;
         xtasksTryGetFinishedTask(&h, &id);
+        //NOTE: If wrong tasks are queued, when they will be dequeued?
     }
     return tries > MAX_WAIT_TASKS_TRIES ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
