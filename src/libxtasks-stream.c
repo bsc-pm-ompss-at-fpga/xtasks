@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2017, BSC (Barcelona Supercomputing Center)
+* Copyright (c) 2017-2018, BSC (Barcelona Supercomputing Center)
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -536,4 +536,9 @@ xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_
     *times = &_insBuff[idx];
 
     return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksTryGetNewTask(xtasks_newtask * task)
+{
+    return XTASKS_ENOSYS;
 }
