@@ -59,6 +59,7 @@ libxtasks-picos.so: libxtasks-picos.o
 .PHONY: libxtasks_version.h
 libxtasks_version.h: ./src/libxtasks_version_template.h
 	@head -n 6 $^ >$@
+ifeq (x$(shell git rev-parse --is-bare-repository 2>/dev/null), xfalse)
 	@echo "/* Build commit" >>$@
 	git show -s >>$@
 	@echo "*/" >>$@
@@ -68,6 +69,10 @@ libxtasks_version.h: ./src/libxtasks_version_template.h
 	@echo "/* Build branch and status" >>$@
 	git status -b -s >>$@
 	@echo "*/" >>$@
+else
+	@echo "#define LIBXDMA_VERSION_COMMIT \\" >>$@
+	@echo "unknown" >>$@
+endif
 	@tail -n 2 $^ >>$@
 
 install: $(TARGETS_) ./src/libxtasks.h libxtasks_version.h
