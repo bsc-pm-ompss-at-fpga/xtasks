@@ -415,7 +415,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksTryGetNewTask(xtasks_newtask * task)
+xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
     return XTASKS_ENOSYS;
 }
