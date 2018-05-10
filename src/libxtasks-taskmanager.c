@@ -326,6 +326,11 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_3;
     }
 
+    //If any, invalidate finished tasks in finiQueue
+    for (size_t idx = 0; idx < FINI_QUEUE_LEN; ++idx) {
+        _finiQueue[idx].valid = FREE_ENTRY_MASK;
+    }
+
     _asyncRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE,
         MAP_SHARED, _ctrlFd, 0);
     if (_asyncRst == MAP_FAILED) {
