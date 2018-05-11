@@ -50,7 +50,7 @@
 #define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
 #define VALID_ENTRY_MASK        0x80
 #define FREE_ENTRY_MASK         0
-#define HW_TASK_HEAD_BYTES      24              //NOTE: Actually 32 bytes, but taskID is not taken into account when computing taskSize
+#define HW_TASK_HEAD_BYTES      32              //NOTE: sizeof(task_info_t) without consider the arguments
 #define HW_TASK_NUM_ARGS        14              //NOTE: (256 - HW_TASK_HEAD_BYTES)/sizeof(task_info_arg_t)
 //NOTE: The number of slots must be at least the number of slots in the ready queue (READY_QUEUE_LEN)
 //      + the number of running tasks (1 foreach accelerator -> _numAccs)

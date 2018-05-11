@@ -37,7 +37,7 @@
 
 #define MAX_CNT_FIN_TASKS   16              ///< Max. number of finished tasks processed for other accels before return
 
-#define HW_TASK_HEAD_BYTES  24              ///< Size of hw_task_t without the args field
+#define HW_TASK_HEAD_BYTES  32              ///< Size of hw_task_t without the args field
 #define HW_TASK_NUM_ARGS    14              ///< (256 - TASK_INFO_HEAD_BYTES)/sizeof(xdma_task_arg)
 #define INS_BUFFER_SIZE     8192            ///< 2 pages
 #define INS_NUM_ENTRIES  (INS_BUFFER_SIZE/sizeof(xtasks_ins_times))
@@ -70,6 +70,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief Task information for the accelerator
 typedef struct __attribute__ ((__packed__)) {
+    uint64_t taskId;                       ///< Task identifier
     struct {
         uint64_t timer;                    ///< Timer address for instrumentation
         uint64_t buffer;                   ///< Buffer address to store instrumentation info
@@ -383,6 +384,7 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     _tasks[idx].hwTask = &_tasksBuff[idx];
     _tasks[idx].argsCnt = 0;
     //_tasks[idx].accel = accel; //NOTE: Done in getFreeTaskEntry()
+    _tasks[idx].hwTask->taskId = (uintptr_t)(&_tasks[idx]);
     _tasks[idx].hwTask->profile.timer = _insTimerAddr;
     _tasks[idx].hwTask->profile.buffer = (uintptr_t)(&_insBuffPhy[idx]);
     _tasks[idx].hwTask->compute = compute;
