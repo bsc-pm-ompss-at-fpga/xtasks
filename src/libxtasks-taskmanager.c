@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2017, BSC (Barcelona Supercomputing Center)
+* Copyright (c) 2018, BSC (Barcelona Supercomputing Center)
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,6 @@
 
 #include "libxtasks.h"
 #include "util/common.h"
-#include "util/queue.h"
 
 #include <libxdma.h>
 #include <libxdma_version.h>
@@ -38,25 +37,15 @@
 #include <sys/mman.h>
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
-#define MAX_CNT_FIN_TASKS       16              ///< Max. number of finished tasks processed for other accels before return
-
-//#define GPIOCTRL_FILEPATH       "/dev/gpioctrl"
-//#if __aarch64__
-//# define READY_QUEUE_ADDR        0xB0004000
-//# define FINI_QUEUE_ADDR         0xB0008000
-//# define ASYNC_RST_ADDR          0xB000C000
-//#else //ARMv5
-//# define READY_QUEUE_ADDR        0x80004000
-//# define FINI_QUEUE_ADDR         0x80008000
-//# define ASYNC_RST_ADDR          0x8000C000
-//#endif
 
 #define READY_QUEUE_PATH        "/dev/taskmanager/ready_queue"
 #define FINI_QUEUE_PATH         "/dev/taskmanager/finished_queue"
 #define ASYNC_RST_PATH          "/dev/taskmanager/ctrl"
 
-#define READY_QUEUE_LEN         1024
-#define FINI_QUEUE_LEN          1024
+#define READY_QUEUE_LEN         1024            ///< Total number of entries in the ready queue
+#define READY_QUEUE_ACC_LEN     32              ///< Number of entries in the sub-queue of ready queue for one accelerator
+#define FINI_QUEUE_LEN          1024            ///< Total number of entries in the finish queue
+#define FINI_QUEUE_ACC_LEN      32              ///< Number of entries in the sub-queue of finish queue for one accelerator
 #define VALID_ENTRY_MASK        0x80
 #define FREE_ENTRY_MASK         0
 #define HW_TASK_HEAD_BYTES      24              //NOTE: Actually 32 bytes, but taskID is not taken into account when computing taskSize
@@ -77,7 +66,8 @@
 typedef struct {
     char            descBuffer[STR_BUFFER_SIZE];
     xtasks_acc_info info;
-    queue_t *       finishedQueue;
+    unsigned short  readyQueueIdx;     ///< Writing index of the accelerator sub-queue in the ready queue
+    unsigned short  finiQueueIdx;      ///< Reading index of the accelerator sub-queue in the finished queue
 } acc_t;
 
 //! \brief Ready task buffer element representation
@@ -143,9 +133,7 @@ static int                  _readyQFd;          ///< File descriptior of gpioctr
 static int                  _finiQFd;           ///< File descriptior of gpioctrl device
 static int                  _ctrlFd;            ///< File descriptior of gpioctrl device
 static ready_task_t        *_readyQueue;        ///< Buffer for the ready tasks
-static size_t               _readyQueueIdx;     ///< Writing index of the _readyQueue
 static fini_task_t         *_finiQueue;         ///< Buffer for the finished tasks
-static size_t               _finiQueueIdx;      ///< Reading index of the _finiQueue
 static uint32_t volatile   *_asyncRst;          ///< Register to reset indexes of _readyQueue and _finiQueue
 
 static inline __attribute__((always_inline)) xtasks_stat resetQueueIdx()
@@ -269,6 +257,8 @@ xtasks_stat xtasksInit()
             _accs[i].info.freq = freq;
             _accs[i].info.description = _accs[i].descBuffer;
             strcpy(_accs[i].descBuffer, buffer);
+            _accs[i].readyQueueIdx = 0;
+            _accs[i].finiQueueIdx = 0;
         }
     }
     fclose(accMapFile);
@@ -278,11 +268,10 @@ xtasks_stat xtasksInit()
     if (retFscanf != EOF) {
         //Looks like the configuration file doesn't match the expected format
         fprintf(stderr, "WARN: xTasks configuration file may be not well formated.\n");
-    }
-
-    //Init accelerators' structures
-    for (size_t i = 0; i < _numAccs; ++i) {
-        _accs[i].finishedQueue = queueInit();
+    } else if (_numAccs > READY_QUEUE_LEN/READY_QUEUE_ACC_LEN) {
+        ret = XTASKS_ERROR;
+        PRINT_ERROR("The maximum number of accelerators supported by the library was reached");
+        goto INIT_ERR_1;
     }
 
     //Open and map the Task Manager queues into library memory
@@ -298,7 +287,6 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_1;
     }
 
-    _readyQueueIdx = 0;
     _readyQueue = (ready_task_t *)mmap(NULL, sizeof(ready_task_t)*READY_QUEUE_LEN,
         PROT_READ | PROT_WRITE, MAP_SHARED, _readyQFd, 0);
     if (_readyQueue == MAP_FAILED) {
@@ -316,7 +304,6 @@ xtasks_stat xtasksInit()
         _readyQueue[idx].valid = FREE_ENTRY_MASK;
     }
 
-    _finiQueueIdx = 0;
     _finiQueue = (fini_task_t *)mmap(NULL, sizeof(fini_task_t)*FINI_QUEUE_LEN,
         PROT_READ | PROT_WRITE, MAP_SHARED, _finiQFd, 0);
     if (_finiQueue == MAP_FAILED) {
@@ -433,11 +420,6 @@ xtasks_stat xtasksFini()
 
     if (statusRd == -1 || statusFi == -1 || statusCtrl == -1) {
         ret = XTASKS_EFILE;
-    }
-
-    //Finialize accelerators' structures
-    for (size_t i = 0; i < _numAccs; ++i) {
-        queueFini(_accs[i].finishedQueue);
     }
 
     //Free the accelerators array
@@ -573,16 +555,22 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
 xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
+    acc_t * acc = task->accel;
+
+    if (task == NULL || acc == NULL) {
+        return XTASKS_EINVAL;
+    }
 
     // Get an empty slot into the manager ready queue
-    size_t idx, next;
+    size_t idx, next, offset;
+    offset = acc->info.id*READY_QUEUE_ACC_LEN;
     do {
-        idx = _readyQueueIdx;
-        if (_readyQueue[idx].valid == VALID_ENTRY_MASK) {
+        idx = acc->readyQueueIdx;
+        if (_readyQueue[offset + idx].valid == VALID_ENTRY_MASK) {
             return XTASKS_ENOENTRY;
         }
-        next = (idx+1)%READY_QUEUE_LEN;
-    } while ( !__sync_bool_compare_and_swap(&_readyQueueIdx, idx, next) );
+        next = (idx+1)%READY_QUEUE_ACC_LEN;
+    } while ( !__sync_bool_compare_and_swap(&acc->readyQueueIdx, idx, next) );
 
     // Copy the task info structure into kernel memory
     // NOTE: For now, already there
@@ -590,9 +578,9 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     // Copy the ready task structure into the BRAM
     task->tmTask.taskSize = (HW_TASK_HEAD_BYTES + task->argsCnt*sizeof(task_info_arg_t)) /
         sizeof(uint64_t);
-    memcpy(&_readyQueue[idx], &task->tmTask, sizeof(ready_task_t));
+    memcpy(&_readyQueue[offset + idx], &task->tmTask, sizeof(ready_task_t));
     __sync_synchronize();
-    _readyQueue[idx].valid = VALID_ENTRY_MASK;
+    _readyQueue[offset + idx].valid = VALID_ENTRY_MASK;
 
     return XTASKS_SUCCESS;
 }
@@ -600,81 +588,70 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
+    acc_t * acc = task->accel;
     size_t tries = 0;
     size_t const MAX_WAIT_TASKS_TRIES = 0xFFFFFFFF;
 
+    //NOTE: This implementation loses some tasks if waitTask and tryGetFinishedTask are combined.
+    //      Force waiting for the first submited task?
     while (task->tmTask.valid == 0 && tries++ < MAX_WAIT_TASKS_TRIES) {
         xtasks_task_id id;
         xtasks_task_handle h;
-        xtasksTryGetFinishedTask(&h, &id);
+        xtasksTryGetFinishedTaskAccel(acc, &h, &id);
     }
     return tries > MAX_WAIT_TASKS_TRIES ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id)
 {
-    if (id == NULL || handle == NULL) {
+    if (handle == NULL || id == NULL) {
+        return XTASKS_EINVAL;
+    }
+
+    xtasks_stat ret = XTASKS_PENDING;
+    size_t i = 0;
+    do {
+        ret = xtasksTryGetFinishedTaskAccel(&_accs[i], handle, id);
+    } while (++i < _numAccs && ret == XTASKS_PENDING);
+
+    return ret;
+}
+
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
+    xtasks_task_handle * handle, xtasks_task_id * id)
+{
+    acc_t * acc = (acc_t *)accel;
+
+    if (handle == NULL || id == NULL || acc == NULL) {
         return XTASKS_EINVAL;
     }
 
     // Get a non-empty slot into the manager finished queue
-    size_t idx, next;
+    size_t idx, next, offset;
+    offset = acc->info.id*READY_QUEUE_ACC_LEN;
     do {
-        idx = _finiQueueIdx;
-        if (_finiQueue[idx].valid != VALID_ENTRY_MASK) {
+        idx = acc->finiQueueIdx;
+        if (_finiQueue[offset + idx].valid != VALID_ENTRY_MASK) {
             return XTASKS_PENDING;
         }
-        next = (idx+1)%FINI_QUEUE_LEN;
-    } while ( !__sync_bool_compare_and_swap(&_finiQueueIdx, idx, next) );
+        next = (idx+1)%FINI_QUEUE_ACC_LEN;
+    } while ( !__sync_bool_compare_and_swap(&acc->finiQueueIdx, idx, next) );
 
     //Extract the information from the finished buffer
-    uintptr_t tmp = _finiQueue[idx].taskID;
+    uintptr_t tmp = _finiQueue[offset + idx].taskID;
+
+    //Free the buffer slot
+    __sync_synchronize();
+    _finiQueue[offset + idx].valid = FREE_ENTRY_MASK;
+
     task_t * task = (task_t *)tmp;
-    *id = task->id;
     *handle = (xtasks_task_handle)task;
+    *id = task->id;
 
     //Mark the task as executed (using the valid field as it is not used in the cached copy)
     task->tmTask.valid = 1;
 
-    //Free the buffer slot
-    __sync_synchronize();
-    _finiQueue[idx].valid = FREE_ENTRY_MASK;
-
     return XDMA_SUCCESS;
-}
-
-xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
-    xtasks_task_handle * task, xtasks_task_id * id)
-{
-    acc_t * acc = (acc_t *)accel;
-
-    //1st: Try get a finished task from the accel queue
-    task_t * t = (task_t *)queueTryPop(acc->finishedQueue);
-    if (t == NULL) {
-        unsigned int cnt = 0;
-        xtasks_task_handle xTask;
-        xtasks_task_id xId;
-        //2nd: Try to fetch a task from the finished queue
-        while (cnt < MAX_CNT_FIN_TASKS && xtasksTryGetFinishedTask(&xTask, &xId) == XTASKS_SUCCESS) {
-            ++cnt;
-            t = (task_t *)xTask;
-            if (t->accel == acc) {
-                //The task was executed in the accelerator
-                *task = xTask;
-                *id = xId;
-                break;
-            } else {
-                //The task was not executed in the accelerator
-                queuePush(t->accel->finishedQueue, (void *)t);
-                t = NULL;
-            }
-        }
-    } else {
-        *task = (xtasks_task_handle)t;
-        *id = (xtasks_task_id)t->id;
-    }
-
-    return t == NULL ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
