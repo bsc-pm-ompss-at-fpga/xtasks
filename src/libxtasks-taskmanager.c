@@ -40,7 +40,7 @@
 
 #define READY_QUEUE_PATH        "/dev/taskmanager/ready_queue"
 #define FINI_QUEUE_PATH         "/dev/taskmanager/finished_queue"
-#define ASYNC_RST_PATH          "/dev/taskmanager/ctrl"
+#define TASKMANAGER_RST_PATH    "/dev/taskmanager/ctrl"
 
 #define READY_QUEUE_LEN         1024            ///< Total number of entries in the ready queue
 #define READY_QUEUE_ACC_LEN     32              ///< Number of entries in the sub-queue of ready queue for one accelerator
@@ -134,14 +134,14 @@ static int                  _finiQFd;           ///< File descriptior of gpioctr
 static int                  _ctrlFd;            ///< File descriptior of gpioctrl device
 static ready_task_t        *_readyQueue;        ///< Buffer for the ready tasks
 static fini_task_t         *_finiQueue;         ///< Buffer for the finished tasks
-static uint32_t volatile   *_asyncRst;          ///< Register to reset indexes of _readyQueue and _finiQueue
+static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset indexes of _readyQueue and _finiQueue
 
 static inline __attribute__((always_inline)) xtasks_stat resetQueueIdx()
 {
     //Nudge one register
-    *_asyncRst = 0x00;
+    *_taskmanagerRst = 0x00;
     for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
-    *_asyncRst = 0x01;
+    *_taskmanagerRst = 0x01;
     return XTASKS_SUCCESS;
 }
 
@@ -277,7 +277,7 @@ xtasks_stat xtasksInit()
     //Open and map the Task Manager queues into library memory
     _readyQFd = open(READY_QUEUE_PATH, O_RDWR, (mode_t) 0600);
     _finiQFd = open(FINI_QUEUE_PATH, O_RDWR, (mode_t) 0600);
-    _ctrlFd = open(ASYNC_RST_PATH, O_RDWR, (mode_t) 0600);
+    _ctrlFd = open(TASKMANAGER_RST_PATH, O_RDWR, (mode_t) 0600);
     if (_readyQFd < 0 || _finiQFd < 0 || _ctrlFd < 0) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot open taskmanager device files");
@@ -318,9 +318,9 @@ xtasks_stat xtasksInit()
         _finiQueue[idx].valid = FREE_ENTRY_MASK;
     }
 
-    _asyncRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE,
+    _taskmanagerRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE,
         MAP_SHARED, _ctrlFd, 0);
-    if (_asyncRst == MAP_FAILED) {
+    if (_taskmanagerRst == MAP_FAILED) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map control registers of Task Manager");
         INIT_ERR_5: munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
@@ -331,7 +331,7 @@ xtasks_stat xtasksInit()
     if (resetQueueIdx() != XTASKS_SUCCESS) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot reset the Task Manager");
-        INIT_ERR_6: munmap((void *)_asyncRst, sizeof(uint32_t));
+        INIT_ERR_6: munmap((void *)_taskmanagerRst, sizeof(uint32_t));
         goto INIT_ERR_5;
     }
 
@@ -409,7 +409,7 @@ xtasks_stat xtasksFini()
     if (status < 0) {
         ret = XTASKS_EFILE;
     }
-    status = munmap((void *)_asyncRst, sizeof(uint32_t));
+    status = munmap((void *)_taskmanagerRst, sizeof(uint32_t));
     if (status < 0) {
         ret = XTASKS_EFILE;
     }
