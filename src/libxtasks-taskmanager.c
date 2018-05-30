@@ -50,8 +50,8 @@
 #define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
 #define VALID_ENTRY_MASK        0x80
 #define FREE_ENTRY_MASK         0
-#define HW_TASK_HEAD_BYTES      32              //NOTE: sizeof(task_info_t) without consider the arguments
-#define HW_TASK_NUM_ARGS        14              //NOTE: (256 - HW_TASK_HEAD_BYTES)/sizeof(task_info_arg_t)
+#define HW_TASK_HEAD_BYTES      32              //NOTE: sizeof(task_info_t) without consider the parentTaskID, args and final padding
+#define HW_TASK_NUM_ARGS        13              //NOTE: (256 - sizeof(task_info_t))/sizeof(task_info_arg_t)
 //NOTE: The number of slots must be at least the number of slots in the ready queue (READY_QUEUE_LEN)
 //      + the number of running tasks (1 foreach accelerator -> _numAccs)
 #define NUM_RUN_TASKS           (READY_QUEUE_LEN + _numAccs) ///< Maximum number of concurrently running tasks
@@ -98,16 +98,16 @@ typedef struct __attribute__ ((__packed__)) {
 typedef struct __attribute__ ((__packed__)) {
     uint64_t  parentID;      //[0  :63 ] Parent task identifier that is creating the task
     uint64_t  typeInfo;      //[64 :95 ] Information of task type
-    uint32_t  archMask;      //[96 :128] Architecture mask in Picos style
-    uint16_t  numArgs;       //[129:144] Number of arguments before this header
-    uint8_t   _padding;      //[145:128]
-    uint8_t   valid;         //[153:160] Valid Entry
+    uint8_t   valid;         //[96 :103] Valid Entry
+    uint8_t   _padding;      //[104:111]
+    uint16_t  numArgs;       //[112:127] Number of arguments before this header
+    uint32_t  archMask;      //[128:159] Architecture mask in Picos style
 } new_task_header_t;
 
 //! \brief New task buffer representation (Only the argument part, repeated N times)
 typedef struct __attribute__ ((__packed__)) {
-    uint16_t  flags;      //[0  :16 ] Argument flags
-    uint64_t  value:48;   //[17 :36 ] Argument value
+    uint64_t  value:48;   //[0  :47 ] Argument value
+    uint16_t  flags;      //[48 :63 ] Argument flags
 } new_task_arg_t;
 
 //! \brief Task argument representation in task_info
@@ -119,14 +119,16 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief Task information for the accelerator
 typedef struct __attribute__ ((__packed__)) {
-    uint64_t taskID;                         //[0  :63 ] Task identifier
+    uint64_t parentTaskID;                   //[0  :63 ] Task identifier
+    uint64_t taskID;                         //[64 :127] Task identifier
     struct {
-        uint64_t timerAddr;                  //[64 :127] Timer address for instrumentation
-        uint64_t bufferAddr;                 //[128:191] Buffer address to store instrumentation info
+        uint64_t timerAddr;                  //[128:191] Timer address for instrumentation
+        uint64_t bufferAddr;                 //[192:255] Buffer address to store instrumentation info
     } profile;
-    uint32_t compute;                        //[192:223] Compute flag
-    uint32_t destID;                         //[224:255] Destination ID where the accelerator will send the 'complete' signal
+    uint32_t compute;                        //[256:287] Compute flag
+    uint32_t destID;                         //[288:319] Destination ID where the accelerator will send the 'complete' signal
     task_info_arg_t args[HW_TASK_NUM_ARGS];  //[   :   ] Task arguments info
+    uint64_t _padding;                       //[   :   ] This padding is to adjunt the sizeof(task_info_t) to 256
 } task_info_t;
 
 //! \brief Internal library task information
@@ -523,7 +525,7 @@ static int getFreeTaskEntry()
 }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_comp_flags const compute, xtasks_task_handle * handle)
+    xtasks_task_handle const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
     acc_t * accel = (acc_t *)accId;
     int idx = getFreeTaskEntry();
@@ -535,6 +537,7 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     //_tasks[idx].hwTask = &_tasksBuff[idx]; //NOTE: Done in getFreeTaskEntry()
     _tasks[idx].argsCnt = 0;
     _tasks[idx].accel = accel;
+    _tasks[idx].hwTask->parentTaskID = (uintptr_t)(parent);
     _tasks[idx].hwTask->taskID = (uintptr_t)(&_tasks[idx]);
     _tasks[idx].hwTask->profile.timerAddr = _insTimerAddr;
     _tasks[idx].hwTask->profile.bufferAddr = (uintptr_t)(&_insBuffPhy[idx]);
@@ -739,6 +742,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 
     //Extract the information from the new buffer
     *task = realloc(*task, sizeof(xtasks_newtask) + sizeof(xtasks_newtask_arg)*hwTaskTmp->numArgs);
+    (*task)->args = (xtasks_newtask_arg *)(*task + 1);
     (*task)->numArgs = hwTaskTmp->numArgs;
     uintptr_t tmp = NEW_TASK_HEADER_ADJUST_FOR_FIELD(hwTaskHeader, parentID)->parentID;
     task_t * parentTask = (task_t *)tmp;
@@ -775,6 +779,11 @@ fini_task_t finiQueue(size_t const idx)
 uint64_t newQueue(size_t const idx)
 {
     return _newQueue[idx];
+}
+
+void newQueueSet(size_t const idx)
+{
+    _newQueue[idx] |= 0x80;
 }
 
 task_info_t tasksBuffer(size_t const idx)

@@ -127,11 +127,14 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * i
 
 /*!
  * \brief Create a new task
- * \param[in]   compute
- * \param[out]  handle   Task handle
+ * \param[in]   id       Optional data to associate with the task (returned when task finishes)
+ * \param[in]   accId    Accelerator handle where the task will be submited
+ * \param[in]   parent   Task handle of the parent task (it can be NULL if not knwon or not needed)
+ * \param[in]   compute  Compute flags for the accelerator
+ * \param[out]  handle   Task handle of the new created task
  */
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_comp_flags const compute, xtasks_task_handle * handle);
+    xtasks_task_handle const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle);
 
 /*!
  * \brief Delete a task
