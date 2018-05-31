@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2017, BSC (Barcelona Supercomputing Center)
+* Copyright (c) 2018, BSC (Barcelona Supercomputing Center)
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -72,6 +72,7 @@ typedef struct {
     xtasks_acc_type type;             ///< Accelerator type identifier
     xtasks_acc_desc description;      ///< Accelerator description
     float           freq;             ///< Accelerator frequency (in MHz)
+    short           maxTasks;         ///< Max. number of concurrent tasks that the accelerator can manage (-1: undefined)
 } xtasks_acc_info;
 
 typedef struct {

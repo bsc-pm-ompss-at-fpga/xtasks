@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2017, BSC (Barcelona Supercomputing Center)
+* Copyright (c) 2018, BSC (Barcelona Supercomputing Center)
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -152,6 +152,7 @@ xtasks_stat xtasksInit()
             _accs[i].info.id = i;
             _accs[i].info.type = t;
             _accs[i].info.freq = freq;
+            _accs[i].info.maxTasks = -1;
             _accs[i].info.description = _accs[i].descBuffer;
             strcpy(_accs[i].descBuffer, buffer);
         }

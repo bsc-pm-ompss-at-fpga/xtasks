@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2017, BSC (Barcelona Supercomputing Center)
+* Copyright (c) 2018, BSC (Barcelona Supercomputing Center)
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without

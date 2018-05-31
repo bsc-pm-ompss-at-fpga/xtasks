@@ -255,6 +255,7 @@ xtasks_stat xtasksInit()
             _accs[i].info.id = i;
             _accs[i].info.type = t;
             _accs[i].info.freq = freq;
+            _accs[i].info.maxTasks = READY_QUEUE_ACC_LEN;
             _accs[i].info.description = _accs[i].descBuffer;
             strcpy(_accs[i].descBuffer, buffer);
             _accs[i].readyQueueIdx = 0;
