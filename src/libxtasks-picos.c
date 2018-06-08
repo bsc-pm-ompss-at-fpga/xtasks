@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2017-2018, BSC (Barcelona Supercomputing Center)
+* Copyright (c) 2018, BSC (Barcelona Supercomputing Center)
 * All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,7 @@
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 #define MAX_CNT_FIN_TASKS       16              ///< Max. number of finished tasks processed for other accels before return
 #define NUM_RUN_TASKS           256             ///< Maximum number of concurrently running tasks
-#define NUM_DEPS_EXEC_MASK      0xFFFFFFFF      ///< Mask used to set numDeps field and mark task as executed
+#define NUM_DEPS_EXEC_MASK      0xFFFF          ///< Mask used to set numDeps field and mark task as executed
 
 //! \brief HW accelerator representation
 typedef struct {
@@ -152,6 +152,7 @@ xtasks_stat xtasksInit()
             _accs[i].info.id = i;
             _accs[i].info.type = t;
             _accs[i].info.freq = freq;
+            _accs[i].info.maxTasks = -1;
             _accs[i].info.description = _accs[i].descBuffer;
             strcpy(_accs[i].descBuffer, buffer);
         }
@@ -271,7 +272,8 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     //NOTE: Set the upper bit of taskID as the 32 high bits cannot be 0x00000000
     //      We are assuming that in a 64bit architecture the highest bit will not be used
     _tasks[idx].picosTask.taskID |= 0x8000000000000000;
-    _tasks[idx].picosTask.numDeps = accel->picosArchMask;
+    _tasks[idx].picosTask.numDeps = 0;
+    _tasks[idx].picosTask.archMask = accel->picosArchMask;
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
@@ -291,7 +293,7 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
     xtasks_arg_val const value, xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
-    size_t idx = task->picosTask.numDeps & 0x000000FF;
+    size_t idx = task->picosTask.numDeps;
     if (task->picosTask.numDeps >= PICOS_MAX_DEPS_TASK) {
         //NOTE: Picos cannot handle the needed amount of dependencies
         return XTASKS_ERROR;
@@ -308,7 +310,7 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
     xtasks_arg_val * const values, xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
-    size_t idx = task->picosTask.numDeps & 0x000000FF;
+    size_t idx = task->picosTask.numDeps;
     if (num > PICOS_MAX_DEPS_TASK - idx) {
         //NOTE: Picos cannot handle the needed amount of dependencies
         return XTASKS_ERROR;
