@@ -35,6 +35,7 @@
 #include <stddef.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <errno.h>
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
@@ -303,9 +304,9 @@ xtasks_stat xtasksInit()
     //Open and map the Task Manager queues into library memory
     _readyQFd = open(READY_QUEUE_PATH, O_RDWR, (mode_t) 0600);
     _finiQFd = open(FINI_QUEUE_PATH, O_RDWR, (mode_t) 0600);
-    _newQFd = open(NEW_QUEUE_PATH, O_RDWR, (mode_t) 0600);
     _ctrlFd = open(TASKMANAGER_RST_PATH, O_RDWR, (mode_t) 0600);
-    if (_readyQFd < 0 || _finiQFd < 0 || _newQFd < 0 || _ctrlFd < 0) {
+    _newQFd = open(NEW_QUEUE_PATH, O_RDWR, (mode_t) 0600);
+    if (_readyQFd < 0 || _finiQFd < 0 || (_newQFd < 0 && errno != ENOENT) || _ctrlFd < 0) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot open taskmanager device files");
         goto INIT_ERR_2;
@@ -333,12 +334,16 @@ xtasks_stat xtasksInit()
     }
 
     _newQueueIdx = 0;
-    _newQueue = (uint64_t *)mmap(NULL, sizeof(uint64_t)*NEW_QUEUE_LEN,
-        PROT_READ | PROT_WRITE, MAP_SHARED, _newQFd, 0);
-    if (_finiQueue == MAP_FAILED) {
-        ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map finish queue of Task Manager");
-        goto INIT_ERR_4;
+    if (_newQFd == -1) {
+       _newQueue = NULL;
+    } else {
+        _newQueue = (uint64_t *)mmap(NULL, sizeof(uint64_t)*NEW_QUEUE_LEN,
+            PROT_READ | PROT_WRITE, MAP_SHARED, _newQFd, 0);
+        if (_newQueue == MAP_FAILED) {
+            ret = XTASKS_EFILE;
+            PRINT_ERROR("Cannot map new queue of Task Manager");
+            goto INIT_ERR_4;
+        }
     }
 
     //If any, invalidate finished tasks in finiQueue
@@ -407,14 +412,16 @@ xtasks_stat xtasksInit()
     INIT_ERR_6:
         munmap((void *)_taskmanagerRst, sizeof(uint32_t));
     INIT_ERR_5:
-        munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN);
+        if (_newQueue != NULL)
+            munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN);
     INIT_ERR_4:
         munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
     INIT_ERR_3:
         munmap(_readyQueue, sizeof(ready_task_t)*READY_QUEUE_LEN);
     INIT_ERR_2:
         close(_ctrlFd);
-        close(_newQFd);
+        if (_newQFd != -1)
+            close(_newQFd);
         close(_finiQFd);
         close(_readyQFd);
     INIT_ERR_1:
@@ -452,7 +459,7 @@ xtasks_stat xtasksFini()
     //Unmap the Task Manager queues
     int statusRd, statusFi, statusNw, statusCtrl;
     statusCtrl = munmap((void *)_taskmanagerRst, sizeof(uint32_t));
-    statusNw = munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN);
+    statusNw = _newQueue != NULL ? munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN) : 0;
     statusFi = munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
     statusRd = munmap(_readyQueue, sizeof(ready_task_t)*READY_QUEUE_LEN);
     if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusCtrl == -1) {
@@ -460,7 +467,7 @@ xtasks_stat xtasksFini()
     }
 
     statusCtrl = close(_ctrlFd);
-    statusNw = close(_newQFd);
+    statusNw = _newQFd != -1 ? close(_newQFd) : 0;
     statusFi = close(_finiQFd);
     statusRd = close(_readyQFd);
     if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusCtrl == -1) {
@@ -717,6 +724,8 @@ xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_
 
 xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
+    if (_newQueue == NULL) return XTASKS_PENDING;
+
     // Get a non-empty slot into the manager finished queue
     size_t idx, next, taskSize;
     new_task_header_t * hwTaskHeader;
