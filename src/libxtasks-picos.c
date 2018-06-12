@@ -41,7 +41,7 @@
 
 //! \brief HW accelerator representation
 typedef struct {
-    uint32_t        picosArchMask;
+    uint16_t        picosArchMask;
     char            descBuffer[STR_BUFFER_SIZE];
     xtasks_acc_info info;
     queue_t *       finishedQueue;
@@ -96,7 +96,7 @@ xtasks_stat xtasksInit()
     }
 
     //Check if architecture mask should be forced
-    uint32_t forcedMask = 0;
+    uint16_t forcedMask = 0;
     const char * envMask = getenv("XTASKS_PICOS_ARCHMASK");
     if (envMask != NULL) {
         if (envMask[0] == '0' && envMask[1] != '\0' && (envMask[1] == 'x' || envMask[1] == 'X')) {
@@ -106,7 +106,6 @@ xtasks_stat xtasksInit()
             //The mask seems to be a decimal number
             forcedMask = atoi(envMask);
         }
-        forcedMask = forcedMask << 24; //The mask is 8bit and it's value goes to the upper bits
     }
 
     //Open the configuration file and parse it
@@ -141,13 +140,13 @@ xtasks_stat xtasksInit()
             memcpy(_accs, oldAccs, sizeof(acc_t)*(total - num));
             free(oldAccs);
         }
-        uint32_t mask = forcedMask ? forcedMask : ((1 << num) - 1) << (31 - total);
+        uint16_t mask = forcedMask ? forcedMask : ((1 << num) - 1) << (15 - total);
         for (size_t i = total - num; i < total; ++i) {
             //NOTE: Using the same mask for all accels of same type to allow picos balance execution.
             //      This can be an issue if the queues to retrieve tasks are different for each accelerator
             //      because the library is breaking the request of executing a task in one accel.
             //      Therefore, the task may become finished in a different accel!
-            //_accs[i].picosArchMask = 1 << (30 - i); //NOTE: ACC0 sets bit30, ACC1 sets bit29, etc.
+            //_accs[i].picosArchMask = 1 << (15 - i); //NOTE: ACC0 sets bit15, ACC1 sets bit14, etc.
             _accs[i].picosArchMask = mask;
             _accs[i].info.id = i;
             _accs[i].info.type = t;
