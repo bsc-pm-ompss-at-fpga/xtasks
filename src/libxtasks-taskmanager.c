@@ -344,6 +344,9 @@ xtasks_stat xtasksInit()
             PRINT_ERROR("Cannot map new queue of Task Manager");
             goto INIT_ERR_4;
         }
+	
+        //If any, invalidate tasks in newQueue
+        _memset(_newQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
     }
 
     //If any, invalidate finished tasks in finiQueue
@@ -746,20 +749,34 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     *task = realloc(*task, sizeof(xtasks_newtask) + sizeof(xtasks_newtask_arg)*hwTaskTmp->numArgs);
     (*task)->args = (xtasks_newtask_arg *)(*task + 1);
     (*task)->numArgs = hwTaskTmp->numArgs;
-    uintptr_t tmp = NEW_TASK_HEADER_ADJUST_FOR_FIELD(hwTaskHeader, parentID)->parentID;
-    task_t * parentTask = (task_t *)tmp;
+
+    hwTaskTmp = NEW_TASK_HEADER_ADJUST_FOR_FIELD(hwTaskHeader, parentID);
+    task_t * parentTask = (task_t *)((uintptr_t)(hwTaskTmp->parentID));
     (*task)->parentId = parentTask->id; //< The external parent identifier must be returned (not the xtasks internal one)
-    (*task)->typeInfo = NEW_TASK_HEADER_ADJUST_FOR_FIELD(hwTaskHeader, typeInfo)->typeInfo;
-    new_task_arg_t * hwTaskArgs = (new_task_arg_t *)(hwTaskHeader + 1);
-    for (size_t i = 0; i < (*task)->numArgs; ++i) {
-        (*task)->args[i].value = (void *)((uintptr_t)(hwTaskArgs[i].value));
-        (*task)->args[i].isInputDep = hwTaskArgs[i].flags & NEW_TASK_IN_DEP_MASK;
-        (*task)->args[i].isOutputDep = hwTaskArgs[i].flags & NEW_TASK_OUT_DEP_MASK;
-        (*task)->args[i].isInputCopy = hwTaskArgs[i].flags & NEW_TASK_IN_COPY_MASK;
-        (*task)->args[i].isOutputCopy = hwTaskArgs[i].flags & NEW_TASK_OUT_COPY_MASK;
+    hwTaskTmp->parentID = 0; //< Cleanup the memory position
+
+    hwTaskTmp = NEW_TASK_HEADER_ADJUST_FOR_FIELD(hwTaskHeader, typeInfo);
+    (*task)->typeInfo = hwTaskTmp->typeInfo;
+    hwTaskTmp->typeInfo = 0; //< Cleanup the memory position
+
+
+    new_task_arg_t * hwTaskArg = (new_task_arg_t *)(hwTaskHeader + 1);
+    for (size_t i = 0; i < (*task)->numArgs; ++i, hwTaskArg += 1) {
+        //Check that arg pointer is not out of bounds
+        hwTaskArg = ((uintptr_t)(hwTaskArg) >= (uintptr_t)(_newQueue + NEW_QUEUE_LEN)) ? (new_task_arg_t *)(_newQueue) : hwTaskArg;
+        (*task)->args[i].value = (void *)((uintptr_t)(hwTaskArg->value));
+        (*task)->args[i].isInputDep = hwTaskArg->flags & NEW_TASK_IN_DEP_MASK;
+        (*task)->args[i].isOutputDep = hwTaskArg->flags & NEW_TASK_OUT_DEP_MASK;
+        (*task)->args[i].isInputCopy = hwTaskArg->flags & NEW_TASK_IN_COPY_MASK;
+        (*task)->args[i].isOutputCopy = hwTaskArg->flags & NEW_TASK_OUT_COPY_MASK;
+
+        //Cleanup the memory position
+        uint64_t *chunkPtr = (uint64_t *)(hwTaskArg);
+        *chunkPtr = 0;
     }
 
     //Free the buffer slot
+    //NOTE: This word cannot be set to 0 as the task size information must be keept
     __sync_synchronize();
     hwTaskTmp = NEW_TASK_HEADER_ADJUST_FOR_FIELD(hwTaskHeader, valid);
     hwTaskTmp->valid = FREE_ENTRY_MASK;
