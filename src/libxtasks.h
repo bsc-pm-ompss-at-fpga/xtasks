@@ -52,16 +52,17 @@ typedef enum {
     XTASKS_COMPUTE_ENABLE  = 1
 } xtasks_comp_flags;
 
-typedef enum {
-    XTASKS_BRAM    = 0,
-    XTASKS_PRIVATE = 1,
-    XTASKS_GLOBAL  = 2
-} xtasks_arg_flags;
+#define XTASKS_ARG_FLAG_BRAM     0x00
+#define XTASKS_ARG_FLAG_PRIVATE  0x01
+#define XTASKS_ARG_FLAG_GLOBAL   0x02
+#define XTASKS_ARG_FLAG_COPY_IN  0x10
+#define XTASKS_ARG_FLAG_COPY_OUT 0x20
 
 typedef void *       xtasks_task_handle;
 typedef uint64_t     xtasks_task_id;
 typedef uint64_t     xtasks_arg_val;
 typedef uint32_t     xtasks_arg_id;
+typedef uint32_t     xtasks_arg_flags;
 typedef void *       xtasks_acc_handle;
 typedef uint32_t     xtasks_acc_id;
 typedef uint32_t     xtasks_acc_type;
