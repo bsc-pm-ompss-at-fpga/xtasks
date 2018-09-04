@@ -48,8 +48,8 @@
 #define FINI_QUEUE_ACC_LEN      32              ///< Number of entries in the sub-queue of finish queue for one accelerator
 #define VALID_ENTRY_MASK        0x80
 #define FREE_ENTRY_MASK         0
-#define HW_TASK_HEAD_BYTES      24              //NOTE: Actually 32 bytes, but taskID is not taken into account when computing taskSize
-#define HW_TASK_NUM_ARGS        14              //NOTE: (256 - HW_TASK_HEAD_BYTES)/sizeof(task_info_arg_t)
+#define DEF_HW_TASK_SIZE        256             ///< Default size of task manager task when using the defult num. of args.
+#define DEF_HW_TASK_ARGS_LEN    14              //NOTE: (DEF_HW_TASK_SIZE - sizeof(hw_task_header_t))/sizeof(hw_task_arg_t)
 //NOTE: The number of slots must be at least the number of slots in the ready queue (READY_QUEUE_LEN)
 //      + the number of running tasks (1 foreach accelerator -> _numAccs)
 #define NUM_RUN_TASKS           (READY_QUEUE_LEN + _numAccs) ///< Maximum number of concurrently running tasks
@@ -94,7 +94,7 @@ typedef struct __attribute__ ((__packed__)) {
     uint32_t argCached; //[0  :31 ] Flags
     uint32_t argID;     //[32 :63 ] Argument ID
     uint64_t argAddr;   //[64 :127] Address
-} task_info_arg_t;
+} hw_task_arg_t;
 
 //! \brief Task information for the accelerator
 typedef struct __attribute__ ((__packed__)) {
@@ -105,17 +105,17 @@ typedef struct __attribute__ ((__packed__)) {
     } profile;
     uint32_t compute;                        //[192:223] Compute flag
     uint32_t destID;                         //[224:255] Destination ID where the accelerator will send the 'complete' signal
-    task_info_arg_t args[HW_TASK_NUM_ARGS];  //[   :   ] Task arguments info
-} task_info_t;
+} hw_task_header_t;
 
 //! \brief Internal library task information
 typedef struct {
     xtasks_task_id          id;            ///< External task identifier
-    task_info_t *           hwTask;        ///< Pointer to the task_info_t struct
+    hw_task_header_t *      hwTaskHeader;  ///< Pointer to the hw_task_header_t struct
+    hw_task_arg_t *         hwTaskArgs;    ///< Pointer to the array of hw_task_arg_t structs
     size_t                  argsCnt;       ///< Number of arguments in the task
     acc_t *                 accel;         ///< Accelerator where the task will run
     ready_task_t            tmTask;        ///< Cached task information that will be sent to the TM
-    xdma_buf_handle         taskHandle;    ///< Task buffer handle (only used if: argsCnt > HW_TASK_NUM_ARGS)
+    xdma_buf_handle         taskHandle;    ///< Task buffer handle (only used if: argsCnt > DEF_HW_TASK_ARGS_LEN)
 } task_t;
 
 static int _init_cnt = 0;   ///< Counter of calls to init/fini
@@ -125,8 +125,8 @@ static uint64_t             _insTimerAddr;      ///< Physical address of HW inst
 static xtasks_ins_times *   _insBuff;           ///< Buffer for the HW instrumentation
 static xtasks_ins_times *   _insBuffPhy;        ///< Physical address of _insBuff
 static xdma_buf_handle      _insBuffHandle;     ///< Handle of _insBuff in libxdma
-static task_info_t *        _tasksBuff;         ///< Buffer to send the HW tasks
-static task_info_t *        _tasksBuffPhy;      ///< Physical address of _tasksBuff
+static uint8_t *            _tasksBuff;         ///< Buffer to send the HW tasks
+static uint8_t *            _tasksBuffPhy;      ///< Physical address of _tasksBuff
 static xdma_buf_handle      _tasksBuffHandle;   ///< Handle of _tasksBuff in libxdma
 static task_t *             _tasks;             ///< Array with internal task information
 static int                  _readyQFd;          ///< File descriptior of gpioctrl device
@@ -346,7 +346,7 @@ xtasks_stat xtasksInit()
     //Allocate the task_info buffer
     xdma_status s;
     s = xdmaAllocateKernelBuffer((void**)&_tasksBuff, &_tasksBuffHandle,
-        NUM_RUN_TASKS*sizeof(task_info_t));
+        NUM_RUN_TASKS*DEF_HW_TASK_SIZE);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate kernel memory for task information");
@@ -363,7 +363,7 @@ xtasks_stat xtasksInit()
         INIT_ERR_8: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
         goto INIT_ERR_7;
     }
-    _tasksBuffPhy = (task_info_t *)phyAddr;
+    _tasksBuffPhy = (uint8_t *)phyAddr;
 
     //Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
@@ -470,8 +470,9 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * i
 static int getFreeTaskEntry()
 {
     for (int i = 0; i < NUM_RUN_TASKS; ++i) {
-        if (_tasks[i].hwTask == NULL) {
-            if (__sync_bool_compare_and_swap(&_tasks[i].hwTask, 0, &_tasksBuff[i])) {
+        if (_tasks[i].hwTaskHeader == NULL) {
+            hw_task_header_t * header = (hw_task_header_t *)(&_tasksBuff[i*DEF_HW_TASK_SIZE]);
+            if (__sync_bool_compare_and_swap(&_tasks[i].hwTaskHeader, 0, header)) {
                 return i;
             }
         }
@@ -489,15 +490,17 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     }
 
     _tasks[idx].id = id;
-    //_tasks[idx].hwTask = &_tasksBuff[idx]; //NOTE: Done in getFreeTaskEntry()
+    //_tasks[idx].hwTaskHeader = &_tasksBuff[idx*DEF_HW_TASK_SIZE]; //NOTE: Done in getFreeTaskEntry()
+    _tasks[idx].hwTaskArgs = (hw_task_arg_t *)
+        (&_tasksBuff[idx*DEF_HW_TASK_SIZE + sizeof(hw_task_header_t)]);
     _tasks[idx].argsCnt = 0;
     _tasks[idx].accel = accel;
-    _tasks[idx].hwTask->taskID = (uintptr_t)(&_tasks[idx]);
-    _tasks[idx].hwTask->profile.timerAddr = _insTimerAddr;
-    _tasks[idx].hwTask->profile.bufferAddr = (uintptr_t)(&_insBuffPhy[idx]);
-    _tasks[idx].hwTask->compute = compute;
-    _tasks[idx].hwTask->destID = HW_TASK_DEST_ID_TM;
-    _tasks[idx].tmTask.taskInfoAddr = (uintptr_t)(&_tasksBuffPhy[idx]);
+    _tasks[idx].hwTaskHeader->taskID = (uintptr_t)(&_tasks[idx]);
+    _tasks[idx].hwTaskHeader->profile.timerAddr = _insTimerAddr;
+    _tasks[idx].hwTaskHeader->profile.bufferAddr = (uintptr_t)(&_insBuffPhy[idx]);
+    _tasks[idx].hwTaskHeader->compute = compute;
+    _tasks[idx].hwTaskHeader->destID = HW_TASK_DEST_ID_TM;
+    _tasks[idx].tmTask.taskInfoAddr = (uintptr_t)(&_tasksBuffPhy[idx*DEF_HW_TASK_SIZE]);
     _tasks[idx].tmTask.argsBitmask = 0xFFFF; //All will be ready
     //_tasks[idx].tmTask.size = ?¿; //Computed at submit
     _tasks[idx].tmTask.accID = accel->info.id;
@@ -512,7 +515,7 @@ xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
     task_t * task = (task_t *)(*handle);
     *handle = NULL;
     //__sync_synchronize(); //Execute previous operations before the next instruction
-    task->hwTask = NULL;
+    task->hwTaskHeader = NULL;
 
     return XTASKS_SUCCESS;
 }
@@ -521,15 +524,15 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
     xtasks_arg_val const value, xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
-    if (1 > HW_TASK_NUM_ARGS - task->argsCnt) {
+    if (1 > DEF_HW_TASK_ARGS_LEN - task->argsCnt) {
         //TODO: Allocate a new chunk for the hw_task_t struct
         return XTASKS_ENOMEM;
     }
 
     size_t idx = task->argsCnt++;
-    task->hwTask->args[idx].argCached = flags;
-    task->hwTask->args[idx].argID = idx;
-    task->hwTask->args[idx].argAddr = value;
+    task->hwTaskArgs[idx].argCached = flags;
+    task->hwTaskArgs[idx].argID = idx;
+    task->hwTaskArgs[idx].argAddr = value;
 
     return XTASKS_SUCCESS;
 }
@@ -538,15 +541,15 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
     xtasks_arg_val * const values, xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
-    if (num > HW_TASK_NUM_ARGS - task->argsCnt) {
+    if (num > DEF_HW_TASK_ARGS_LEN - task->argsCnt) {
         //TODO: Allocate a new chunk for the hw_task_t struct
         return XTASKS_ENOMEM;
     }
 
     for (size_t i = 0, idx = task->argsCnt; i < num; ++i, ++idx) {
-        task->hwTask->args[idx].argCached = flags;
-        task->hwTask->args[idx].argID = idx;
-        task->hwTask->args[idx].argAddr = values[i];
+        task->hwTaskArgs[idx].argCached = flags;
+        task->hwTaskArgs[idx].argID = idx;
+        task->hwTaskArgs[idx].argAddr = values[i];
     }
     task->argsCnt += num;
 
@@ -577,8 +580,8 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     // NOTE: For now, already there
 
     // Copy the ready task structure into the BRAM
-    task->tmTask.taskSize = (HW_TASK_HEAD_BYTES + task->argsCnt*sizeof(task_info_arg_t)) /
-        sizeof(uint64_t);
+    task->tmTask.taskSize = (sizeof(hw_task_header_t) - sizeof(uint64_t) /*taskID not considered*/ +
+        task->argsCnt*sizeof(hw_task_arg_t)) / sizeof(uint64_t);
     memcpy(&_readyQueue[offset + idx], &task->tmTask, sizeof(ready_task_t));
     __sync_synchronize();
     _readyQueue[offset + idx].valid = VALID_ENTRY_MASK;
@@ -678,8 +681,15 @@ fini_task_t finiQueue(size_t const idx)
     return _finiQueue[idx];
 }
 
-task_info_t tasksBuffer(size_t const idx)
+hw_task_header_t tasksBufferHeader(size_t const idx)
 {
-    return _tasksBuff[idx];
+    hw_task_header_t * tmp = (hw_task_header_t *)(&_tasksBuff[idx*DEF_HW_TASK_SIZE]);
+    return *tmp;
+}
+
+hw_task_arg_t tasksBufferArg(size_t const tIdx, size_t const aIdx)
+{
+    hw_task_arg_t * tmp = (hw_task_arg_t *)(&_tasksBuff[tIdx*DEF_HW_TASK_SIZE + sizeof(hw_task_header_t)]);
+    return tmp[aIdx];
 }
 #endif
