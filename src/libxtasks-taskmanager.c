@@ -48,8 +48,10 @@
 #define FINI_QUEUE_ACC_LEN      32              ///< Number of entries in the sub-queue of finish queue for one accelerator
 #define VALID_ENTRY_MASK        0x80
 #define FREE_ENTRY_MASK         0
-#define DEF_HW_TASK_SIZE        256             ///< Default size of task manager task when using the defult num. of args.
+#define DEF_HW_TASK_SIZE        256             ///< Size of hw task when using the defult num. of args.
 #define DEF_HW_TASK_ARGS_LEN    14              //NOTE: (DEF_HW_TASK_SIZE - sizeof(hw_task_header_t))/sizeof(hw_task_arg_t)
+#define EXT_HW_TASK_SIZE        1024            ///< Size of hw task when using the extended num. of args.
+#define EXT_HW_TASK_ARGS_LEN    62              //NOTE: (EXT_HW_TASK_SIZE - sizeof(hw_task_header_t))/sizeof(hw_task_arg_t)
 //NOTE: The number of slots must be at least the number of slots in the ready queue (READY_QUEUE_LEN)
 //      + the number of running tasks (1 foreach accelerator -> _numAccs)
 #define NUM_RUN_TASKS           (READY_QUEUE_LEN + _numAccs) ///< Maximum number of concurrently running tasks
@@ -514,7 +516,12 @@ xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
 {
     task_t * task = (task_t *)(*handle);
     *handle = NULL;
-    //__sync_synchronize(); //Execute previous operations before the next instruction
+    if (task->argsCnt > DEF_HW_TASK_ARGS_LEN) {
+        //Task is in extended mode
+        xdmaFreeKernelBuffer((void *)task->hwTaskHeader, task->taskHandle);
+        task->argsCnt = 0;
+    }
+    __sync_synchronize(); //Execute previous operations before the next instruction
     task->hwTaskHeader = NULL;
 
     return XTASKS_SUCCESS;
@@ -524,9 +531,26 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
     xtasks_arg_val const value, xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
-    if (1 > DEF_HW_TASK_ARGS_LEN - task->argsCnt) {
-        //TODO: Allocate a new chunk for the hw_task_t struct
-        return XTASKS_ENOMEM;
+    if (task->argsCnt >= EXT_HW_TASK_ARGS_LEN) {
+        //Unsupported number of arguments
+        return XTASKS_ENOSYS;
+    } else if (task->argsCnt == DEF_HW_TASK_ARGS_LEN) {
+        //Entering in extended mode
+        hw_task_header_t * prevHeader = task->hwTaskHeader;
+        xdma_status s;
+        s = xdmaAllocateKernelBuffer((void**)(&task->hwTaskHeader), &task->taskHandle,
+            EXT_HW_TASK_SIZE);
+        if (s != XDMA_SUCCESS) {
+            return XTASKS_ENOMEM;
+        }
+        memcpy(task->hwTaskHeader, prevHeader, DEF_HW_TASK_SIZE); //< Move the hw task header and args
+        //Update the task info
+        task->hwTaskArgs = (hw_task_arg_t *)(task->hwTaskHeader + 1);
+        s = xdmaGetDMAAddress(task->taskHandle, &task->tmTask.taskInfoAddr);
+        if (s != XDMA_SUCCESS) {
+            xdmaFreeKernelBuffer(task->hwTaskHeader, task->taskHandle);
+            return XTASKS_ERROR;
+        }
     }
 
     size_t idx = task->argsCnt++;
@@ -541,9 +565,29 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
     xtasks_arg_val * const values, xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
-    if (num > DEF_HW_TASK_ARGS_LEN - task->argsCnt) {
-        //TODO: Allocate a new chunk for the hw_task_t struct
-        return XTASKS_ENOMEM;
+    if (num > EXT_HW_TASK_ARGS_LEN - task->argsCnt) {
+        //Unsupported number of arguments
+        return XTASKS_ENOSYS;
+    } else if (num > (DEF_HW_TASK_ARGS_LEN - task->argsCnt) && task->argsCnt <= DEF_HW_TASK_ARGS_LEN) {
+        //Entering in extended mode because:
+        // 1) The number of args to add does not fit in current allocated space
+        // 2) We are not in extended mode
+        // 3) The number of args will fit in extended mode
+        hw_task_header_t * prevHeader = task->hwTaskHeader;
+        xdma_status s;
+        s = xdmaAllocateKernelBuffer((void**)(&task->hwTaskHeader), &task->taskHandle,
+            EXT_HW_TASK_SIZE);
+        if (s != XDMA_SUCCESS) {
+            return XTASKS_ENOMEM;
+        }
+        memcpy(task->hwTaskHeader, prevHeader, DEF_HW_TASK_SIZE); //< Move the hw task header and args
+        //Update the task info
+        task->hwTaskArgs = (hw_task_arg_t *)(task->hwTaskHeader + 1);
+        s = xdmaGetDMAAddress(task->taskHandle, &task->tmTask.taskInfoAddr);
+        if (s != XDMA_SUCCESS) {
+            xdmaFreeKernelBuffer(task->hwTaskHeader, task->taskHandle);
+            return XTASKS_ERROR;
+        }
     }
 
     for (size_t i = 0, idx = task->argsCnt; i < num; ++i, ++idx) {
