@@ -81,10 +81,11 @@ install: $(TARGETS_) ./src/libxtasks.h libxtasks_version.h
 	mkdir -p $(PREFIX)/include
 	cp ./src/libxtasks.h $(PREFIX)/include
 	cp libxtasks_version.h $(PREFIX)/include
-	@echo "====================================== NOTE ======================================"
-	@echo "Remember to create the symlink $(PREFIX)/lib/libxtasks.so to your desired backend!"
-	@echo "For example: pushd $(PREFIX)/lib; ln -s libxtasks-stream.so libxtasks.so; popd;"
-	@echo "=================================================================================="
+	@echo "========================= NOTE ========================="
+	@echo "== Remember to create the symlink $(PREFIX)/lib/libxtasks.so to your desired backend!"
+	@echo "== For example:"
+	@echo "==   pushd $(PREFIX)/lib; ln -s libxtasks-taskmanager.so libxtasks.so; popd;"
+	@echo "========================================================"
 
 .PHONY: clean
 clean:
