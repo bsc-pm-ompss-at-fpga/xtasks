@@ -546,16 +546,18 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
         memcpy(task->hwTaskHeader, prevHeader, DEF_HW_TASK_SIZE); //< Move the hw task header and args
         //Update the task info
         task->hwTaskArgs = (hw_task_arg_t *)(task->hwTaskHeader + 1);
-        s = xdmaGetDMAAddress(task->taskHandle, &task->tmTask.taskInfoAddr);
+        unsigned long dmaAddr;
+        s = xdmaGetDMAAddress(task->taskHandle, &dmaAddr);
         if (s != XDMA_SUCCESS) {
             xdmaFreeKernelBuffer(task->hwTaskHeader, task->taskHandle);
             return XTASKS_ERROR;
         }
+        task->tmTask.taskInfoAddr = (uint64_t)dmaAddr;
     }
 
     size_t idx = task->argsCnt++;
     task->hwTaskArgs[idx].argCached = flags;
-    task->hwTaskArgs[idx].argID = idx;
+    task->hwTaskArgs[idx].argID = id;
     task->hwTaskArgs[idx].argAddr = value;
 
     return XTASKS_SUCCESS;
@@ -583,11 +585,13 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
         memcpy(task->hwTaskHeader, prevHeader, DEF_HW_TASK_SIZE); //< Move the hw task header and args
         //Update the task info
         task->hwTaskArgs = (hw_task_arg_t *)(task->hwTaskHeader + 1);
-        s = xdmaGetDMAAddress(task->taskHandle, &task->tmTask.taskInfoAddr);
+        unsigned long dmaAddr;
+        s = xdmaGetDMAAddress(task->taskHandle, &dmaAddr);
         if (s != XDMA_SUCCESS) {
             xdmaFreeKernelBuffer(task->hwTaskHeader, task->taskHandle);
             return XTASKS_ERROR;
         }
+        task->tmTask.taskInfoAddr = (uint64_t)dmaAddr;
     }
 
     for (size_t i = 0, idx = task->argsCnt; i < num; ++i, ++idx) {
