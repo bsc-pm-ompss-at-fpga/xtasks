@@ -68,20 +68,14 @@ char * getConfigFilePath()
     size_t buffSize = max(STR_BUFFER_SIZE, strlen(accMapPath) + strlen(XTASKS_EXTENSION));
     char * buffer = malloc(sizeof(char)*buffSize);
     if (buffer != NULL) {
-        //2nd -> XTASKS_DEF_CONFIG_FILE
-        strcpy(buffer, XTASKS_DEF_CONFIG_FILE);
-        if (access(buffer, R_OK) != -1) {
-            return buffer;
-        }
-
-        //3rd -> executable file path
+        //2nd -> executable file path
         strcpy(buffer, accMapPath);
         buffer = strcat(buffer, XTASKS_EXTENSION);
         if (access(buffer, R_OK) != -1) {
             return buffer;
         }
 
-        //4th -> exec file in current dir
+        //3rd -> exec file in current dir
         accMapPath = strrchr(buffer, '/');
         if (accMapPath == NULL) {
             //Uncontroled path
@@ -94,12 +88,9 @@ char * getConfigFilePath()
             return buffer;
         }
 
-        //5th -> Check old NANOX_EXTENSION
-        strcpy(buffer, (const char *)getauxval(AT_EXECFN));
-        buffer = strcat(buffer, NANOX_EXTENSION);
-        if (access(accMapPath, R_OK) != -1) {
-            fprintf(stderr, "WARNING: Using '%s' as xTasks config for legacy ", buffer);
-            fprintf(stderr, "(the preferred extension is .xtasks.config).\n");
+        //4th -> XTASKS_DEF_CONFIG_FILE
+        strcpy(buffer, XTASKS_DEF_CONFIG_FILE);
+        if (access(buffer, R_OK) != -1) {
             return buffer;
         }
 
@@ -119,11 +110,11 @@ void printErrorMsgCfgFile()
     fprintf(stderr, "current FPGA configuration.\n");
     fprintf(stderr, "       Available options are:\n");
     fprintf(stderr, "         1) Use XTASKS_CONFIG_FILE environment variable to define the file path.\n");
-    fprintf(stderr, "         2) Create './xtasks.config' file with the current FPGA configuration.\n");
-    fprintf(stderr, "         3) Create '<binary name>.xtasks.config' file (same location as binary) ");
+    fprintf(stderr, "         2) Create '<binary name>.xtasks.config' file (same location as binary) ");
     fprintf(stderr, "with the current FPGA configuration.\n");
-    fprintf(stderr, "         4) Create './<binary name>.xtasks.config' file with the current FPGA ");
+    fprintf(stderr, "         3) Create './<binary name>.xtasks.config' file with the current FPGA ");
     fprintf(stderr, "configuration.\n");
+    fprintf(stderr, "         4) Create './xtasks.config' file with the current FPGA configuration.\n");
 }
 
 #endif /* __LOCK_FREE_QUEUE_H__ */
