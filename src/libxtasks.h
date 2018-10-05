@@ -108,57 +108,85 @@ xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle * array, size
 
 /*!
  * \brief Get information of an accelerator
+ * \param[in]  handle     Accelerator handle which information will be returned
+ * \param[out] info       Pointer to a valid xtasks_acc_info struct where the accelerator info will be placed
  */
 xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * info);
 
 /*!
  * \brief Create a new task
- * \param[in]   compute
- * \param[out]  handle   Task handle
+ * \param[in]  id         Task identifier that will be associated to the task
+ * \param[in]  accel      Accelerator handle of the accelerator where the task will be sent
+ * \param[in]  compute    Compute flags. Defines whether the accelerator should execute the task core or not
+ * \param[out] handle     Pointer to a valid xtasks_task_handle where the task handle will be set
  */
-xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
+xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accel,
     xtasks_comp_flags const compute, xtasks_task_handle * handle);
 
 /*!
  * \brief Delete a task
+ * \param[in]  handle     Task handle of the task to delete
  */
 xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle);
 
 /*!
- * \brief Add a task argument to a task with the given information (id, flags, value)
+ * \brief Add a task argument to a task with the given information
+ * \param[in]  id         Argument identifier (they may be sent out of order)
+ * \param[in]  flags      Argument flags. Defines some properties of the argument related to placing and caching
+ * \param[in]  value      Argument value
+ * \param[in]  handle     Task handle where the argument will be added
  */
 xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
     xtasks_arg_val const value, xtasks_task_handle const handle);
 
 /*!
  * \brief Append an array of arguments to a task all with the same flags
+ *        The argument id will be set based on the number of existing arguments and the array ordering
+ * \param[in]  num        Number of argument pointer by values
+ * \param[in]  flags      Arguments flags (common for all arguments)
+ * \param[in]  values     Array of argument values
+ * \param[in]  handle     Task handle where the arguments will be added
  */
 xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
     xtasks_arg_val * const values, xtasks_task_handle const handle);
 
 /*!
  * \brief Submit the task to the FPGA
+ * \param[in]  handle     Task handle to be sent
  */
 xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle);
 
 /*!
- * \brief Wait until the task execution finishes
+ * \brief Synchronously wait until the task execution finishes
+ * \param[in]  handle     Task handle to synchronize
  */
 xtasks_stat xtasksWaitTask(xtasks_task_handle const handle);
 
 /*!
  * \brief Try to get a task which execution finished
+ * \param[out] handle     Pointer to a valid xtasks_task_handle where the task handle may be set
+ * \param[out] id         Pointer to a valid xtasks_task_id where the task identifier may be set
+ * \returns    XTASKS_PENDING if no task has been synchronized,
+ *             XTASKS_SUCCESS if a task has been synchronized and output parameter have been set
  */
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id);
 
 /*!
  * \brief Try to get a task which execution finished for an accelerator
+ * \param[in]  accel      Accelerator handle that will be used to retrieve a task from
+ * \param[out] handle     Pointer to a valid xtasks_task_handle where the task handle may be set
+ * \param[out] id         Pointer to a valid xtasks_task_id where the task identifier may be set
+ * \returns    XTASKS_PENDING if no task has been synchronized,
+ *             XTASKS_SUCCESS if a task has been synchronized and output parameter have been set
  */
 xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
-    xtasks_task_handle * task, xtasks_task_id * id);
+    xtasks_task_handle * handle, xtasks_task_id * id);
 
 /*!
  * \brief Get instrumentation timestamps for a task
+ * \param[in]  handle     Task handle which instrumentation data will be retrieved
+ * \param[out] times      Pointer to a valid xtasks_ins_times poainter that will be set with the addess
+ *                        of instrumentation data
  */
 xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times);
 
