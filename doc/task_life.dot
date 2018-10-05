@@ -1,0 +1,19 @@
+digraph {
+  size="6,6";
+  graph[compound=true];
+  1[label="NO CREATED", width="1", height="1", style="filled", fillcolor="gray"]
+  1 -> 2 [label="  xtasksCreateTask(...)      ", style="solid", color="black"];
+  2[label="READY", width="1", height="1", style="filled", fillcolor="greenyellow"]
+  2 -> 2 [label="  xtasksAddArg(...)      ", style="solid", color="black"];
+  2 -> 2 [label="  xtasksAddArgs(...)      ", style="solid", color="black"];
+  2 -> 3 [label="  xtasksSubmitTask(...)      ", style="solid", color="black"];
+  3[label="RUN", width="1", height="1", style="filled", fillcolor="deepskyblue"];
+  3 -> 4 [label="  xtasksWaitTask(...)      ", style="solid", color="black"];
+  3 -> 4 [label="  xtasksTryGetFinishedTask(...)      ", style="solid", color="black"];
+  3 -> 4 [label="  xtasksTryGetFinishedTaskAccel(...)      ", style="solid", color="black"];
+  4[label="FINISHED", width="1", height="1", style="filled", fillcolor="lightblue"];
+  4 -> 4 [label="  xtasksGetInstrumentData(...)      ", style="solid", color="black"];
+  4 -> 5 [label="  xtasksDeleteTask(...)      ", style="solid", color="black"];
+  5[label="DELETED", width="1", height="1", style="filled", fillcolor="gray"];
+  node [shape=plaintext];
+}
