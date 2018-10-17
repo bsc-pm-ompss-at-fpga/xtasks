@@ -58,6 +58,7 @@
 #define INS_BUFFER_SIZE         (NUM_RUN_TASKS*sizeof(xtasks_ins_times)) ///< Tasks in the readyQueue + tasks being executed in accelerators
 #define HW_TASK_DEST_ID_PS      0x0000001F      ///< Processing System identifier for the destId field
 #define HW_TASK_DEST_ID_TM      0x00000011      ///< Task manager identifier for the destId field
+#define HW_EVENT_SIZE           (sizeof(xtasks_ins_event))
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 1
@@ -727,14 +728,14 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     return XDMA_SUCCESS;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
+xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event ** events)
 {
     task_t * task = (task_t *)(handle);
     size_t idx = task - _tasks;
 
-    if (times == NULL || idx >= NUM_RUN_TASKS) return XTASKS_EINVAL;
+    if (events == NULL || idx >= NUM_RUN_TASKS) return XTASKS_EINVAL;
 
-    *times = (xtasks_ins_times*)_instrBuffers[idx].insBuffer;
+    *events = (xtasks_ins_event*)_instrBuffers[idx].insBuffer;
 
     return XTASKS_SUCCESS;
 }

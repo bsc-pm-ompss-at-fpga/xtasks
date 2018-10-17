@@ -83,6 +83,16 @@ typedef struct {
     xtasks_ins_timestamp outTransfer;  ///< Timestamp after output transfers have finished/acc end
 } xtasks_ins_times;
 
+#define XTASKS_LAST_EVENT_ID    (-1ULL)
+#define XTASKS_INSTR_OK         0       ///< Instrumentation finished successfully
+
+
+typedef struct {
+    uint64_t timestamp;     ///< Event timestamp
+    uint64_t eventId;       ///< Event id
+    uint64_t value;         ///< Event value
+} xtasks_ins_event;
+
 /*!
  * \brief Initialize the library
  */
@@ -187,12 +197,18 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
  * \param[in]  handle     Task handle which instrumentation data will be retrieved
  * \param[out] times      Pointer to a valid xtasks_ins_times poainter that will be set with the addess
  *                        of instrumentation data
+ * Returns an array of xtasks_ins_event that is terminated with an event witt
+ * eventId == XTASKS_LAST_EVENT_ID and the value set as
+ * * == XTASKS_INSTR_OK on success
+ * * != XTASKS_INSTR_OK if on instrumentation buffer overflow
+ *
+ */
+xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event ** events);
 
 /*!
  * \brief Initialize hardware instrumentation
  * \param[in] nEvents   Maximum number of events that will be recorded per task execution
  */
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times);
 xtasks_stat xtasksInitHWIns(int nEvents);
 
 #ifdef __cplusplus
