@@ -124,9 +124,6 @@ static int _init_cnt = 0;   ///< Counter of calls to init/fini
 static size_t   _numAccs;   ///< Number of accelerators in the system
 static acc_t *  _accs;      ///< Accelerators data
 static uint64_t             _insTimerAddr;      ///< Physical address of HW instrumentation timer
-static xtasks_ins_times *   _insBuff;           ///< Buffer for the HW instrumentation
-static xtasks_ins_times *   _insBuffPhy;        ///< Physical address of _insBuff
-static xdma_buf_handle      _insBuffHandle;     ///< Handle of _insBuff in libxdma
 static uint8_t *            _tasksBuff;         ///< Buffer to send the HW tasks
 static uint8_t *            _tasksBuffPhy;      ///< Physical address of _tasksBuff
 static xdma_buf_handle      _tasksBuffHandle;   ///< Handle of _tasksBuff in libxdma
@@ -138,6 +135,15 @@ static ready_task_t        *_readyQueue;        ///< Buffer for the ready tasks
 static fini_task_t         *_finiQueue;         ///< Buffer for the finished tasks
 static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset indexes of _readyQueue and _finiQueue
 
+typedef struct {
+    uint64_t *insBuffer;
+    unsigned long int bufferPhy;
+    xdma_buf_handle bufferHandle;
+} instrumentBuffer;
+
+static instrumentBuffer *_instrBuffers = NULL;      ///< Array of intrumentation buffers
+
+
 static inline __attribute__((always_inline)) xtasks_stat resetQueueIdx()
 {
     //Nudge one register
@@ -147,42 +153,64 @@ static inline __attribute__((always_inline)) xtasks_stat resetQueueIdx()
     return XTASKS_SUCCESS;
 }
 
-static xtasks_stat initHWIns()
+xtasks_stat xtasksInitHWIns(int nEvents)
 {
-    //allocate instrumentation buffer & get its physical address
+
+    xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
-    s = xdmaAllocateKernelBuffer((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
-    if (s != XDMA_SUCCESS) {
-        PRINT_ERROR("Cannot allocate kernel buffer for instrumentation");
-        return XTASKS_ERROR;
+    int i;
+    _instrBuffers = malloc(NUM_RUN_TASKS*sizeof(*_instrBuffers));
+    int insBufferSize = nEvents * HW_EVENT_SIZE;
+
+    for (i = 0; i<NUM_RUN_TASKS; i++) {
+        xdma_status status;
+        //Allocate buffer
+        status = xdmaAllocateKernelBuffer((void**)&_instrBuffers[i].insBuffer,
+                &_instrBuffers[i].bufferHandle,
+                insBufferSize);
+        if (status != XDMA_SUCCESS) {
+            ret = XTASKS_ENOMEM;
+            goto instrAllocErr;
+        }
+        //get phy address
+        status = xdmaGetDMAAddress(_instrBuffers[i].bufferHandle, &_instrBuffers[i].bufferPhy);
+        if (status != XDMA_SUCCESS) {
+            ret = XTASKS_ERROR;
+            goto instrGetAddrErr;
+        }
     }
-    unsigned long phyAddr;
-    s = xdmaGetDMAAddress(_insBuffHandle, &phyAddr);
-    if (s != XDMA_SUCCESS) {
-        PRINT_ERROR("Cannot get physical address of instrumentation buffer");
-        xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
-        _insBuff = NULL;
-        return XTASKS_ERROR;
-    }
-    _insBuffPhy = (xtasks_ins_times *)phyAddr;
-    _insTimerAddr = 0;
     s = xdmaInitHWInstrumentation();
     if (s == XDMA_SUCCESS) {
         _insTimerAddr = (uint64_t)xdmaGetInstrumentationTimerAddr();
+    } else {
+        ret = XTASKS_ENOSYS;
+        goto intrInitErr;
     }
     return XTASKS_SUCCESS;
+
+intrInitErr:
+instrAllocErr:
+instrGetAddrErr:
+    for ( ; i>=0; i--) {
+        xdmaFreeKernelBuffer(_instrBuffers[i].insBuffer, _instrBuffers[i].bufferHandle);
+    }
+    return ret;
 }
 
 static xtasks_stat finiHWIns()
 {
     xdma_status s0 = XDMA_SUCCESS;
+    xdma_status s1 = XDMA_SUCCESS;
     if (_insTimerAddr != 0) {
         //xdmaInitHWInstrumentation was succesfully executed
         s0 = xdmaFiniHWInstrumentation();
     }
-    xdma_status s1 = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
-    _insBuff = NULL;
-    _insBuffPhy = NULL;
+    for (int i = 0; i<NUM_RUN_TASKS; i++) {
+        xdma_status freeStatus =
+            xdmaFreeKernelBuffer(_instrBuffers[i].insBuffer, _instrBuffers[i].bufferHandle);
+        s1 = (s1 != XDMA_SUCCESS) ? s1 : freeStatus;
+    }
+
     return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
@@ -336,13 +364,6 @@ xtasks_stat xtasksInit()
         PRINT_ERROR("Cannot reset the Task Manager");
         INIT_ERR_6: munmap((void *)_taskmanagerRst, sizeof(uint32_t));
         goto INIT_ERR_5;
-    }
-
-    //Init the HW instrumentation
-    if (initHWIns() != XTASKS_SUCCESS) {
-        ret = XTASKS_EFILE;
-        //NOTE: PRINT_ERROR done inside the function
-        goto INIT_ERR_6;
     }
 
     //Allocate the task_info buffer
@@ -499,7 +520,7 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     _tasks[idx].accel = accel;
     _tasks[idx].hwTaskHeader->taskID = (uintptr_t)(&_tasks[idx]);
     _tasks[idx].hwTaskHeader->profile.timerAddr = _insTimerAddr;
-    _tasks[idx].hwTaskHeader->profile.bufferAddr = (uintptr_t)(&_insBuffPhy[idx]);
+    _tasks[idx].hwTaskHeader->profile.bufferAddr = (uintptr_t)(_instrBuffers[idx].bufferPhy);
     _tasks[idx].hwTaskHeader->compute = compute;
     _tasks[idx].hwTaskHeader->destID = HW_TASK_DEST_ID_TM;
     _tasks[idx].tmTask.taskInfoAddr = (uintptr_t)(&_tasksBuffPhy[idx*DEF_HW_TASK_SIZE]);
@@ -713,7 +734,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_
 
     if (times == NULL || idx >= NUM_RUN_TASKS) return XTASKS_EINVAL;
 
-    *times = &_insBuff[idx];
+    *times = (xtasks_ins_times*)_instrBuffers[idx].insBuffer;
 
     return XTASKS_SUCCESS;
 }

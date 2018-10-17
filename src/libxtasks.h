@@ -187,8 +187,13 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
  * \param[in]  handle     Task handle which instrumentation data will be retrieved
  * \param[out] times      Pointer to a valid xtasks_ins_times poainter that will be set with the addess
  *                        of instrumentation data
+
+/*!
+ * \brief Initialize hardware instrumentation
+ * \param[in] nEvents   Maximum number of events that will be recorded per task execution
  */
 xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times);
+xtasks_stat xtasksInitHWIns(int nEvents);
 
 #ifdef __cplusplus
 }
