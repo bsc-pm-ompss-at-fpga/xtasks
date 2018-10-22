@@ -88,9 +88,9 @@ typedef struct {
 
 
 typedef struct {
-    uint64_t timestamp;     ///< Event timestamp
     uint64_t eventId;       ///< Event id
     uint64_t value;         ///< Event value
+    uint64_t timestamp;     ///< Event timestamp
 } xtasks_ins_event;
 
 /*!
@@ -195,7 +195,8 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
 /*!
  * \brief Get instrumentation timestamps for a task
  * \param[in]  handle     Task handle which instrumentation data will be retrieved
- * \param[out] times      Pointer to a valid xtasks_ins_times poainter that will be set with the addess
+ * \param[out] times      Pointer to an xtasks_ins_times array with that can fit at least maxCount elements
+ * \param[in] maxCount    Number of events the event array can hold
  *                        of instrumentation data
  * Returns an array of xtasks_ins_event that is terminated with an event witt
  * eventId == XTASKS_LAST_EVENT_ID and the value set as
@@ -203,7 +204,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
  * * != XTASKS_INSTR_OK if on instrumentation buffer overflow
  *
  */
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event ** events);
+xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event *events, size_t maxCount);
 
 /*!
  * \brief Initialize hardware instrumentation

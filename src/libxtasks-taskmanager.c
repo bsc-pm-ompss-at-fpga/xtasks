@@ -36,6 +36,8 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
+#include <assert.h>
+
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
 #define READY_QUEUE_PATH        "/dev/taskmanager/ready_queue"
@@ -137,12 +139,13 @@ static fini_task_t         *_finiQueue;         ///< Buffer for the finished tas
 static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset indexes of _readyQueue and _finiQueue
 
 typedef struct {
-    uint64_t *insBuffer;
+    xtasks_ins_event *insBuffer;
     unsigned long int bufferPhy;
     xdma_buf_handle bufferHandle;
 } instrumentBuffer;
 
 static instrumentBuffer *_instrBuffers = NULL;      ///< Array of intrumentation buffers
+static int _numInstrEvents;
 
 
 static inline __attribute__((always_inline)) xtasks_stat resetQueueIdx()
@@ -161,6 +164,7 @@ xtasks_stat xtasksInitHWIns(int nEvents)
     xdma_status s;
     int i;
     _instrBuffers = malloc(NUM_RUN_TASKS*sizeof(*_instrBuffers));
+    _numInstrEvents = nEvents;
     int insBufferSize = nEvents * HW_EVENT_SIZE;
 
     for (i = 0; i<NUM_RUN_TASKS; i++) {
@@ -513,6 +517,11 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
         return XTASKS_ENOMEM;
     }
 
+    uint64_t instrumentData;
+    instrumentData = (uintptr_t)(_instrBuffers[idx].bufferPhy);
+    //Upper 16 bits contain maximum event count
+    instrumentData = ((uint64_t)_numInstrEvents << 48) | instrumentData;
+
     _tasks[idx].id = id;
     //_tasks[idx].hwTaskHeader = &_tasksBuff[idx*DEF_HW_TASK_SIZE]; //NOTE: Done in getFreeTaskEntry()
     _tasks[idx].hwTaskArgs = (hw_task_arg_t *)
@@ -521,7 +530,7 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     _tasks[idx].accel = accel;
     _tasks[idx].hwTaskHeader->taskID = (uintptr_t)(&_tasks[idx]);
     _tasks[idx].hwTaskHeader->profile.timerAddr = _insTimerAddr;
-    _tasks[idx].hwTaskHeader->profile.bufferAddr = (uintptr_t)(_instrBuffers[idx].bufferPhy);
+    _tasks[idx].hwTaskHeader->profile.bufferAddr = instrumentData;
     _tasks[idx].hwTaskHeader->compute = compute;
     _tasks[idx].hwTaskHeader->destID = HW_TASK_DEST_ID_TM;
     _tasks[idx].tmTask.taskInfoAddr = (uintptr_t)(&_tasksBuffPhy[idx*DEF_HW_TASK_SIZE]);
@@ -728,14 +737,17 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     return XDMA_SUCCESS;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event ** events)
+xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event * events, size_t maxCount)
 {
     task_t * task = (task_t *)(handle);
     size_t idx = task - _tasks;
 
     if (events == NULL || idx >= NUM_RUN_TASKS) return XTASKS_EINVAL;
 
-    *events = (xtasks_ins_event*)_instrBuffers[idx].insBuffer;
+    memcpy(events, _instrBuffers[idx].insBuffer,
+            (maxCount<_numInstrEvents ? maxCount : _numInstrEvents)*sizeof(xtasks_ins_event));
+
+    //*events = (xtasks_ins_event*)_instrBuffers[idx].insBuffer;
 
     return XTASKS_SUCCESS;
 }
@@ -762,4 +774,21 @@ hw_task_arg_t tasksBufferArg(size_t const tIdx, size_t const aIdx)
     hw_task_arg_t * tmp = (hw_task_arg_t *)(&_tasksBuff[tIdx*DEF_HW_TASK_SIZE + sizeof(hw_task_header_t)]);
     return tmp[aIdx];
 }
+
+xtasks_ins_event tasksGetTaskEvent(size_t const tIdx, size_t const evIdx) {
+    return _instrBuffers[tIdx].insBuffer[evIdx];
+}
+
+void tasksPrintInstrBuffer(int tIdx) {
+    xtasks_ins_event *event = _instrBuffers[tIdx].insBuffer;
+    fprintf(stderr, "timestamp, accid, eventid, value\n");
+    while ( event->eventId != XTASKS_LAST_EVENT_ID ) {
+        fprintf(stderr, "%lu,\t%lu,\t%llu,\t%lu\n", event->timestamp,
+                event->eventId >> 32, event->eventId & ((1ULL<<32)-1),
+                event->value);
+        event++;
+    }
+
+}
+
 #endif
