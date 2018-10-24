@@ -147,11 +147,19 @@ xtasks_stat xtasksInit()
     if (init_cnt > 0) return XTASKS_SUCCESS;
 
     xtasks_stat ret = XTASKS_SUCCESS;
+    xdma_status s;
 
     //Open libxdma
-    if (xdmaOpen() != XDMA_SUCCESS) {
+    s = xdmaOpen();
+    if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
-        PRINT_ERROR("xdmaOpen failed");
+        if (s == XDMA_ENOENT) {
+            PRINT_ERROR("xdmaOpen failed. Check if xdma device exist in the system");
+        } else if (s == XDMA_EACCES) {
+            PRINT_ERROR("xdmaOpen failed. Current user cannot access xdma device");
+        } else {
+            PRINT_ERROR("xdmaOpen failed");
+        }
         INIT_ERR_0: __sync_sub_and_fetch(&_init_cnt, 1);
         return ret;
     }
@@ -258,7 +266,6 @@ xtasks_stat xtasksInit()
     }
 
     //Allocate the tasks buffer
-    xdma_status s;
     s = xdmaAllocateHost((void**)&_tasksBuff, &_tasksBuffHandle, NUM_RUN_TASKS*sizeof(hw_task_t));
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
