@@ -415,3 +415,66 @@ xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_
 {
     return XTASKS_ENOSYS;
 }
+
+xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp * timestamp)
+{
+    return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle * handle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaAllocate(handle, len);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksFree(xtasks_mem_handle * handle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaFree(handle);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t * addr)
+{
+    if (addr == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaGetDeviceAddress(handle, addr);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksMemcpy(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+    xtasks_memcpy_kind const kind)
+{
+    xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
+    xdma_status status = xdmaMemcpy(usr, handle, len, offset, mode);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksMemcpyAsync(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+    xtasks_memcpy_kind const kind, xtasks_memcpy_handle * cpyHandle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
+    xdma_status status = xdmaMemcpyAsync(usr, handle, len, offset, mode, cpyHandle);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksTestCopy(xtasks_memcpy_handle * handle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaTestTransfer(handle);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle * handle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaWaitTransfer(handle);
+    return toXtasksStat(status);
+}

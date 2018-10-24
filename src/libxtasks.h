@@ -51,6 +51,11 @@ typedef enum {
     XTASKS_COMPUTE_ENABLE  = 1
 } xtasks_comp_flags;
 
+typedef enum {
+    XTASKS_HOST_TO_ACC,       ///< From host memory to accelerator memory
+    XTASKS_ACC_TO_HOST        ///< From accelerator memory to host memory
+} xtasks_memcpy_kind;
+
 #define XTASKS_ARG_FLAG_BRAM     0x00
 #define XTASKS_ARG_FLAG_PRIVATE  0x01
 #define XTASKS_ARG_FLAG_GLOBAL   0x02
@@ -67,6 +72,8 @@ typedef uint32_t     xtasks_acc_id;
 typedef uint32_t     xtasks_acc_type;
 typedef const char * xtasks_acc_desc;
 typedef uint64_t     xtasks_ins_timestamp;
+typedef void *       xtasks_mem_handle;
+typedef long unsigned int xtasks_memcpy_handle;
 
 typedef struct {
     xtasks_acc_id   id;               ///< Accelerator identifier
@@ -189,6 +196,71 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
  *                        of instrumentation data
  */
 xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times);
+
+/*!
+ * \brief Get the current time for an accelerator
+ * \param[in]  accel      Accelerator handle of the accelerator which time will be retrieved
+ * \param[out] timestamp  Timestamp of current accelerator time
+ */
+xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp * timestamp);
+
+/*!
+ * \brief Allocate memory in the accelerators address space
+ * \param[in]  len        Amount of bytes that will be allocated
+ * \param[out] handle     Pointer to a valid xtasks_mem_handle where the allocation handle will be set
+ */
+xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle * handle);
+
+/*!
+ * \brief Unallocate memory
+ * \param[in]  handle     Allocation handle to be unallocated
+ */
+xtasks_stat xtasksFree(xtasks_mem_handle * handle);
+
+/*!
+ * \brief Get the accelerator address of an allocation
+ * \param[in]  handle     Allocation handle
+ * \param[out] addr       Pointer to a valid variable that will be set with the accelerator address
+ */
+xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t * addr);
+
+/*!
+ * \brief Synchronously copy data to/from an allocation
+ * \param[in]  handle     Allocation handle
+ * \param[in]  offset     Offset (in bytes) before starting the copy in the allocation
+ * \param[in]  len        Amount of bytes that will be copied
+ * \param[in]  usr        Pointer to the user space memory that will be copied from/to
+ * \param[in]  kind       Kind of copy that will be done
+ */
+xtasks_stat xtasksMemcpy(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+    xtasks_memcpy_kind const kind);
+
+/*!
+ * \brief Asynchronously copy data to/from an allocation
+ * \param[in]  handle     Allocation handle
+ * \param[in]  offset     Offset (in bytes) before starting the copy in the allocation
+ * \param[in]  len        Amount of bytes that will be copied
+ * \param[in]  usr        Pointer to the user space memory that will be copied from/to
+ * \param[in]  kind       Kind of copy that will be done
+ * \param[out] cpyHandle  Pointer to a valid xtasks_memcpy_handle where the copy operation handle
+ *                        will be set
+ */
+xtasks_stat xtasksMemcpyAsync(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+    xtasks_memcpy_kind const kind, xtasks_memcpy_handle * cpyHandle);
+
+/*!
+ * \brief Test the status of a copy operation
+ * \param[in]  handle     Copy operation handle that will be checked
+ * \returns    XTASKS_PENDING if the copy operation has not finished yet,
+ *             XTASKS_SUCCESS if the copy operation has sucessfully finalized
+ */
+xtasks_stat xtasksTestCopy(xtasks_memcpy_handle * handle);
+
+/*!
+ * \brief Synchronously wait for a copy operation
+ * \param[in]  handle     Copy operation handle that will be synchronized
+ */
+xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle * handle);
 
 #ifdef __cplusplus
 }
