@@ -60,8 +60,8 @@
 #define HW_TASK_DEST_ID_TM      0x00000011      ///< Task manager identifier for the destId field
 
 //! Check that libxdma version is compatible
-#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 1
-# error Installed libxdma is not supported (use >= 1.0)
+#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 2
+# error Installed libxdma is not supported (use >= 2.0)
 #endif
 
 //! \brief HW accelerator representation
@@ -151,16 +151,16 @@ static xtasks_stat initHWIns()
 {
     //allocate instrumentation buffer & get its physical address
     xdma_status s;
-    s = xdmaAllocateKernelBuffer((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
+    s = xdmaAllocateHost((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
     if (s != XDMA_SUCCESS) {
         PRINT_ERROR("Cannot allocate kernel buffer for instrumentation");
         return XTASKS_ERROR;
     }
-    unsigned long phyAddr;
-    s = xdmaGetDMAAddress(_insBuffHandle, &phyAddr);
+    uint64_t phyAddr;
+    s = xdmaGetDeviceAddress(_insBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         PRINT_ERROR("Cannot get physical address of instrumentation buffer");
-        xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+        xdmaFree(_insBuffHandle);
         _insBuff = NULL;
         return XTASKS_ERROR;
     }
@@ -180,7 +180,7 @@ static xtasks_stat finiHWIns()
         //xdmaInitHWInstrumentation was succesfully executed
         s0 = xdmaFiniHWInstrumentation();
     }
-    xdma_status s1 = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+    xdma_status s1 = xdmaFree(_insBuffHandle);
     _insBuff = NULL;
     _insBuffPhy = NULL;
     return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
@@ -347,7 +347,7 @@ xtasks_stat xtasksInit()
 
     //Allocate the task_info buffer
     xdma_status s;
-    s = xdmaAllocateKernelBuffer((void**)&_tasksBuff, &_tasksBuffHandle,
+    s = xdmaAllocateHost((void**)&_tasksBuff, &_tasksBuffHandle,
         NUM_RUN_TASKS*DEF_HW_TASK_SIZE);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
@@ -357,12 +357,12 @@ xtasks_stat xtasksInit()
         _tasksBuffPhy = NULL;
         goto INIT_ERR_6;
     }
-    unsigned long phyAddr;
-    s = xdmaGetDMAAddress(_tasksBuffHandle, &phyAddr);
+    uint64_t phyAddr;
+    s = xdmaGetDeviceAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
         PRINT_ERROR("Cannot get physical address of task info. region");
-        INIT_ERR_8: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
+        INIT_ERR_8: xdmaFree(_tasksBuffHandle);
         goto INIT_ERR_7;
     }
     _tasksBuffPhy = (uint8_t *)phyAddr;
@@ -391,7 +391,7 @@ xtasks_stat xtasksFini()
     free(_tasks);
 
     //Free tasks buffer
-    xdma_status s = xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
+    xdma_status s = xdmaFree(_tasksBuffHandle);
     if (s != XDMA_SUCCESS) {
         return XTASKS_ERROR;
     }
@@ -518,7 +518,7 @@ xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
     *handle = NULL;
     if (task->argsCnt > DEF_HW_TASK_ARGS_LEN) {
         //Task is in extended mode
-        xdmaFreeKernelBuffer((void *)task->hwTaskHeader, task->taskHandle);
+        xdmaFree(task->taskHandle);
         task->argsCnt = 0;
     }
     __sync_synchronize(); //Execute previous operations before the next instruction
@@ -538,7 +538,7 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
         //Entering in extended mode
         hw_task_header_t * prevHeader = task->hwTaskHeader;
         xdma_status s;
-        s = xdmaAllocateKernelBuffer((void**)(&task->hwTaskHeader), &task->taskHandle,
+        s = xdmaAllocateHost((void**)(&task->hwTaskHeader), &task->taskHandle,
             EXT_HW_TASK_SIZE);
         if (s != XDMA_SUCCESS) {
             return XTASKS_ENOMEM;
@@ -546,10 +546,10 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
         memcpy(task->hwTaskHeader, prevHeader, DEF_HW_TASK_SIZE); //< Move the hw task header and args
         //Update the task info
         task->hwTaskArgs = (hw_task_arg_t *)(task->hwTaskHeader + 1);
-        unsigned long dmaAddr;
-        s = xdmaGetDMAAddress(task->taskHandle, &dmaAddr);
+        uint64_t dmaAddr;
+        s = xdmaGetDeviceAddress(task->taskHandle, &dmaAddr);
         if (s != XDMA_SUCCESS) {
-            xdmaFreeKernelBuffer(task->hwTaskHeader, task->taskHandle);
+            xdmaFree(task->taskHandle);
             return XTASKS_ERROR;
         }
         task->tmTask.taskInfoAddr = (uint64_t)dmaAddr;
@@ -577,7 +577,7 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
         // 3) The number of args will fit in extended mode
         hw_task_header_t * prevHeader = task->hwTaskHeader;
         xdma_status s;
-        s = xdmaAllocateKernelBuffer((void**)(&task->hwTaskHeader), &task->taskHandle,
+        s = xdmaAllocateHost((void**)(&task->hwTaskHeader), &task->taskHandle,
             EXT_HW_TASK_SIZE);
         if (s != XDMA_SUCCESS) {
             return XTASKS_ENOMEM;
@@ -585,10 +585,10 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
         memcpy(task->hwTaskHeader, prevHeader, DEF_HW_TASK_SIZE); //< Move the hw task header and args
         //Update the task info
         task->hwTaskArgs = (hw_task_arg_t *)(task->hwTaskHeader + 1);
-        unsigned long dmaAddr;
-        s = xdmaGetDMAAddress(task->taskHandle, &dmaAddr);
+        uint64_t dmaAddr;
+        s = xdmaGetDeviceAddress(task->taskHandle, &dmaAddr);
         if (s != XDMA_SUCCESS) {
-            xdmaFreeKernelBuffer(task->hwTaskHeader, task->taskHandle);
+            xdmaFree(task->taskHandle);
             return XTASKS_ERROR;
         }
         task->tmTask.taskInfoAddr = (uint64_t)dmaAddr;
