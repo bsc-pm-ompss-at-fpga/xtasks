@@ -215,7 +215,7 @@ xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle * handle);
  * \brief Unallocate memory
  * \param[in]  handle     Allocation handle to be unallocated
  */
-xtasks_stat xtasksFree(xtasks_mem_handle * handle);
+xtasks_stat xtasksFree(xtasks_mem_handle handle);
 
 /*!
  * \brief Get the accelerator address of an allocation

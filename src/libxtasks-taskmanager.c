@@ -741,10 +741,8 @@ xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle * handle)
     return toXtasksStat(status);
 }
 
-xtasks_stat xtasksFree(xtasks_mem_handle * handle)
+xtasks_stat xtasksFree(xtasks_mem_handle handle)
 {
-    if (handle == NULL) return XTASKS_EINVAL;
-
     xdma_status status = xdmaFree(handle);
     return toXtasksStat(status);
 }
