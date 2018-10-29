@@ -110,7 +110,7 @@ static xtasks_stat initHWIns()
         PRINT_ERROR("Cannot allocate kernel buffer for instrumentation");
         return XTASKS_ERROR;
     }
-    uint64_t phyAddr;
+    unsigned long phyAddr;
     s = xdmaGetDeviceAddress(_insBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         PRINT_ERROR("Cannot get physical address of instrumentation buffer");
@@ -275,7 +275,7 @@ xtasks_stat xtasksInit()
         _tasksBuffPhy = NULL;
         goto INIT_ERR_2;
     }
-    uint64_t phyAddr;
+    unsigned long phyAddr;
     s = xdmaGetDeviceAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
@@ -567,7 +567,9 @@ xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t * addr)
 {
     if (addr == NULL) return XTASKS_EINVAL;
 
-    xdma_status status = xdmaGetDeviceAddress(handle, addr);
+    unsigned long devAddr = 0;
+    xdma_status status = xdmaGetDeviceAddress(handle, &devAddr);
+    *addr = devAddr;
     return toXtasksStat(status);
 }
 

@@ -156,7 +156,7 @@ static xtasks_stat initHWIns()
         PRINT_ERROR("Cannot allocate kernel buffer for instrumentation");
         return XTASKS_ERROR;
     }
-    uint64_t phyAddr;
+    unsigned long phyAddr;
     s = xdmaGetDeviceAddress(_insBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         PRINT_ERROR("Cannot get physical address of instrumentation buffer");
@@ -364,7 +364,7 @@ xtasks_stat xtasksInit()
         _tasksBuffPhy = NULL;
         goto INIT_ERR_6;
     }
-    uint64_t phyAddr;
+    unsigned long phyAddr;
     s = xdmaGetDeviceAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
@@ -553,7 +553,7 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
         memcpy(task->hwTaskHeader, prevHeader, DEF_HW_TASK_SIZE); //< Move the hw task header and args
         //Update the task info
         task->hwTaskArgs = (hw_task_arg_t *)(task->hwTaskHeader + 1);
-        uint64_t dmaAddr;
+        unsigned long dmaAddr;
         s = xdmaGetDeviceAddress(task->taskHandle, &dmaAddr);
         if (s != XDMA_SUCCESS) {
             xdmaFree(task->taskHandle);
@@ -592,7 +592,7 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
         memcpy(task->hwTaskHeader, prevHeader, DEF_HW_TASK_SIZE); //< Move the hw task header and args
         //Update the task info
         task->hwTaskArgs = (hw_task_arg_t *)(task->hwTaskHeader + 1);
-        uint64_t dmaAddr;
+        unsigned long dmaAddr;
         s = xdmaGetDeviceAddress(task->taskHandle, &dmaAddr);
         if (s != XDMA_SUCCESS) {
             xdmaFree(task->taskHandle);
@@ -751,7 +751,9 @@ xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t * addr)
 {
     if (addr == NULL) return XTASKS_EINVAL;
 
-    xdma_status status = xdmaGetDeviceAddress(handle, addr);
+    unsigned long devAddr = 0;
+    xdma_status status = xdmaGetDeviceAddress(handle, &devAddr);
+    *addr = devAddr;
     return toXtasksStat(status);
 }
 

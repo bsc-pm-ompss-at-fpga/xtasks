@@ -439,7 +439,9 @@ xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t * addr)
 {
     if (addr == NULL) return XTASKS_EINVAL;
 
-    xdma_status status = xdmaGetDeviceAddress(handle, addr);
+    unsigned long devAddr = 0;
+    xdma_status status = xdmaGetDeviceAddress(handle, &devAddr);
+    *addr = devAddr;
     return toXtasksStat(status);
 }
 
