@@ -51,8 +51,10 @@
 #define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
 #define VALID_ENTRY_MASK        0x80
 #define FREE_ENTRY_MASK         0
-#define HW_TASK_HEAD_BYTES      32              //NOTE: sizeof(task_info_t) without consider the parentTaskID, args and final padding
-#define HW_TASK_NUM_ARGS        13              //NOTE: (256 - sizeof(task_info_t))/sizeof(task_info_arg_t)
+#define DEF_HW_TASK_SIZE        256             ///< Size of hw task when using the defult num. of args.
+#define DEF_HW_TASK_ARGS_LEN    13              //NOTE: (DEF_HW_TASK_SIZE - sizeof(hw_task_header_t))/sizeof(hw_task_arg_t)
+#define EXT_HW_TASK_SIZE        1024            ///< Size of hw task when using the extended num. of args.
+#define EXT_HW_TASK_ARGS_LEN    61              //NOTE: (EXT_HW_TASK_SIZE - sizeof(hw_task_header_t))/sizeof(hw_task_arg_t)
 //NOTE: The number of slots must be at least the number of slots in the ready queue (READY_QUEUE_LEN)
 //      + the number of running tasks (1 foreach accelerator -> _numAccs)
 #define NUM_RUN_TASKS           (READY_QUEUE_LEN + _numAccs) ///< Maximum number of concurrently running tasks
@@ -65,8 +67,8 @@
 #define NEW_TASK_OUT_COPY_MASK  0x0100          ///< Mask to check the copy with OUT direction of new_task_arg_t->flags field
 
 //! Check that libxdma version is compatible
-#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 1
-# error Installed libxdma is not supported (use >= 1.0)
+#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 2
+# error Installed libxdma is not supported (use >= 2.0)
 #endif
 
 //! \brief HW accelerator representation
@@ -117,7 +119,7 @@ typedef struct __attribute__ ((__packed__)) {
     uint32_t argCached; //[0  :31 ] Flags
     uint32_t argID;     //[32 :63 ] Argument ID
     uint64_t argAddr;   //[64 :127] Address
-} task_info_arg_t;
+} hw_task_arg_t;
 
 //! \brief Task information for the accelerator
 typedef struct __attribute__ ((__packed__)) {
@@ -127,20 +129,19 @@ typedef struct __attribute__ ((__packed__)) {
         uint64_t timerAddr;                  //[128:191] Timer address for instrumentation
         uint64_t bufferAddr;                 //[192:255] Buffer address to store instrumentation info
     } profile;
-    uint32_t compute;                        //[256:287] Compute flag
-    uint32_t destID;                         //[288:319] Destination ID where the accelerator will send the 'complete' signal
-    task_info_arg_t args[HW_TASK_NUM_ARGS];  //[   :   ] Task arguments info
-    uint64_t _padding;                       //[   :   ] This padding is to adjunt the sizeof(task_info_t) to 256
-} task_info_t;
+    uint32_t compute;                        //[192:223] Compute flag
+    uint32_t destID;                         //[224:255] Destination ID where the accelerator will send the 'complete' signal
+} hw_task_header_t;
 
 //! \brief Internal library task information
 typedef struct {
     xtasks_task_id          id;            ///< External task identifier
-    task_info_t *           hwTask;        ///< Pointer to the task_info_t struct
+    hw_task_header_t *      hwTaskHeader;  ///< Pointer to the hw_task_header_t struct
+    hw_task_arg_t *         hwTaskArgs;    ///< Pointer to the array of hw_task_arg_t structs
     size_t                  argsCnt;       ///< Number of arguments in the task
     acc_t *                 accel;         ///< Accelerator where the task will run
     ready_task_t            tmTask;        ///< Cached task information that will be sent to the TM
-    xdma_buf_handle         taskHandle;    ///< Task buffer handle (only used if: argsCnt > HW_TASK_NUM_ARGS)
+    xdma_buf_handle         taskHandle;    ///< Task buffer handle (only used if: argsCnt > DEF_HW_TASK_ARGS_LEN)
 } task_t;
 
 static int _init_cnt = 0;   ///< Counter of calls to init/fini
@@ -150,8 +151,8 @@ static uint64_t             _insTimerAddr;      ///< Physical address of HW inst
 static xtasks_ins_times *   _insBuff;           ///< Buffer for the HW instrumentation
 static xtasks_ins_times *   _insBuffPhy;        ///< Physical address of _insBuff
 static xdma_buf_handle      _insBuffHandle;     ///< Handle of _insBuff in libxdma
-static task_info_t *        _tasksBuff;         ///< Buffer to send the HW tasks
-static task_info_t *        _tasksBuffPhy;      ///< Physical address of _tasksBuff
+static uint8_t *            _tasksBuff;         ///< Buffer to send the HW tasks
+static uint8_t *            _tasksBuffPhy;      ///< Physical address of _tasksBuff
 static xdma_buf_handle      _tasksBuffHandle;   ///< Handle of _tasksBuff in libxdma
 static task_t *             _tasks;             ///< Array with internal task information
 static int                  _readyQFd;          ///< File descriptior of ready queue
@@ -177,16 +178,16 @@ static xtasks_stat initHWIns()
 {
     //allocate instrumentation buffer & get its physical address
     xdma_status s;
-    s = xdmaAllocateKernelBuffer((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
+    s = xdmaAllocateHost((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
     if (s != XDMA_SUCCESS) {
         PRINT_ERROR("Cannot allocate kernel buffer for instrumentation");
         return XTASKS_ERROR;
     }
     unsigned long phyAddr;
-    s = xdmaGetDMAAddress(_insBuffHandle, &phyAddr);
+    s = xdmaGetDeviceAddress(_insBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         PRINT_ERROR("Cannot get physical address of instrumentation buffer");
-        xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+        xdmaFree(_insBuffHandle);
         _insBuff = NULL;
         return XTASKS_ERROR;
     }
@@ -206,7 +207,7 @@ static xtasks_stat finiHWIns()
         //xdmaInitHWInstrumentation was succesfully executed
         s0 = xdmaFiniHWInstrumentation();
     }
-    xdma_status s1 = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+    xdma_status s1 = xdmaFree(_insBuffHandle);
     _insBuff = NULL;
     _insBuffPhy = NULL;
     return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
@@ -219,11 +220,19 @@ xtasks_stat xtasksInit()
     if (init_cnt > 0) return XTASKS_SUCCESS;
 
     xtasks_stat ret = XTASKS_SUCCESS;
+    xdma_status s;
 
     //Open libxdma
-    if (xdmaOpen() != XDMA_SUCCESS) {
+    s = xdmaOpen();
+    if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
-        PRINT_ERROR("xdmaOpen failed");
+        if (s == XDMA_ENOENT) {
+            PRINT_ERROR("xdmaOpen failed. Check if xdma device exist in the system");
+        } else if (s == XDMA_EACCES) {
+            PRINT_ERROR("xdmaOpen failed. Current user cannot access xdma device");
+        } else {
+            PRINT_ERROR("xdmaOpen failed");
+        }
         goto INIT_ERR_0;
     }
 
@@ -377,22 +386,21 @@ xtasks_stat xtasksInit()
     }
 
     //Allocate the task_info buffer
-    xdma_status s;
-    s = xdmaAllocateKernelBuffer((void**)&_tasksBuff, &_tasksBuffHandle,
-        NUM_RUN_TASKS*sizeof(task_info_t));
+    s = xdmaAllocateHost((void**)&_tasksBuff, &_tasksBuffHandle,
+        NUM_RUN_TASKS*DEF_HW_TASK_SIZE);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate kernel memory for task information");
         goto INIT_ERR_7;
     }
     unsigned long phyAddr;
-    s = xdmaGetDMAAddress(_tasksBuffHandle, &phyAddr);
+    s = xdmaGetDeviceAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
         PRINT_ERROR("Cannot get physical address of task info. region");
         goto INIT_ERR_8;
     }
-    _tasksBuffPhy = (task_info_t *)phyAddr;
+    _tasksBuffPhy = (uint8_t *)phyAddr;
 
     //Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
@@ -407,7 +415,7 @@ xtasks_stat xtasksInit()
 
     //Error handling code
     INIT_ERR_8:
-        xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
+        xdmaFree(_tasksBuffHandle);
     INIT_ERR_7:
         finiHWIns();
         _tasksBuff = NULL;
@@ -447,7 +455,7 @@ xtasks_stat xtasksFini()
     free(_tasks);
 
     //Free tasks buffer
-    xdma_status s = xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
+    xdma_status s = xdmaFree(_tasksBuffHandle);
     if (s != XDMA_SUCCESS) {
         return XTASKS_ERROR;
     }
@@ -524,8 +532,9 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * i
 static int getFreeTaskEntry()
 {
     for (int i = 0; i < NUM_RUN_TASKS; ++i) {
-        if (_tasks[i].hwTask == NULL) {
-            if (__sync_bool_compare_and_swap(&_tasks[i].hwTask, 0, &_tasksBuff[i])) {
+        if (_tasks[i].hwTaskHeader == NULL) {
+            hw_task_header_t * header = (hw_task_header_t *)(&_tasksBuff[i*DEF_HW_TASK_SIZE]);
+            if (__sync_bool_compare_and_swap(&_tasks[i].hwTaskHeader, 0, header)) {
                 return i;
             }
         }
@@ -543,16 +552,18 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     }
 
     _tasks[idx].id = id;
-    //_tasks[idx].hwTask = &_tasksBuff[idx]; //NOTE: Done in getFreeTaskEntry()
+    //_tasks[idx].hwTaskHeader = &_tasksBuff[idx*DEF_HW_TASK_SIZE]; //NOTE: Done in getFreeTaskEntry()
+    _tasks[idx].hwTaskArgs = (hw_task_arg_t *)
+        (&_tasksBuff[idx*DEF_HW_TASK_SIZE + sizeof(hw_task_header_t)]);
     _tasks[idx].argsCnt = 0;
     _tasks[idx].accel = accel;
-    _tasks[idx].hwTask->parentTaskID = (uintptr_t)(parent);
-    _tasks[idx].hwTask->taskID = (uintptr_t)(&_tasks[idx]);
-    _tasks[idx].hwTask->profile.timerAddr = _insTimerAddr;
-    _tasks[idx].hwTask->profile.bufferAddr = (uintptr_t)(&_insBuffPhy[idx]);
-    _tasks[idx].hwTask->compute = compute;
-    _tasks[idx].hwTask->destID = HW_TASK_DEST_ID_TM;
-    _tasks[idx].tmTask.taskInfoAddr = (uintptr_t)(&_tasksBuffPhy[idx]);
+    _tasks[idx].hwTaskHeader->parentTaskID = (uintptr_t)(parent);
+    _tasks[idx].hwTaskHeader->taskID = (uintptr_t)(&_tasks[idx]);
+    _tasks[idx].hwTaskHeader->profile.timerAddr = _insTimerAddr;
+    _tasks[idx].hwTaskHeader->profile.bufferAddr = (uintptr_t)(&_insBuffPhy[idx]);
+    _tasks[idx].hwTaskHeader->compute = compute;
+    _tasks[idx].hwTaskHeader->destID = HW_TASK_DEST_ID_TM;
+    _tasks[idx].tmTask.taskInfoAddr = (uintptr_t)(&_tasksBuffPhy[idx*DEF_HW_TASK_SIZE]);
     _tasks[idx].tmTask.argsBitmask = 0xFFFF; //All will be ready
     //_tasks[idx].tmTask.size = ?¿; //Computed at submit
     _tasks[idx].tmTask.accID = accel->info.id;
@@ -566,8 +577,13 @@ xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
 {
     task_t * task = (task_t *)(*handle);
     *handle = NULL;
-    //__sync_synchronize(); //Execute previous operations before the next instruction
-    task->hwTask = NULL;
+    if (task->argsCnt > DEF_HW_TASK_ARGS_LEN) {
+        //Task is in extended mode
+        xdmaFree(task->taskHandle);
+        task->argsCnt = 0;
+    }
+    __sync_synchronize(); //Execute previous operations before the next instruction
+    task->hwTaskHeader = NULL;
 
     return XTASKS_SUCCESS;
 }
@@ -576,15 +592,34 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
     xtasks_arg_val const value, xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
-    if (1 > HW_TASK_NUM_ARGS - task->argsCnt) {
-        //TODO: Allocate a new chunk for the hw_task_t struct
-        return XTASKS_ENOMEM;
+    if (task->argsCnt >= EXT_HW_TASK_ARGS_LEN) {
+        //Unsupported number of arguments
+        return XTASKS_ENOSYS;
+    } else if (task->argsCnt == DEF_HW_TASK_ARGS_LEN) {
+        //Entering in extended mode
+        hw_task_header_t * prevHeader = task->hwTaskHeader;
+        xdma_status s;
+        s = xdmaAllocateHost((void**)(&task->hwTaskHeader), &task->taskHandle,
+            EXT_HW_TASK_SIZE);
+        if (s != XDMA_SUCCESS) {
+            return XTASKS_ENOMEM;
+        }
+        memcpy(task->hwTaskHeader, prevHeader, DEF_HW_TASK_SIZE); //< Move the hw task header and args
+        //Update the task info
+        task->hwTaskArgs = (hw_task_arg_t *)(task->hwTaskHeader + 1);
+        unsigned long dmaAddr;
+        s = xdmaGetDeviceAddress(task->taskHandle, &dmaAddr);
+        if (s != XDMA_SUCCESS) {
+            xdmaFree(task->taskHandle);
+            return XTASKS_ERROR;
+        }
+        task->tmTask.taskInfoAddr = (uint64_t)dmaAddr;
     }
 
     size_t idx = task->argsCnt++;
-    task->hwTask->args[idx].argCached = flags;
-    task->hwTask->args[idx].argID = idx;
-    task->hwTask->args[idx].argAddr = value;
+    task->hwTaskArgs[idx].argCached = flags;
+    task->hwTaskArgs[idx].argID = id;
+    task->hwTaskArgs[idx].argAddr = value;
 
     return XTASKS_SUCCESS;
 }
@@ -593,15 +628,37 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
     xtasks_arg_val * const values, xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
-    if (num > HW_TASK_NUM_ARGS - task->argsCnt) {
-        //TODO: Allocate a new chunk for the hw_task_t struct
-        return XTASKS_ENOMEM;
+    if (num > EXT_HW_TASK_ARGS_LEN - task->argsCnt) {
+        //Unsupported number of arguments
+        return XTASKS_ENOSYS;
+    } else if (num > (DEF_HW_TASK_ARGS_LEN - task->argsCnt) && task->argsCnt <= DEF_HW_TASK_ARGS_LEN) {
+        //Entering in extended mode because:
+        // 1) The number of args to add does not fit in current allocated space
+        // 2) We are not in extended mode
+        // 3) The number of args will fit in extended mode
+        hw_task_header_t * prevHeader = task->hwTaskHeader;
+        xdma_status s;
+        s = xdmaAllocateHost((void**)(&task->hwTaskHeader), &task->taskHandle,
+            EXT_HW_TASK_SIZE);
+        if (s != XDMA_SUCCESS) {
+            return XTASKS_ENOMEM;
+        }
+        memcpy(task->hwTaskHeader, prevHeader, DEF_HW_TASK_SIZE); //< Move the hw task header and args
+        //Update the task info
+        task->hwTaskArgs = (hw_task_arg_t *)(task->hwTaskHeader + 1);
+        unsigned long dmaAddr;
+        s = xdmaGetDeviceAddress(task->taskHandle, &dmaAddr);
+        if (s != XDMA_SUCCESS) {
+            xdmaFree(task->taskHandle);
+            return XTASKS_ERROR;
+        }
+        task->tmTask.taskInfoAddr = (uint64_t)dmaAddr;
     }
 
     for (size_t i = 0, idx = task->argsCnt; i < num; ++i, ++idx) {
-        task->hwTask->args[idx].argCached = flags;
-        task->hwTask->args[idx].argID = idx;
-        task->hwTask->args[idx].argAddr = values[i];
+        task->hwTaskArgs[idx].argCached = flags;
+        task->hwTaskArgs[idx].argID = idx;
+        task->hwTaskArgs[idx].argAddr = values[i];
     }
     task->argsCnt += num;
 
@@ -632,8 +689,8 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     // NOTE: For now, already there
 
     // Copy the ready task structure into the BRAM
-    task->tmTask.taskSize = (HW_TASK_HEAD_BYTES + task->argsCnt*sizeof(task_info_arg_t)) /
-        sizeof(uint64_t);
+    task->tmTask.taskSize = (sizeof(hw_task_header_t) - sizeof(uint64_t) /*taskID not considered*/ +
+        task->argsCnt*sizeof(hw_task_arg_t)) / sizeof(uint64_t);
     memcpy(&_readyQueue[offset + idx], &task->tmTask, sizeof(ready_task_t));
     __sync_synchronize();
     _readyQueue[offset + idx].valid = VALID_ENTRY_MASK;
@@ -780,6 +837,72 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     return XDMA_SUCCESS;
 }
 
+xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp * timestamp)
+{
+    if (timestamp == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaGetDeviceTime(timestamp);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle * handle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaAllocate(handle, len);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksFree(xtasks_mem_handle handle)
+{
+    xdma_status status = xdmaFree(handle);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t * addr)
+{
+    if (addr == NULL) return XTASKS_EINVAL;
+
+    unsigned long devAddr = 0;
+    xdma_status status = xdmaGetDeviceAddress(handle, &devAddr);
+    *addr = devAddr;
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksMemcpy(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+    xtasks_memcpy_kind const kind)
+{
+    xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
+    xdma_status status = xdmaMemcpy(usr, handle, len, offset, mode);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksMemcpyAsync(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+    xtasks_memcpy_kind const kind, xtasks_memcpy_handle * cpyHandle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
+    xdma_status status = xdmaMemcpyAsync(usr, handle, len, offset, mode, cpyHandle);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksTestCopy(xtasks_memcpy_handle * handle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaTestTransfer(handle);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle * handle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaWaitTransfer(handle);
+    return toXtasksStat(status);
+}
+
 #ifdef XTASKS_DEBUG
 ready_task_t readyQueue(size_t const idx)
 {
@@ -796,8 +919,15 @@ uint64_t newQueue(size_t const idx)
     return _newQueue[idx];
 }
 
-task_info_t tasksBuffer(size_t const idx)
+hw_task_header_t tasksBufferHeader(size_t const idx)
 {
-    return _tasksBuff[idx];
+    hw_task_header_t * tmp = (hw_task_header_t *)(&_tasksBuff[idx*DEF_HW_TASK_SIZE]);
+    return *tmp;
+}
+
+hw_task_arg_t tasksBufferArg(size_t const tIdx, size_t const aIdx)
+{
+    hw_task_arg_t * tmp = (hw_task_arg_t *)(&_tasksBuff[tIdx*DEF_HW_TASK_SIZE + sizeof(hw_task_header_t)]);
+    return tmp[aIdx];
 }
 #endif

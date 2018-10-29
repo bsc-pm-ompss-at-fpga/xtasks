@@ -25,36 +25,37 @@ LIBPICOS_SUPPORT_ = $(if $(and $(wildcard $(LIBPICOS_INC_DIR)/libpicos.h ), \
 
 ## Append needed things to CFLAGS, LDFLAGS and TARGETS
 ifeq ($(LIBXDMA_SUPPORT_),YES)
-	CFLAGS_  +=
-	LDFLAGS_ +=
+	CFLAGS_  += $(LIBXDMA_INCS_)
+	LDFLAGS_ += $(LIBXDMA_LIBS_)
 	TARGETS_ += libxtasks-stream.so libxtasks-taskmanager.so
-endif
-ifeq ($(LIBPICOS_SUPPORT_),YES)
-	CFLAGS_  +=
-	LDFLAGS_ +=
-	TARGETS_ += libxtasks-picos.so
+
+	ifeq ($(LIBPICOS_SUPPORT_),YES)
+		CFLAGS_  +=
+		LDFLAGS_ +=
+		TARGETS_ += libxtasks-picos.so
+	endif
 endif
 
 .PHONY: all
 all: $(TARGETS_)
 
 libxtasks-taskmanager.o: ./src/libxtasks-taskmanager.c
-	$(CC_) $(CFLAGS_) $(LIBXDMA_INCS_) -c $^
+	$(CC_) $(CFLAGS_) -c $^
 
 libxtasks-taskmanager.so: libxtasks-taskmanager.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_) $(LIBXDMA_LIBS_)
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
 
 libxtasks-stream.o: ./src/libxtasks-stream.c
-	$(CC_) $(CFLAGS_) $(LIBXDMA_INCS_) -c $^
+	$(CC_) $(CFLAGS_) -c $^
 
 libxtasks-stream.so: libxtasks-stream.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_) $(LIBXDMA_LIBS_)
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
 
 libxtasks-picos.o: ./src/libxtasks-picos.c
 	$(CC_) $(CFLAGS_) $(LIBPICOS_INCS_) -c $^
 
 libxtasks-picos.so: libxtasks-picos.o
-	$(CC_) -shared -Wl,-rpath=$(LIBPICOS_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-rpath=$(LIBPICOS_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
 
 .PHONY: libxtasks_version.h
 libxtasks_version.h: ./src/libxtasks_version_template.h
@@ -81,10 +82,11 @@ install: $(TARGETS_) ./src/libxtasks.h libxtasks_version.h
 	mkdir -p $(PREFIX)/include
 	cp ./src/libxtasks.h $(PREFIX)/include
 	cp libxtasks_version.h $(PREFIX)/include
-	@echo "====================================== NOTE ======================================"
-	@echo "Remember to create the symlink $(PREFIX)/lib/libxtasks.so to your desired backend!"
-	@echo "For example: pushd $(PREFIX)/lib; ln -s libxtasks-stream.so libxtasks.so; popd;"
-	@echo "=================================================================================="
+	@echo "========================= NOTE ========================="
+	@echo "== Remember to create the symlink $(PREFIX)/lib/libxtasks.so to your desired backend!"
+	@echo "== For example:"
+	@echo "==   pushd $(PREFIX)/lib; ln -s libxtasks-taskmanager.so libxtasks.so; popd;"
+	@echo "========================================================"
 
 .PHONY: clean
 clean:
