@@ -46,8 +46,8 @@
 #define HW_TASK_DEST_ID_TM  0x00000011      ///< Task manager identifier for the destId field
 
 //! Check that libxdma version is compatible
-#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 1
-# error Installed libxdma is not supported (use >= 1.0)
+#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 2
+# error Installed libxdma is not supported (use >= 2.0)
 #endif
 
 //! \brief HW accelerator representation
@@ -105,16 +105,16 @@ static xtasks_stat initHWIns()
 {
     //allocate instrumentation buffer & get its physical address
     xdma_status s;
-    s = xdmaAllocateKernelBuffer((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
+    s = xdmaAllocateHost((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
     if (s != XDMA_SUCCESS) {
         PRINT_ERROR("Cannot allocate kernel buffer for instrumentation");
         return XTASKS_ERROR;
     }
     unsigned long phyAddr;
-    s = xdmaGetDMAAddress(_insBuffHandle, &phyAddr);
+    s = xdmaGetDeviceAddress(_insBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         PRINT_ERROR("Cannot get physical address of instrumentation buffer");
-        xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+        xdmaFree(_insBuffHandle);
         _insBuff = NULL;
         return XTASKS_ERROR;
     }
@@ -134,7 +134,7 @@ static xtasks_stat finiHWIns()
         //xdmaInitHWInstrumentation was succesfully executed
         s0 = xdmaFiniHWInstrumentation();
     }
-    xdma_status s1 = xdmaFreeKernelBuffer((void *)_insBuff, _insBuffHandle);
+    xdma_status s1 = xdmaFree(_insBuffHandle);
     _insBuff = NULL;
     _insBuffPhy = NULL;
     return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
@@ -147,11 +147,19 @@ xtasks_stat xtasksInit()
     if (init_cnt > 0) return XTASKS_SUCCESS;
 
     xtasks_stat ret = XTASKS_SUCCESS;
+    xdma_status s;
 
     //Open libxdma
-    if (xdmaOpen() != XDMA_SUCCESS) {
+    s = xdmaOpen();
+    if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
-        PRINT_ERROR("xdmaOpen failed");
+        if (s == XDMA_ENOENT) {
+            PRINT_ERROR("xdmaOpen failed. Check if xdma device exist in the system");
+        } else if (s == XDMA_EACCES) {
+            PRINT_ERROR("xdmaOpen failed. Current user cannot access xdma device");
+        } else {
+            PRINT_ERROR("xdmaOpen failed");
+        }
         INIT_ERR_0: __sync_sub_and_fetch(&_init_cnt, 1);
         return ret;
     }
@@ -258,8 +266,7 @@ xtasks_stat xtasksInit()
     }
 
     //Allocate the tasks buffer
-    xdma_status s;
-    s = xdmaAllocateKernelBuffer((void**)&_tasksBuff, &_tasksBuffHandle, NUM_RUN_TASKS*sizeof(hw_task_t));
+    s = xdmaAllocateHost((void**)&_tasksBuff, &_tasksBuffHandle, NUM_RUN_TASKS*sizeof(hw_task_t));
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate kernel memory for task information");
@@ -269,11 +276,11 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_2;
     }
     unsigned long phyAddr;
-    s = xdmaGetDMAAddress(_tasksBuffHandle, &phyAddr);
+    s = xdmaGetDeviceAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
         PRINT_ERROR("Cannot get physical address of task info. region");
-        INIT_ERR_5: xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
+        INIT_ERR_5: xdmaFree(_tasksBuffHandle);
         goto INIT_ERR_4;
     }
     _tasksBuffPhy = (hw_task_t *)phyAddr;
@@ -300,7 +307,7 @@ xtasks_stat xtasksFini()
     free(_tasks);
 
     //Free tasks buffer
-    xdma_status s = xdmaFreeKernelBuffer((void *)_tasksBuff, _tasksBuffHandle);
+    xdma_status s = xdmaFree(_tasksBuffHandle);
     if (s != XDMA_SUCCESS) {
         return XTASKS_ERROR;
     }
@@ -396,16 +403,11 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
 xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
 {
     task_t * task = (task_t *)(*handle);
+
     *handle = NULL;
-
-    xdma_status retD, retS;
-    retD = xdmaReleaseTransfer(&task->descriptorTx);
-    retS = xdmaReleaseTransfer(&task->syncTx);
-
-    __sync_synchronize(); //Execute previous operations before the next instruction
     task->accel = NULL;
 
-    return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
@@ -451,11 +453,11 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     size_t size = HW_TASK_HEAD_BYTES + task->argsCnt*sizeof(hw_arg_t);
     unsigned int descOffset = (uintptr_t)(task->hwTask) - (uintptr_t)(_tasksBuff);
     xdma_status retD, retS;
-    retD = xdmaSubmitKBuffer(_tasksBuffHandle, size, descOffset,
-           XDMA_ASYNC, task->accel->xdmaDev, task->accel->inChannel, &task->descriptorTx);
-    retS = xdmaSubmitKBuffer(_tasksBuffHandle, sizeof(uint64_t),
+    retD = xdmaStreamAsync(_tasksBuffHandle, size, descOffset,
+           task->accel->xdmaDev, task->accel->inChannel, &task->descriptorTx);
+    retS = xdmaStreamAsync(_tasksBuffHandle, sizeof(uint64_t),
            descOffset + offsetof(hw_task_t, compute),
-           XDMA_ASYNC, task->accel->xdmaDev, task->accel->outChannel, &task->syncTx);
+           task->accel->xdmaDev, task->accel->outChannel, &task->syncTx);
     queuePush(task->accel->tasksQueue, (void *)task);
 
     return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
@@ -464,8 +466,8 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 static xtasks_stat xtasksWaitTaskInternal(task_t * task)
 {
     xdma_status retD, retS;
-    retD = xdmaWaitTransfer(task->descriptorTx);
-    retS = xdmaWaitTransfer(task->syncTx);
+    retD = xdmaWaitTransfer(&task->descriptorTx);
+    retS = xdmaWaitTransfer(&task->syncTx);
 
     return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
@@ -537,4 +539,70 @@ xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_
     *times = &_insBuff[idx];
 
     return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp * timestamp)
+{
+    if (timestamp == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaGetDeviceTime(timestamp);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle * handle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaAllocate(handle, len);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksFree(xtasks_mem_handle handle)
+{
+    xdma_status status = xdmaFree(handle);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t * addr)
+{
+    if (addr == NULL) return XTASKS_EINVAL;
+
+    unsigned long devAddr = 0;
+    xdma_status status = xdmaGetDeviceAddress(handle, &devAddr);
+    *addr = devAddr;
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksMemcpy(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+    xtasks_memcpy_kind const kind)
+{
+    xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
+    xdma_status status = xdmaMemcpy(usr, handle, len, offset, mode);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksMemcpyAsync(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+    xtasks_memcpy_kind const kind, xtasks_memcpy_handle * cpyHandle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
+    xdma_status status = xdmaMemcpyAsync(usr, handle, len, offset, mode, cpyHandle);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksTestCopy(xtasks_memcpy_handle * handle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaTestTransfer(handle);
+    return toXtasksStat(status);
+}
+
+xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle * handle)
+{
+    if (handle == NULL) return XTASKS_EINVAL;
+
+    xdma_status status = xdmaWaitTransfer(handle);
+    return toXtasksStat(status);
 }

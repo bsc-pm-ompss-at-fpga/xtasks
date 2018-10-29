@@ -33,6 +33,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/auxv.h>
+#include <libxdma.h>
 
 #define STR_BUFFER_SIZE     128
 #define PRINT_ERROR(_str_)  fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
@@ -115,6 +116,22 @@ void printErrorMsgCfgFile()
     fprintf(stderr, "         3) Create './<binary name>.xtasks.config' file with the current FPGA ");
     fprintf(stderr, "configuration.\n");
     fprintf(stderr, "         4) Create './xtasks.config' file with the current FPGA configuration.\n");
+}
+
+/*!
+ * \brief Returns a xtasks_stat based on a xdma_status
+ */
+xtasks_stat toXtasksStat(xdma_status const status)
+{
+    xtasks_stat ret = XTASKS_ERROR;
+    if (status == XDMA_SUCCESS) {
+        ret = XTASKS_SUCCESS;
+    } else if (status == XDMA_ENOMEM) {
+        ret = XTASKS_ENOMEM;
+    } else if (status == XDMA_ENOSYS) {
+        ret = XTASKS_ENOSYS;
+    }
+    return ret;
 }
 
 #endif /* __LOCK_FREE_QUEUE_H__ */
