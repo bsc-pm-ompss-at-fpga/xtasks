@@ -199,6 +199,9 @@ instrGetAddrErr:
     for ( ; i>=0; i--) {
         xdmaFreeKernelBuffer(_instrBuffers[i].insBuffer, _instrBuffers[i].bufferHandle);
     }
+    free(_instrBuffers);
+    _numInstrEvents = 0;
+    _instrBuffers = NULL;
     return ret;
 }
 
@@ -216,14 +219,22 @@ static xtasks_stat finiHWIns()
         s1 = (s1 != XDMA_SUCCESS) ? s1 : freeStatus;
     }
 
+    free(_instrBuffers);
+    _instrBuffers = NULL;
+    _numInstrEvents = 0;
     return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
 xtasks_stat xtasksInit()
 {
+
     //Handle multiple inits
     int init_cnt = __sync_fetch_and_add(&_init_cnt, 1);
     if (init_cnt > 0) return XTASKS_SUCCESS;
+
+    //Always initialize instrumentation as disabled
+    _instrBuffers = NULL;
+    _numInstrEvents = 0;
 
     xtasks_stat ret = XTASKS_SUCCESS;
 
