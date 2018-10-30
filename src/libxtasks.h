@@ -88,10 +88,18 @@ typedef struct {
 
 
 typedef struct {
-    uint64_t eventId;       ///< Event id
+    uint32_t eventId;       ///< Event id
+    uint32_t eventType;     ///< Event type (one of xtasks_event_type)
     uint64_t value;         ///< Event value
     uint64_t timestamp;     ///< Event timestamp
 } xtasks_ins_event;
+
+typedef enum {
+    XTASKS_EVENT_TYPE_BURST_OPEN = 0,
+    XTASKS_EVENT_TYPE_BURST_CLOSE,
+    XTASKS_EVENT_TYPE_POINT,
+    XTASKS_EVENT_TYPE_LAST = 0XFFFFFFFF
+} xtasks_event_type;
 
 /*!
  * \brief Initialize the library
