@@ -531,16 +531,8 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     return ret;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
-{
-    task_t * task = (task_t *)(handle);
-    size_t idx = task - _tasks;
-
-    if (times == NULL || idx >= NUM_RUN_TASKS) return XTASKS_EINVAL;
-
-    *times = &_insBuff[idx];
-
-    return XTASKS_SUCCESS;
+xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event *events, size_t maxCount) {
+    return XTASKS_ENOSYS;
 }
 
 xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
