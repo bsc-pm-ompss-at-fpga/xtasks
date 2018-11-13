@@ -232,10 +232,15 @@ instrGetAddrErr:
     return ret;
 }
 
-static xtasks_stat finiHWIns()
+xtasks_stat xtasksFiniHWIns()
 {
     xdma_status s0 = XDMA_SUCCESS;
     xdma_status s1 = XDMA_SUCCESS;
+
+    if (_instrBuffers == NULL) {
+        //Instrumentation is not initialized or has been already finished
+        return XDMA_SUCCESS;
+    }
     if (_insTimerAddr != 0) {
         //xdmaInitHWInstrumentation was succesfully executed
         s0 = xdmaFiniHWInstrumentation();
@@ -454,7 +459,7 @@ xtasks_stat xtasksInit()
     INIT_ERR_8:
         xdmaFree(_tasksBuffHandle);
     INIT_ERR_7:
-        finiHWIns();
+        xtasksFiniHWIns();
         _tasksBuff = NULL;
         _tasksBuffPhy = NULL;
     INIT_ERR_6:
@@ -499,8 +504,9 @@ xtasks_stat xtasksFini()
     _tasksBuff = NULL;
     _tasksBuffPhy = NULL;
 
-    //Finialize the HW instrumentation
-    if (finiHWIns() != XTASKS_SUCCESS) {
+    //Finialize the HW instrumentation if needed
+
+    if (xtasksFiniHWIns() != XTASKS_SUCCESS) {
         ret = XTASKS_ERROR;
     }
 
@@ -589,9 +595,14 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     }
 
     uint64_t instrumentData;
-    instrumentData = (uintptr_t)(_instrBuffers[idx].bufferPhy);
-    //Upper 16 bits contain maximum event count
-    instrumentData = ((uint64_t)_numInstrEvents << 48) | instrumentData;
+    if (_instrBuffers) {
+        instrumentData = (uintptr_t)(_instrBuffers[idx].bufferPhy);
+        //Upper 16 bits contain maximum event count
+        instrumentData = ((uint64_t)_numInstrEvents << 48) | instrumentData;
+    } else {
+        //Instrumentation not enabled
+        instrumentData = 0;
+    }
 
     _tasks[idx].id = id;
     //_tasks[idx].hwTaskHeader = &_tasksBuff[idx*DEF_HW_TASK_SIZE]; //NOTE: Done in getFreeTaskEntry()
