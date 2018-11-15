@@ -57,6 +57,13 @@ libxtasks-picos.o: ./src/libxtasks-picos.c
 libxtasks-picos.so: libxtasks-picos.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-rpath=$(LIBPICOS_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
 
+libxtasks.o: ./src/libxtasks.c
+	$(CC_) $(CFLAGS_) -c $^
+
+libxtasks-stub.so: libxtasks.o
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasjs.so -o $@ $^ $(LDFLAGS_)
+
+
 .PHONY: libxtasks_version.h
 libxtasks_version.h: ./src/libxtasks_version_template.h
 	@head -n 6 $^ >$@

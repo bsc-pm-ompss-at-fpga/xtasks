@@ -27,7 +27,7 @@
 
 #include "libxtasks.h"
 
-#error This file should not be compiled. It is only an scheleton for real implementations.
+//XXX This file is only an skeleton for real implementations.
 
 xtasks_stat xtasksInit()
 {
