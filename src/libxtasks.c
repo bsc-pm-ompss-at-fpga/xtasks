@@ -98,12 +98,12 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
+xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event *events, size_t maxCount)
 {
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksTryGetNewTask(xtasks_newtask * task)
+xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
     return XTASKS_ENOSYS;
 }
