@@ -37,7 +37,7 @@
 
 #define MAX_CNT_FIN_TASKS   16              ///< Max. number of finished tasks processed for other accels before return
 
-#define HW_TASK_HEAD_BYTES  24              ///< Size of hw_task_t without the args field
+#define HW_TASK_HEAD_BYTES  32              ///< Size of hw_task_t without the args field
 #define HW_TASK_NUM_ARGS    14              ///< (256 - TASK_INFO_HEAD_BYTES)/sizeof(xdma_task_arg)
 #define INS_BUFFER_SIZE     8192            ///< 2 pages
 #define INS_NUM_ENTRIES  (INS_BUFFER_SIZE/sizeof(xtasks_ins_times))
@@ -70,6 +70,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief Task information for the accelerator
 typedef struct __attribute__ ((__packed__)) {
+    uint64_t taskId;                       ///< Task identifier
     struct {
         uint64_t timer;                    ///< Timer address for instrumentation
         uint64_t buffer;                   ///< Buffer address to store instrumentation info
@@ -93,16 +94,19 @@ static int _init_cnt = 0;   ///< Counter of calls to init/fini
 static size_t   _numAccs;   ///< Number of accelerators in the system
 static acc_t *  _accs;      ///< Accelerators data
 static uint64_t             _insTimerAddr;      ///< Physical address of HW instrumentation timer
-static xtasks_ins_times *   _insBuff;           ///< Buffer for the HW instrumentation
+//static xtasks_ins_times *   _insBuff;           ///< Buffer for the HW instrumentation    //FIXME
 static xtasks_ins_times *   _insBuffPhy;        ///< Physical address of _insBuff
-static xdma_buf_handle      _insBuffHandle;     ///< Handle of _insBuff in libxdma
+//static xdma_buf_handle      _insBuffHandle;     ///< Handle of _insBuff in libxdma //FIXME
 static hw_task_t *          _tasksBuff;         ///< Buffer to send the HW tasks
 static hw_task_t *          _tasksBuffPhy;      ///< Physical address of _tasksBuff
 static xdma_buf_handle      _tasksBuffHandle;   ///< Handle of _tasksBuff in libxdma
 static task_t *             _tasks;             ///< Array with internal task information
 
-static xtasks_stat initHWIns()
+xtasks_stat xtasksInitHWIns(int nEvents)
 {
+    //TODO implement user instrumentation
+    return XTASKS_ENOSYS;
+#if 0
     //allocate instrumentation buffer & get its physical address
     xdma_status s;
     s = xdmaAllocateHost((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
@@ -125,10 +129,14 @@ static xtasks_stat initHWIns()
         _insTimerAddr = (uint64_t)xdmaGetInstrumentationTimerAddr();
     }
     return XTASKS_SUCCESS;
+#endif
 }
 
-static xtasks_stat finiHWIns()
+xtasks_stat xtasksFiniHWIns()
 {
+    //TODO implement user instrumentation
+    return XTASKS_ENOSYS;
+#if 0
     xdma_status s0 = XDMA_SUCCESS;
     if (_insTimerAddr != 0) {
         //xdmaInitHWInstrumentation was succesfully executed
@@ -138,6 +146,7 @@ static xtasks_stat finiHWIns()
     _insBuff = NULL;
     _insBuffPhy = NULL;
     return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
+#endif
 }
 
 xtasks_stat xtasksInit()
@@ -259,7 +268,7 @@ xtasks_stat xtasksInit()
     }
 
     //Init HW instrumentation
-    if (initHWIns() != XTASKS_SUCCESS) {
+    if (xtasksInitHWIns(0) != XTASKS_SUCCESS) {
         ret = XTASKS_EFILE;
         //NOTE: PRINT_ERROR done inside the function
         goto INIT_ERR_2;
@@ -270,7 +279,7 @@ xtasks_stat xtasksInit()
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate kernel memory for task information");
-        INIT_ERR_4: finiHWIns();
+        INIT_ERR_4: xtasksFiniHWIns();
         _tasksBuff = NULL;
         _tasksBuffPhy = NULL;
         goto INIT_ERR_2;
@@ -315,7 +324,7 @@ xtasks_stat xtasksFini()
     _tasksBuffPhy = NULL;
 
     //Finialize HW instrumentation
-    if (finiHWIns() != XTASKS_SUCCESS) {
+    if (xtasksFiniHWIns() != XTASKS_SUCCESS) {
         return XTASKS_ERROR;
     }
 
@@ -379,7 +388,7 @@ static int getFreeTaskEntry(acc_t * accel)
 }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_comp_flags const compute, xtasks_task_handle * handle)
+    xtasks_task_handle const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
     acc_t * accel = (acc_t *)accId;
     int idx = getFreeTaskEntry(accel);
@@ -391,6 +400,7 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     _tasks[idx].hwTask = &_tasksBuff[idx];
     _tasks[idx].argsCnt = 0;
     //_tasks[idx].accel = accel; //NOTE: Done in getFreeTaskEntry()
+    _tasks[idx].hwTask->taskId = (uintptr_t)(&_tasks[idx]);
     _tasks[idx].hwTask->profile.timer = _insTimerAddr;
     _tasks[idx].hwTask->profile.buffer = (uintptr_t)(&_insBuffPhy[idx]);
     _tasks[idx].hwTask->compute = compute;
@@ -529,16 +539,13 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     return ret;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
+xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event *events, size_t maxCount) {
+    return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
-    task_t * task = (task_t *)(handle);
-    size_t idx = task - _tasks;
-
-    if (times == NULL || idx >= NUM_RUN_TASKS) return XTASKS_EINVAL;
-
-    *times = &_insBuff[idx];
-
-    return XTASKS_SUCCESS;
+    return XTASKS_ENOSYS;
 }
 
 xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp * timestamp)

@@ -27,7 +27,7 @@
 
 #include "libxtasks.h"
 
-#error This file should not be compiled. It is only an scheleton for real implementations.
+//XXX This file is only an skeleton for real implementations.
 
 xtasks_stat xtasksInit()
 {
@@ -55,7 +55,7 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * i
 }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_comp_flags const compute, xtasks_task_handle * handle)
+    xtasks_task_handle const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
     return XTASKS_ENOSYS;
 }
@@ -87,7 +87,7 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksTryGetFinishedTask(xtasks_task_id * id)
+xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id)
 {
     return XTASKS_ENOSYS;
 }
@@ -98,7 +98,12 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
+xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event *events, size_t maxCount)
+{
+    return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
     return XTASKS_ENOSYS;
 }

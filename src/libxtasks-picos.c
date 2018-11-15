@@ -257,7 +257,7 @@ static int getFreeTaskEntry()
 }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_comp_flags const compute, xtasks_task_handle * handle)
+    xtasks_task_handle const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
     acc_t * accel = (acc_t *)accId;
     int idx = getFreeTaskEntry();
@@ -412,6 +412,11 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
 }
 
 xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
+{
+    return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
     return XTASKS_ENOSYS;
 }
