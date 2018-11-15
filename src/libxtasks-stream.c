@@ -94,16 +94,19 @@ static int _init_cnt = 0;   ///< Counter of calls to init/fini
 static size_t   _numAccs;   ///< Number of accelerators in the system
 static acc_t *  _accs;      ///< Accelerators data
 static uint64_t             _insTimerAddr;      ///< Physical address of HW instrumentation timer
-static xtasks_ins_times *   _insBuff;           ///< Buffer for the HW instrumentation
+//static xtasks_ins_times *   _insBuff;           ///< Buffer for the HW instrumentation    //FIXME
 static xtasks_ins_times *   _insBuffPhy;        ///< Physical address of _insBuff
-static xdma_buf_handle      _insBuffHandle;     ///< Handle of _insBuff in libxdma
+//static xdma_buf_handle      _insBuffHandle;     ///< Handle of _insBuff in libxdma //FIXME
 static hw_task_t *          _tasksBuff;         ///< Buffer to send the HW tasks
 static hw_task_t *          _tasksBuffPhy;      ///< Physical address of _tasksBuff
 static xdma_buf_handle      _tasksBuffHandle;   ///< Handle of _tasksBuff in libxdma
 static task_t *             _tasks;             ///< Array with internal task information
 
-static xtasks_stat initHWIns()
+xtasks_stat xtasksInitHWIns(int nEvents)
 {
+    //TODO implement user instrumentation
+    return XTASKS_ENOSYS;
+#if 0
     //allocate instrumentation buffer & get its physical address
     xdma_status s;
     s = xdmaAllocateHost((void**)&_insBuff, &_insBuffHandle, INS_BUFFER_SIZE);
@@ -126,10 +129,14 @@ static xtasks_stat initHWIns()
         _insTimerAddr = (uint64_t)xdmaGetInstrumentationTimerAddr();
     }
     return XTASKS_SUCCESS;
+#endif
 }
 
-static xtasks_stat finiHWIns()
+xtasks_stat xtasksFiniHWIns()
 {
+    //TODO implement user instrumentation
+    return XTASKS_ENOSYS;
+#if 0
     xdma_status s0 = XDMA_SUCCESS;
     if (_insTimerAddr != 0) {
         //xdmaInitHWInstrumentation was succesfully executed
@@ -139,6 +146,7 @@ static xtasks_stat finiHWIns()
     _insBuff = NULL;
     _insBuffPhy = NULL;
     return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
+#endif
 }
 
 xtasks_stat xtasksInit()
@@ -260,7 +268,7 @@ xtasks_stat xtasksInit()
     }
 
     //Init HW instrumentation
-    if (initHWIns() != XTASKS_SUCCESS) {
+    if (xtasksInitHWIns(0) != XTASKS_SUCCESS) {
         ret = XTASKS_EFILE;
         //NOTE: PRINT_ERROR done inside the function
         goto INIT_ERR_2;
@@ -271,7 +279,7 @@ xtasks_stat xtasksInit()
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate kernel memory for task information");
-        INIT_ERR_4: finiHWIns();
+        INIT_ERR_4: xtasksFiniHWIns();
         _tasksBuff = NULL;
         _tasksBuffPhy = NULL;
         goto INIT_ERR_2;
@@ -316,7 +324,7 @@ xtasks_stat xtasksFini()
     _tasksBuffPhy = NULL;
 
     //Finialize HW instrumentation
-    if (finiHWIns() != XTASKS_SUCCESS) {
+    if (xtasksFiniHWIns() != XTASKS_SUCCESS) {
         return XTASKS_ERROR;
     }
 
