@@ -224,6 +224,8 @@ xtasks_stat xtasksInitHWIns(int nEvents)
     return XTASKS_SUCCESS;
 
 instrAllocErr:
+    //Current buffer does not exist as it could not be allocated
+    i--;
 instrGetAddrErr:
     for ( ; i>=0; i--) {
         xdmaFree(_instrBuffers[i].bufferHandle);
@@ -994,8 +996,8 @@ void tasksPrintInstrBuffer(int tIdx) {
     xtasks_ins_event *event = _instrBuffers[tIdx].insBuffer;
     fprintf(stderr, "timestamp, accid, eventid, value\n");
     while ( event->eventId != XTASKS_LAST_EVENT_ID ) {
-        fprintf(stderr, "%lu,\t%u,\t%u,\t%lu\n", event->timestamp,
-                event->eventType, event->eventId, event->value);
+//        fprintf(stderr, "%lu,\t%u,\t%u,\t%lu\n", event->timestamp,
+//                event->eventType, event->eventId, event->value);
         event++;
     }
 
