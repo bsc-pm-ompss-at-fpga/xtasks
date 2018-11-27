@@ -190,9 +190,19 @@ xtasks_stat xtasksInitHWIns(int nEvents)
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
     int i;
+    int insBufferSize = nEvents * HW_EVENT_SIZE;
+
+    s = xdmaInitHWInstrumentation();
+    if (s == XDMA_SUCCESS) {
+        _insTimerAddr = (uint64_t)xdmaGetInstrumentationTimerAddr();
+    } else {
+        //Return as there's nothing to undo
+        return XTASKS_ENOSYS;
+        //goto intrInitErr;
+    }
+
     _instrBuffers = malloc(NUM_RUN_TASKS*sizeof(*_instrBuffers));
     _numInstrEvents = nEvents;
-    int insBufferSize = nEvents * HW_EVENT_SIZE;
 
     for (i = 0; i<NUM_RUN_TASKS; i++) {
         xdma_status status;
@@ -211,17 +221,11 @@ xtasks_stat xtasksInitHWIns(int nEvents)
             goto instrGetAddrErr;
         }
     }
-    s = xdmaInitHWInstrumentation();
-    if (s == XDMA_SUCCESS) {
-        _insTimerAddr = (uint64_t)xdmaGetInstrumentationTimerAddr();
-    } else {
-        ret = XTASKS_ENOSYS;
-        goto intrInitErr;
-    }
     return XTASKS_SUCCESS;
 
-intrInitErr:
 instrAllocErr:
+    //Current buffer does not exist as it could not be allocated
+    i--;
 instrGetAddrErr:
     for ( ; i>=0; i--) {
         xdmaFree(_instrBuffers[i].bufferHandle);
@@ -992,8 +996,8 @@ void tasksPrintInstrBuffer(int tIdx) {
     xtasks_ins_event *event = _instrBuffers[tIdx].insBuffer;
     fprintf(stderr, "timestamp, accid, eventid, value\n");
     while ( event->eventId != XTASKS_LAST_EVENT_ID ) {
-        fprintf(stderr, "%lu,\t%u,\t%u,\t%lu\n", event->timestamp,
-                event->eventType, event->eventId, event->value);
+//        fprintf(stderr, "%lu,\t%u,\t%u,\t%lu\n", event->timestamp,
+//                event->eventType, event->eventId, event->value);
         event++;
     }
 
