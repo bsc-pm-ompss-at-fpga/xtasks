@@ -1,4 +1,4 @@
-/*
+    /*
 * Copyright (c) 2018, BSC (Barcelona Supercomputing Center)
 * All rights reserved.
 *
@@ -411,7 +411,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     return t == NULL ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_times ** times)
+xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event *events, size_t maxCount)
 {
     return XTASKS_ENOSYS;
 }
