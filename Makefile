@@ -55,7 +55,8 @@ libxtasks-picos.o: ./src/libxtasks-picos.c
 	$(CC_) $(CFLAGS_) $(LIBPICOS_INCS_) -c $^
 
 libxtasks-picos.so: libxtasks-picos.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-rpath=$(LIBPICOS_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-rpath=$(LIBPICOS_LIB_DIR),-soname,libxtasks.so \
+	-o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
 
 libxtasks.o: ./src/libxtasks.c
 	$(CC_) $(CFLAGS_) -c $^
