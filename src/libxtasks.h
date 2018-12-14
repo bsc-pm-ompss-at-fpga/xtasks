@@ -110,18 +110,27 @@ typedef enum {
 } xtasks_event_type;
 
 typedef struct {
-    void *               value;        ///< Argument value
-    bool                 isInputDep;   ///< The argument is a dependency with IN direction
-    bool                 isOutputDep;  ///< The argument is a dependency with OUT direction
-    bool                 isInputCopy;  ///< The argument is an input copy that the runtime must handle
-    bool                 isOutputCopy; ///< The argument is an output copy that the runtime must handle
+    uint64_t              value;        ///< Argument value
+    bool                  isInputDep;   ///< The argument is a dependency with IN direction
+    bool                  isOutputDep;  ///< The argument is a dependency with OUT direction
 } xtasks_newtask_arg;
 
 typedef struct {
-    xtasks_task_id       parentId;     ///< Parent task identifier that is creating the task
-    uint64_t             typeInfo;     ///< Identifier of the task type
-    size_t               numArgs;      ///< Number of arguments
-    xtasks_newtask_arg * args;         ///< Arguments array
+    bool                  isInputCopy;  ///< The copy is an input copy that the runtime must handle
+    bool                  isOutputCopy; ///< The copy is an output copy that the runtime must handle
+    void *                address;      ///< Copy address
+    size_t                size;         ///< Size of the region to allocate (in bytes)
+    size_t                offset;       ///< Offset at the region beginning not accessed (in bytes)
+    size_t                accessedLen;  ///< Length of the accessed data in the region (in bytes)
+} xtasks_newtask_copy;
+
+typedef struct {
+    xtasks_task_id        parentId;     ///< Parent task identifier that is creating the task
+    uint64_t              typeInfo;     ///< Identifier of the task type
+    size_t                numArgs;      ///< Number of arguments
+    xtasks_newtask_arg *  args;         ///< Arguments array
+    size_t                numCopies;    ///< Number of copies
+    xtasks_newtask_copy * copies;       ///< Copies array
 } xtasks_newtask;
 
 /*!
