@@ -878,6 +878,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     (*task)->numArgs = hwTaskHeader->numArgs;
     (*task)->copies = (xtasks_newtask_copy *)((*task)->args + (*task)->numArgs);
     (*task)->numCopies = hwTaskHeader->numCopies;
+    (*task)->architecture = hwTaskHeader->archMask;
 
     idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 2nd word
     task_t * parentTask = (task_t *)((uintptr_t)(_newQueue[idx]));

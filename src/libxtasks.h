@@ -63,18 +63,19 @@ typedef enum {
 #define XTASKS_ARG_FLAG_COPY_IN  0x10
 #define XTASKS_ARG_FLAG_COPY_OUT 0x20
 
-typedef void *       xtasks_task_handle;
-typedef uint64_t     xtasks_task_id;
-typedef uint64_t     xtasks_arg_val;
-typedef uint32_t     xtasks_arg_id;
-typedef uint32_t     xtasks_arg_flags;
-typedef void *       xtasks_acc_handle;
-typedef uint32_t     xtasks_acc_id;
-typedef uint32_t     xtasks_acc_type;
-typedef const char * xtasks_acc_desc;
-typedef uint64_t     xtasks_ins_timestamp;
-typedef void *       xtasks_mem_handle;
+typedef void *            xtasks_task_handle;
+typedef uint64_t          xtasks_task_id;
+typedef uint64_t          xtasks_arg_val;
+typedef uint32_t          xtasks_arg_id;
+typedef uint32_t          xtasks_arg_flags;
+typedef void *            xtasks_acc_handle;
+typedef uint32_t          xtasks_acc_id;
+typedef uint32_t          xtasks_acc_type;
+typedef const char *      xtasks_acc_desc;
+typedef uint64_t          xtasks_ins_timestamp;
+typedef void *            xtasks_mem_handle;
 typedef long unsigned int xtasks_memcpy_handle;
+typedef uint32_t          xtasks_newtask_arch;
 
 typedef struct {
     xtasks_acc_id   id;               ///< Accelerator identifier
@@ -126,6 +127,7 @@ typedef struct {
 
 typedef struct {
     xtasks_task_id        parentId;     ///< Parent task identifier that is creating the task
+    xtasks_newtask_arch   architecture; ///< Architecture of the task
     uint64_t              typeInfo;     ///< Identifier of the task type
     size_t                numArgs;      ///< Number of arguments
     xtasks_newtask_arg *  args;         ///< Arguments array
