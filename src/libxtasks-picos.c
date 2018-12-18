@@ -483,3 +483,13 @@ xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle * handle)
     xdma_status status = xdmaWaitTransfer(handle);
     return toXtasksStat(status);
 }
+
+xtasks_stat xtasksInitHWIns(int nEvents)
+{
+    return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksFiniHWIns()
+{
+    return XTASKS_SUCCESS;
+}
