@@ -64,10 +64,6 @@
 #define HW_TASK_DEST_ID_PS      0x0000001F      ///< Processing System identifier for the destId field
 #define HW_TASK_DEST_ID_TM      0x00000011      ///< Task manager identifier for the destId field
 #define HW_EVENT_SIZE           (sizeof(xtasks_ins_event))
-#define NEW_TASK_IN_DEP_MASK        0x08        ///< Mask to check the dependency with IN direction of new_task_arg_t->flags field
-#define NEW_TASK_OUT_DEP_MASK       0x04        ///< Mask to check the dependency with OUT direction of new_task_arg_t->flags field
-#define NEW_TASK_COPY_INFLAG_MASK   0x02        ///< Mask to check the copy with IN direction of new_task_copy_t->flags field
-#define NEW_TASK_COPY_OUTFLAG_MASK  0x01        ///< Mask to check the copy with OUT direction of new_task_copy_t->flags field
 #define NEW_TASK_COPY_FLAGS_WORDOFFSET       0  ///< Offset of new_task_copy_t->flags field in the 2nd word forming new_task_copy_t
 #define NEW_TASK_COPY_SIZE_WORDOFFSET        32 ///< Offset of new_task_copy_t->size field in the 2nd word forming new_task_copy_t
 #define NEW_TASK_COPY_OFFSET_WORDOFFSET      0  ///< Offset of new_task_copy_t->offset field in the 3rd word forming new_task_copy_t
@@ -117,8 +113,8 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief New task buffer representation (Only the argument part, repeated N times)
 typedef struct __attribute__ ((__packed__)) {
-    uint64_t  value:48;   //[0  :47 ] Argument value
-    uint16_t  flags;      //[48 :63 ] Argument flags
+    uint64_t  value:56;   //[0  :55 ] Argument value
+    uint8_t   flags;      //[56 :63 ] Argument flags
 } new_task_arg_t;
 
 //! \brief New task buffer representation (Only the argument part, repeated N times)
@@ -896,8 +892,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 
         //Parse the arg information
         (*task)->args[i].value = hwTaskArg->value;
-        (*task)->args[i].isInputDep = hwTaskArg->flags & NEW_TASK_IN_DEP_MASK;
-        (*task)->args[i].isOutputDep = hwTaskArg->flags & NEW_TASK_OUT_DEP_MASK;
+        (*task)->args[i].flags = hwTaskArg->flags;
 
         //Cleanup the memory position
         _newQueue[idx] = 0;
@@ -905,7 +900,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 
     for (size_t i = 0; i < (*task)->numCopies; ++i) {
         //NOTE: Each copy uses 3 uint64_t elements in the newQueue
-        //      After using each memory position, we have to cleanup it
+        //      After using each memory position, we have to clean it
 
         //NOTE: new_task_copy_t->address field is the 1st word
         idx = (idx+1)%NEW_QUEUE_LEN;
@@ -915,8 +910,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
          //NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
         idx = (idx+1)%NEW_QUEUE_LEN;
         uint32_t copyFlags = _newQueue[idx] >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
-        (*task)->copies[i].isInputCopy = copyFlags & NEW_TASK_COPY_INFLAG_MASK;
-        (*task)->copies[i].isOutputCopy = copyFlags & NEW_TASK_COPY_OUTFLAG_MASK;
+        (*task)->copies[i].flags = copyFlags;
         uint32_t copySize = _newQueue[idx] >> NEW_TASK_COPY_SIZE_WORDOFFSET;
         (*task)->copies[i].size = copySize;
         _newQueue[idx] = 0;
