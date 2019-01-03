@@ -861,7 +861,11 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
         if (hwTaskHeader->valid != VALID_ENTRY_MASK) {
             return XTASKS_PENDING;
         }
-        taskSize = (sizeof(new_task_header_t) + sizeof(new_task_arg_t)*hwTaskHeader->numArgs)/sizeof(uint64_t);
+        taskSize = (
+          sizeof(new_task_header_t) +
+          sizeof(new_task_arg_t)*hwTaskHeader->numArgs +
+          sizeof(new_task_copy_t)*hwTaskHeader->numCopies)/
+          sizeof(uint64_t);
         next = (idx+taskSize)%NEW_QUEUE_LEN;
     } while ( !__sync_bool_compare_and_swap(&_newQueueIdx, idx, next) );
 
