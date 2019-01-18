@@ -44,6 +44,7 @@
 #define READY_QUEUE_PATH        "/dev/taskmanager/ready_queue"
 #define FINI_QUEUE_PATH         "/dev/taskmanager/finished_queue"
 #define NEW_QUEUE_PATH          "/dev/taskmanager/new_queue"
+#define REMFINI_QUEUE_PATH      "/dev/taskmanager/remote_finished_queue"
 #define TASKMANAGER_RST_PATH    "/dev/taskmanager/ctrl"
 
 #define READY_QUEUE_LEN         1024            ///< Total number of entries in the ready queue
@@ -51,6 +52,7 @@
 #define FINI_QUEUE_LEN          1024            ///< Total number of entries in the finish queue
 #define FINI_QUEUE_ACC_LEN      32              ///< Number of entries in the sub-queue of finish queue for one accelerator
 #define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
+#define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
 #define VALID_ENTRY_MASK        0x80
 #define FREE_ENTRY_MASK         0
 #define DEF_HW_TASK_SIZE        256             ///< Size of hw task when using the defult num. of args.
@@ -103,7 +105,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief New task buffer representation  (Only the header part, N arguments follow the header)
 typedef struct __attribute__ ((__packed__)) {
-    uint16_t  numCopies;     //[8  :15 ] Number of copies after the task arguments
+    uint16_t  numCopies;     //[0  :15 ] Number of copies after the task arguments
     uint16_t  numArgs;       //[16 :31 ] Number of arguments after this header
     uint32_t  archMask:24;   //[32 :55 ] Architecture mask in Picos style
     uint8_t   valid;         //[56 :63 ] Valid Entry
@@ -125,6 +127,14 @@ typedef struct __attribute__ ((__packed__)) {
     uint32_t offset;      //[128:159] Offset of accessed region in the copy
     uint32_t accessedLen; //[160:191] Length of accessed region in the copy
 } new_task_copy_t;
+
+//! \brief Remote finished task buffer representation
+typedef struct __attribute__ ((__packed__)) {
+    uint8_t  valid;       //[0  :7  ] Valid Entry
+    uint8_t _padding[3];
+    uint32_t components;  //[32 :63 ] Number of tasks that have finished
+    uint64_t taskID;      //[64 :127] Parent task identifier that created the tasks
+} rem_fini_task_t;
 
 //! \brief Task argument representation in task_info
 typedef struct __attribute__ ((__packed__)) {
@@ -167,12 +177,15 @@ static task_t *             _tasks;             ///< Array with internal task in
 static int                  _readyQFd;          ///< File descriptior of ready queue
 static int                  _finiQFd;           ///< File descriptior of finished queue
 static int                  _newQFd;            ///< File descriptior of new queue
+static int                  _remFiniQFd;        ///< File descriptior of remote finished queue
 static int                  _ctrlFd;            ///< File descriptior of gpioctrl device
 static ready_task_t        *_readyQueue;        ///< Buffer for the ready tasks
 static fini_task_t         *_finiQueue;         ///< Buffer for the finished tasks
 static uint64_t            *_newQueue;          ///< Buffer for the new tasks created in the HW
 static size_t               _newQueueIdx;       ///< Reading index of the _newQueue
-static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset indexes of _readyQueue and _finiQueue
+static rem_fini_task_t     *_remFiniQueue;      ///< Buffer for the remote finished tasks
+static size_t               _remFiniQueueIdx;   ///< Writing index of the _remFiniQueue
+static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Manager
 
 typedef struct {
     xtasks_ins_event *insBuffer;
@@ -184,13 +197,12 @@ static instrumentBuffer *_instrBuffers = NULL;      ///< Array of intrumentation
 static int _numInstrEvents;
 
 
-static inline __attribute__((always_inline)) xtasks_stat resetQueueIdx()
+static inline __attribute__((always_inline)) void resetTaskManager()
 {
     //Nudge one register
     *_taskmanagerRst = 0x00;
     for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
     *_taskmanagerRst = 0x01;
-    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksInitHWIns(int nEvents)
@@ -376,11 +388,22 @@ xtasks_stat xtasksInit()
     _readyQFd = open(READY_QUEUE_PATH, O_RDWR, (mode_t) 0600);
     _finiQFd = open(FINI_QUEUE_PATH, O_RDWR, (mode_t) 0600);
     _ctrlFd = open(TASKMANAGER_RST_PATH, O_RDWR, (mode_t) 0600);
-    _newQFd = open(NEW_QUEUE_PATH, O_RDWR, (mode_t) 0600);
-    if (_readyQFd < 0 || _finiQFd < 0 || (_newQFd < 0 && errno != ENOENT) || _ctrlFd < 0) {
+    if (_readyQFd < 0 || _finiQFd < 0 || _ctrlFd < 0) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot open taskmanager device files");
-        goto INIT_ERR_2;
+        goto INIT_ERR_OPEN_COMM;
+    }
+    _newQFd = open(NEW_QUEUE_PATH, O_RDWR, (mode_t) 0600);
+    if (_newQFd < 0 && errno != ENOENT) {
+        ret = XTASKS_EFILE;
+        PRINT_ERROR("Cannot open taskmanager new queue device file");
+        goto INIT_ERR_OPEN_NEW;
+    }
+    _remFiniQFd = open(REMFINI_QUEUE_PATH, O_RDWR, (mode_t) 0600);
+    if (_remFiniQFd < 0 && errno != ENOENT) {
+        ret = XTASKS_EFILE;
+        PRINT_ERROR("Cannot open taskmanager remote finished queue device file");
+        goto INIT_ERR_OPEN_REMFINI;
     }
 
     _readyQueue = (ready_task_t *)mmap(NULL, sizeof(ready_task_t)*READY_QUEUE_LEN,
@@ -388,7 +411,7 @@ xtasks_stat xtasksInit()
     if (_readyQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map ready queue of Task Manager");
-        goto INIT_ERR_2;
+        goto INIT_ERR_MMAP_READY;
     }
 
     //Ensure that readyQueue is empty
@@ -401,7 +424,12 @@ xtasks_stat xtasksInit()
     if (_finiQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map finish queue of Task Manager");
-        goto INIT_ERR_3;
+        goto INIT_ERR_MMAP_FINI;
+    }
+
+    //If any, invalidate finished tasks in finiQueue
+    for (size_t idx = 0; idx < FINI_QUEUE_LEN; ++idx) {
+        _finiQueue[idx].valid = FREE_ENTRY_MASK;
     }
 
     _newQueueIdx = 0;
@@ -413,16 +441,27 @@ xtasks_stat xtasksInit()
         if (_newQueue == MAP_FAILED) {
             ret = XTASKS_EFILE;
             PRINT_ERROR("Cannot map new queue of Task Manager");
-            goto INIT_ERR_4;
+            goto INIT_ERR_MAP_NEW;
         }
 
         //If any, invalidate tasks in newQueue
         _memset(_newQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
     }
 
-    //If any, invalidate finished tasks in finiQueue
-    for (size_t idx = 0; idx < FINI_QUEUE_LEN; ++idx) {
-        _finiQueue[idx].valid = FREE_ENTRY_MASK;
+    _remFiniQueueIdx = 0;
+    if (_remFiniQFd == -1) {
+       _remFiniQueue = NULL;
+    } else {
+        _remFiniQueue = (rem_fini_task_t *)mmap(NULL, sizeof(rem_fini_task_t)*REMFINI_QUEUE_LEN,
+            PROT_READ | PROT_WRITE, MAP_SHARED, _remFiniQFd, 0);
+        if (_remFiniQueue == MAP_FAILED) {
+            ret = XTASKS_EFILE;
+            PRINT_ERROR("Cannot map remote finished queue of Task Manager");
+            goto INIT_ERR_MAP_REMFINI;
+        }
+
+        //If any, invalidate tasks in remFiniQueue
+        _memset(_remFiniQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
     }
 
     _taskmanagerRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE,
@@ -430,15 +469,11 @@ xtasks_stat xtasksInit()
     if (_taskmanagerRst == MAP_FAILED) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map control registers of Task Manager");
-        goto INIT_ERR_5;
+        goto INIT_ERR_MMAP_RST;
     }
 
     //Reset _readyQueue and _finiQueue indexes
-    if (resetQueueIdx() != XTASKS_SUCCESS) {
-        ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot reset the Task Manager");
-        goto INIT_ERR_6;
-    }
+    resetTaskManager();
 
     //Allocate the task_info buffer
     s = xdmaAllocateHost((void**)&_tasksBuff, &_tasksBuffHandle,
@@ -446,14 +481,14 @@ xtasks_stat xtasksInit()
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate kernel memory for task information");
-        goto INIT_ERR_7;
+        goto INIT_ERR_ALLOC_INFO;
     }
     unsigned long phyAddr;
     s = xdmaGetDeviceAddress(_tasksBuffHandle, &phyAddr);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
         PRINT_ERROR("Cannot get physical address of task info. region");
-        goto INIT_ERR_8;
+        goto INIT_ERR_GETADDR_INFO;
     }
     _tasksBuffPhy = (uint8_t *)phyAddr;
 
@@ -462,32 +497,37 @@ xtasks_stat xtasksInit()
     if (_tasks == NULL) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate memory for tasks");
-        goto INIT_ERR_8;
+        goto INIT_ERR_ALLOC_TASKS;
     }
     memset(_tasks, 0, NUM_RUN_TASKS*sizeof(task_t));
 
     return ret;
 
     //Error handling code
-    INIT_ERR_8:
+    INIT_ERR_ALLOC_TASKS:
+    INIT_ERR_GETADDR_INFO:
         xdmaFree(_tasksBuffHandle);
-    INIT_ERR_7:
-        xtasksFiniHWIns();
-        _tasksBuff = NULL;
-        _tasksBuffPhy = NULL;
-    INIT_ERR_6:
+    INIT_ERR_ALLOC_INFO:
         munmap((void *)_taskmanagerRst, sizeof(uint32_t));
-    INIT_ERR_5:
+    INIT_ERR_MMAP_RST:
+        if (_remFiniQueue != NULL)
+            munmap(_remFiniQueue, sizeof(rem_fini_task_t)*REMFINI_QUEUE_LEN);
+    INIT_ERR_MAP_REMFINI:
         if (_newQueue != NULL)
             munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN);
-    INIT_ERR_4:
+    INIT_ERR_MAP_NEW:
         munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
-    INIT_ERR_3:
+    INIT_ERR_MMAP_FINI:
         munmap(_readyQueue, sizeof(ready_task_t)*READY_QUEUE_LEN);
-    INIT_ERR_2:
-        close(_ctrlFd);
+    INIT_ERR_MMAP_READY:
+        if (_remFiniQFd != -1)
+            close(_remFiniQFd);
+    INIT_ERR_OPEN_REMFINI:
         if (_newQFd != -1)
             close(_newQFd);
+    INIT_ERR_OPEN_NEW:
+    INIT_ERR_OPEN_COMM:
+        close(_ctrlFd);
         close(_finiQFd);
         close(_readyQFd);
     INIT_ERR_1:
@@ -518,26 +558,27 @@ xtasks_stat xtasksFini()
     _tasksBuffPhy = NULL;
 
     //Finialize the HW instrumentation if needed
-
     if (xtasksFiniHWIns() != XTASKS_SUCCESS) {
         ret = XTASKS_ERROR;
     }
 
     //Unmap the Task Manager queues
-    int statusRd, statusFi, statusNw, statusCtrl;
+    int statusRd, statusFi, statusNw, statusRFi, statusCtrl;
     statusCtrl = munmap((void *)_taskmanagerRst, sizeof(uint32_t));
+    statusRFi = _remFiniQueue != NULL ? munmap(_remFiniQueue, sizeof(rem_fini_task_t)*REMFINI_QUEUE_LEN) : 0;
     statusNw = _newQueue != NULL ? munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN) : 0;
     statusFi = munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
     statusRd = munmap(_readyQueue, sizeof(ready_task_t)*READY_QUEUE_LEN);
-    if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusCtrl == -1) {
+    if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusRFi == -1 || statusCtrl == -1) {
         ret = XTASKS_EFILE;
     }
 
     statusCtrl = close(_ctrlFd);
+    statusRFi = _remFiniQFd != -1 ? close(_remFiniQFd) : 0;
     statusNw = _newQFd != -1 ? close(_newQFd) : 0;
     statusFi = close(_finiQFd);
     statusRd = close(_readyQFd);
-    if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusCtrl == -1) {
+    if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusRFi == -1 || statusCtrl == -1) {
         ret = XTASKS_EFILE;
     }
 
@@ -936,6 +977,33 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     return XDMA_SUCCESS;
 }
 
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_handle const parent, size_t count)
+{
+    task_t * task = (task_t *)(parent);
+
+    if (task == NULL) {
+        return XTASKS_EINVAL;
+    }
+
+    // Get an empty slot into the TM remote finished queue
+    size_t idx, next;
+    do {
+        idx = _remFiniQueueIdx;
+        if (_remFiniQueue[idx].valid == VALID_ENTRY_MASK) {
+            return XTASKS_ENOENTRY;
+        }
+        next = (idx+1)%REMFINI_QUEUE_LEN;
+    } while ( !__sync_bool_compare_and_swap(&_remFiniQueueIdx, idx, next) );
+
+    // Copy the information into the queue
+    _remFiniQueue[idx].taskID = (uintptr_t)(task);
+    _remFiniQueue[idx].components = count;
+    __sync_synchronize();
+    _remFiniQueue[idx].valid = VALID_ENTRY_MASK;
+
+    return XTASKS_SUCCESS;
+}
+
 xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp * timestamp)
 {
     if (timestamp == NULL) return XTASKS_EINVAL;
@@ -1016,6 +1084,11 @@ fini_task_t finiQueue(size_t const idx)
 uint64_t newQueue(size_t const idx)
 {
     return _newQueue[idx];
+}
+
+rem_fini_task_t remFiniQueue(size_t const idx)
+{
+    return _remFiniQueue[idx];
 }
 
 hw_task_header_t tasksBufferHeader(size_t const idx)

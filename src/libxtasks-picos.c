@@ -421,6 +421,11 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     return XTASKS_ENOSYS;
 }
 
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_handle const parent, size_t count)
+{
+    return XTASKS_ENOSYS;
+}
+
 xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp * timestamp)
 {
     return XTASKS_ENOSYS;
