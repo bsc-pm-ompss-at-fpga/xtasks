@@ -299,7 +299,8 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
     }
 
     task->picosTask.numDeps++;
-    task->picosTask.deps[idx].address = value;
+    //NOTE: Picos expects the HIGH and LOW parts in the other way
+    task->picosTask.deps[idx].address = value << 32 | value >> 32;
     task->picosTask.deps[idx].direction = PICOS_INOUT; //NOTE: Just in case, mark argument as inout
 
     return XTASKS_SUCCESS;
@@ -487,4 +488,14 @@ xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle * handle)
 
     xdma_status status = xdmaWaitTransfer(handle);
     return toXtasksStat(status);
+}
+
+xtasks_stat xtasksInitHWIns(int nEvents)
+{
+    return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksFiniHWIns()
+{
+    return XTASKS_SUCCESS;
 }
