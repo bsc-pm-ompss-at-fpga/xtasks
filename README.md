@@ -11,13 +11,12 @@ The current supported back-ends are:
 ##### Requirements
 
 Each back-end library has different requirements that are summarized in the following table.
-Moreover, the installation path of some required libraries must be provided during the build stage.
+Moreover, the installation path of required libraries must be provided during the build stage.
 
 |     | stream | taskmanager | picos |
 | --- | :----: | :---------: | :---: |
-| [libxdma](https://pm.bsc.es/gitlab/ompss-at-fpga/xdma) (version >= 1.0) | X | X |   |
-| [libpicos](https://pm.bsc.es/gitlab/picos/libpicos) (minimum commit [`3189090d`](https://pm.bsc.es/gitlab/picos/libpicos/commit/3189090d6513932fd530856ae4d3aac871a604f4)) |   |   | X |
-| [autoVivado](https://pm.bsc.es/gitlab/ompss-at-fpga/autoVivado) (bitstream generated using minimum commit [`934a3e27`](https://pm.bsc.es/gitlab/ompss-at-fpga/autoVivado/commit/934a3e27e580e5a4bd6138d8c3428c5d910b06ad)) |   | X |   |
+| [libxdma](https://pm.bsc.es/gitlab/ompss-at-fpga/xdma)          | X | X |   |
+| [libpicos](https://pm.bsc.es/gitlab/picos/libpicos)             |   |   | X |
 
 ##### Instructions
 1. Clone the repository or download the latest stable version.
