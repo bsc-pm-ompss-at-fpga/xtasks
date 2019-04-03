@@ -160,7 +160,7 @@ xtasks_stat xtasksInit()
     free(buffer);
     _numAccs = (total < _numAccs) ? total : _numAccs;
 
-    if (retFscanf != EOF) {
+    if (retFscanf != EOF && retFscanf != 0) {
         //Looks like the configuration file doesn't match the expected format
         fprintf(stderr, "WARN: xTasks configuration file may be not well formated.\n");
     }

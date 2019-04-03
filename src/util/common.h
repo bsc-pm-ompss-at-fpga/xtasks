@@ -35,18 +35,22 @@
 #include <sys/auxv.h>
 #include <libxdma.h>
 
-#define STR_BUFFER_SIZE     128
-#define PRINT_ERROR(_str_)  fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
+#define STR_BUFFER_SIZE         128
+#define PRINT_ERROR(_str_)      fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
 //#define PRINT_ERROR(_str_)
-
-#define XTASKS_EXTENSION ".xtasks.config"
-#define NANOX_EXTENSION ".nanox.config"
-#define XTASKS_DEF_CONFIG_FILE "xtasks.config"
+#define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
+#define BIT_INFO_FEATURES_PATH  "/dev/ompss_fpga/bit_info/features"
 
 #define max(a,b) \
     ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
        _a > _b ? _a : _b; })
+
+typedef enum {
+    BIT_FEATURE_NO_AVAIL = 0,
+    BIT_FEATURE_AVAIL = 1,
+    BIT_FEATURE_UNKNOWN = 2
+} bit_feature_t;
 
 /*!
  * \brief Get the path of the configuration file
@@ -55,50 +59,21 @@
  */
 char * getConfigFilePath()
 {
+    char * buffer = NULL;
+
     //1st -> environment var
     const char * accMapPath = getenv("XTASKS_CONFIG_FILE");
     if (accMapPath != NULL) {
-        char * buffer = malloc(sizeof(char)*max(STR_BUFFER_SIZE, strlen(accMapPath)));
-        if (buffer != NULL) {
-            strcpy(buffer, accMapPath);
-        }
-        return buffer;
-    }
-
-    accMapPath = (const char *)getauxval(AT_EXECFN);
-    size_t buffSize = max(STR_BUFFER_SIZE, strlen(accMapPath) + strlen(XTASKS_EXTENSION));
-    char * buffer = malloc(sizeof(char)*buffSize);
-    if (buffer != NULL) {
-        //2nd -> executable file path
+        buffer = malloc(sizeof(char)*max(STR_BUFFER_SIZE, strlen(accMapPath)));
         strcpy(buffer, accMapPath);
-        buffer = strcat(buffer, XTASKS_EXTENSION);
-        if (access(buffer, R_OK) != -1) {
-            return buffer;
-        }
-
-        //3rd -> exec file in current dir
-        accMapPath = strrchr(buffer, '/');
-        if (accMapPath == NULL) {
-            //Uncontroled path
-            free(buffer);
-            return NULL;
-        }
-        accMapPath++; //< Remove the initial '/'
-        memcpy(buffer, accMapPath, buffSize - (accMapPath - buffer)); //< Shift conntent to the beginning
-        if (access(buffer, R_OK) != -1) {
-            return buffer;
-        }
-
-        //4th -> XTASKS_DEF_CONFIG_FILE
-        strcpy(buffer, XTASKS_DEF_CONFIG_FILE);
-        if (access(buffer, R_OK) != -1) {
-            return buffer;
-        }
-
-        //Configuration file not found
-        free(buffer);
-        buffer = NULL;
     }
+
+    //2nd -> /dev/ompss_fpga/bit_info/xtasks
+    if (buffer == NULL) {
+        buffer = malloc(sizeof(char)*STR_BUFFER_SIZE);
+        strcpy(buffer, XTASKS_CONFIG_FILE_PATH);
+    }
+
     return buffer;
 }
 
@@ -107,15 +82,11 @@ char * getConfigFilePath()
  */
 void printErrorMsgCfgFile()
 {
-    fprintf(stderr, "ERROR: xTasks Library requires reading a formated file to obtain the ");
-    fprintf(stderr, "current FPGA configuration.\n");
-    fprintf(stderr, "       Available options are:\n");
-    fprintf(stderr, "         1) Use XTASKS_CONFIG_FILE environment variable to define the file path.\n");
-    fprintf(stderr, "         2) Create '<binary name>.xtasks.config' file (same location as binary) ");
-    fprintf(stderr, "with the current FPGA configuration.\n");
-    fprintf(stderr, "         3) Create './<binary name>.xtasks.config' file with the current FPGA ");
-    fprintf(stderr, "configuration.\n");
-    fprintf(stderr, "         4) Create './xtasks.config' file with the current FPGA configuration.\n");
+    fprintf(stderr, "ERROR: xTasks Library cannot access the fpga configuration device file.\n");
+    fprintf(stderr, "       Ensure that file '%s' exists and it has read permissions.\n",
+        XTASKS_CONFIG_FILE_PATH);
+    fprintf(stderr, "       Alternatively, you may force the configuration file path with \
+        XTASKS_CONFIG_FILE environment variable.\n");
 }
 
 /*!
@@ -157,6 +128,30 @@ static inline void __attribute__((optimize("O1")))
 #else
     memset(dst, c, n);
 #endif
+}
+
+/*!
+ * \brief Checks whether a bitstrem feature is present in the current fpga configuration or not
+ * \return  BIT_FEATURE_NO_AVAIL if the feature is not available
+ *          BIT_FEATURE_AVAIL if the feature is available
+ *          BIT_FEATURE_UNKNOWN if the check cannot be done or failed
+ *
+ */
+bit_feature_t checkBitstremFeature(const char * featureName) {
+    bit_feature_t available = BIT_FEATURE_UNKNOWN;
+    char buffer[strlen(BIT_INFO_FEATURES_PATH) + strlen(featureName) + 1];
+
+    strcpy(buffer, BIT_INFO_FEATURES_PATH);
+    strcat(buffer, "/");
+    strcat(buffer, featureName);
+    FILE * infoFile = fopen(buffer, "r");
+    if (infoFile != NULL) {
+        fread(&buffer, sizeof(char), 1, infoFile);
+        fclose(infoFile);
+        available = buffer[0] == '1' ? BIT_FEATURE_AVAIL :
+            (buffer[0] == '0' ? BIT_FEATURE_NO_AVAIL : BIT_FEATURE_UNKNOWN);
+    }
+    return available;
 }
 
 #endif /* __LIBXTASKS_COMMON_H__ */

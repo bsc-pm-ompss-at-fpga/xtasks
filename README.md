@@ -4,7 +4,7 @@ The xTasks Library provides a common interface to manage [OmpSs](https://pm.bsc.
 The current supported back-ends are:
  - `libxtasks-stream` implements a direct communication to the HW accelerators sending the task arguments by stream.
  - `libxtasks-taskmanager` implements an asynchronous communication where the tasks are pushed into a communication buffer. The Task Manager in the FPGA reads the information and communicates with the accelerators.
- - `libxtasks-picos` implements an asynchronous communication using the  [Picos](https://doi.org/10.1109/IPDPS.2017.48) queue for direct ready tasks execution.
+ - `libxtasks-picos` implements an asynchronous communication using the [Picos](https://doi.org/10.1109/IPDPS.2017.48) queue for direct ready tasks execution.
 
 ### Build
 
@@ -55,11 +55,9 @@ Note that the install step does not create the `libxtasks.so` in the `$PREFIX/li
 ### Configuration File
 
 xTasks Library reads the current FPGA configuration at each application launch from a formated file.
-The library looks for this file in the following locatations with the descriped filenames and also with the same preference order:
+The library looks for this file in the following locatations with the same preference order:
  1. Path provided in the `XTASKS_CONFIG_FILE` environment variable.
- 2. File with name `xtasks.config` in the current folder.
- 3. File with name `<binary name>.xtasks.config` in the same folder of applciation binary.
- 4. File with name `<binary name>.xtasks.config` in the current folder.
+ 2. `/dev/ompss_fpga/bit_info/xtasks` (Only in Zynq boards).
 
 ##### File Format
 
@@ -70,13 +68,9 @@ The configuration file is expected to have the following format:
    - Number of instances of such type (positive integer number).
    - Description (string, max. 128 chars).
    - Working frequency in MHz (floating point number).
- 
+
 ### Additional info
 ##### Execution requirements
 
-Additional requirements during execution, not during libxtasks build.
-
-|     | stream | taskmanager | picos |
-| --- | :----: | :---------: | :---: |
-| [XDMA Driver](https://pm.bsc.es/gitlab/ompss-at-fpga/xdma) | X | X | X |
-| [TaskManager Driver](https://pm.bsc.es/gitlab/ompss-at-fpga/taskmanager-driver) |   | X |   |
+During the execution, libxtasks uses the device files inside `/dev/ompss_fpga` folder to communicate with different elements in the fpga bitstrem and check the available features.
+Those device files are created by the [OmpSs@FPGA kernel module](https://pm.bsc.es/gitlab/ompss-at-fpga/ompss-at-fpga-kernel-module) which must be loaded before the execution and the device files must be available for opening by the user.
