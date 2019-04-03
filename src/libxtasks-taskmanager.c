@@ -41,11 +41,11 @@
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
-#define READY_QUEUE_PATH        "/dev/taskmanager/ready_queue"
-#define FINI_QUEUE_PATH         "/dev/taskmanager/finished_queue"
-#define NEW_QUEUE_PATH          "/dev/taskmanager/new_queue"
-#define REMFINI_QUEUE_PATH      "/dev/taskmanager/remote_finished_queue"
-#define TASKMANAGER_RST_PATH    "/dev/taskmanager/ctrl"
+#define READY_QUEUE_PATH        "/dev/ompss_fpga/task_manager/ready_queue"
+#define FINI_QUEUE_PATH         "/dev/ompss_fpga/task_manager/finished_queue"
+#define NEW_QUEUE_PATH          "/dev/ompss_fpga/task_manager/new_queue"
+#define REMFINI_QUEUE_PATH      "/dev/ompss_fpga/task_manager/remote_finished_queue"
+#define TASKMANAGER_RST_PATH    "/dev/ompss_fpga/task_manager/ctrl"
 
 #define READY_QUEUE_LEN         1024            ///< Total number of entries in the ready queue
 #define READY_QUEUE_ACC_LEN     32              ///< Number of entries in the sub-queue of ready queue for one accelerator
@@ -207,18 +207,22 @@ static inline __attribute__((always_inline)) void resetTaskManager()
 
 xtasks_stat xtasksInitHWIns(int nEvents)
 {
-
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
     int i;
     int insBufferSize = nEvents * HW_EVENT_SIZE;
+
+    //Check if bitstrem has the HW instrumentation feature
+    if (checkBitstremFeature("hw_instrumentation") == BIT_FEATURE_NO_AVAIL) {
+        return XTASKS_ENOAV;
+    }
 
     s = xdmaInitHWInstrumentation();
     if (s == XDMA_SUCCESS) {
         _insTimerAddr = (uint64_t)xdmaGetInstrumentationTimerAddr();
     } else {
         //Return as there's nothing to undo
-        return XTASKS_ENOSYS;
+        return XTASKS_ENOAV;
         //goto intrInitErr;
     }
 
@@ -284,7 +288,6 @@ xtasks_stat xtasksFiniHWIns()
 
 xtasks_stat xtasksInit()
 {
-
     //Handle multiple inits
     int init_cnt = __sync_fetch_and_add(&_init_cnt, 1);
     if (init_cnt > 0) return XTASKS_SUCCESS;
@@ -295,6 +298,12 @@ xtasks_stat xtasksInit()
 
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
+
+    //Check if bitstrem has the task manager feature
+    if (checkBitstremFeature("task_manager") == BIT_FEATURE_NO_AVAIL) {
+        PRINT_ERROR("OmpSs@FPGA Task Manager not available in the loaded FPGA bitstrem");
+        return XTASKS_ENOAV;
+    }
 
     //Open libxdma
     s = xdmaOpen();
@@ -375,7 +384,7 @@ xtasks_stat xtasksInit()
     free(buffer);
     _numAccs = (total < _numAccs) ? total : _numAccs;
 
-    if (retFscanf != EOF) {
+    if (retFscanf != EOF && retFscanf != 0) {
         //Looks like the configuration file doesn't match the expected format
         fprintf(stderr, "WARN: xTasks configuration file may be not well formated.\n");
     } else if (_numAccs > READY_QUEUE_LEN/READY_QUEUE_ACC_LEN) {

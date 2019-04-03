@@ -158,6 +158,12 @@ xtasks_stat xtasksInit()
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
 
+    //Check if bitstrem has the task manager feature
+    if (checkBitstremFeature("dma") == BIT_FEATURE_NO_AVAIL) {
+        PRINT_ERROR("OmpSs@FPGA DMA feature not available in the loaded FPGA bitstrem");
+        return XTASKS_ENOAV;
+    }
+
     //Open libxdma
     s = xdmaOpen();
     if (s != XDMA_SUCCESS) {
@@ -237,7 +243,7 @@ xtasks_stat xtasksInit()
     fclose(accMapFile);
     free(buffer);
 
-    if (retFscanf != EOF) {
+    if (retFscanf != EOF && retFscanf != 0) {
         //Looks like the configuration file doesn't match the expected format
         fprintf(stderr, "WARN: xTasks configuration file may be not well formated.\n");
     }
