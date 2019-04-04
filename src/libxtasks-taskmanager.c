@@ -402,17 +402,24 @@ xtasks_stat xtasksInit()
         PRINT_ERROR("Cannot open taskmanager device files");
         goto INIT_ERR_OPEN_COMM;
     }
-    _newQFd = open(NEW_QUEUE_PATH, O_RDWR, (mode_t) 0600);
-    if (_newQFd < 0 && errno != ENOENT) {
-        ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot open taskmanager new queue device file");
-        goto INIT_ERR_OPEN_NEW;
-    }
-    _remFiniQFd = open(REMFINI_QUEUE_PATH, O_RDWR, (mode_t) 0600);
-    if (_remFiniQFd < 0 && errno != ENOENT) {
-        ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot open taskmanager remote finished queue device file");
-        goto INIT_ERR_OPEN_REMFINI;
+
+    if (checkBitstremFeature("ext_task_manager") == BIT_FEATURE_NO_AVAIL) {
+	//Do not try to open the extended TM queues as we know that are not available
+        _newQFd = -1;
+	_remFiniQFd = -1;
+    } else {
+        _newQFd = open(NEW_QUEUE_PATH, O_RDWR, (mode_t) 0600);
+        if (_newQFd < 0 && errno != ENOENT) {
+            ret = XTASKS_EFILE;
+            PRINT_ERROR("Cannot open taskmanager new queue device file");
+            goto INIT_ERR_OPEN_NEW;
+        }
+        _remFiniQFd = open(REMFINI_QUEUE_PATH, O_RDWR, (mode_t) 0600);
+        if (_remFiniQFd < 0 && errno != ENOENT) {
+            ret = XTASKS_EFILE;
+            PRINT_ERROR("Cannot open taskmanager remote finished queue device file");
+            goto INIT_ERR_OPEN_REMFINI;
+        }
     }
 
     _readyQueue = (ready_task_t *)mmap(NULL, sizeof(ready_task_t)*READY_QUEUE_LEN,
