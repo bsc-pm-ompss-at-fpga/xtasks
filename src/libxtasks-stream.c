@@ -290,13 +290,6 @@ xtasks_stat xtasksInit()
         _accs[i].tasksQueueLock = 0;
     }
 
-    //Init HW instrumentation
-    if (xtasksInitHWIns(0) != XTASKS_SUCCESS) {
-        ret = XTASKS_EFILE;
-        //NOTE: PRINT_ERROR done inside the function
-        goto INIT_ERR_2;
-    }
-
     //Allocate the tasks buffer
     s = xdmaAllocateHost((void**)&_tasksBuff, &_tasksBuffHandle, NUM_RUN_TASKS*sizeof(hw_task_t));
     if (s != XDMA_SUCCESS) {
