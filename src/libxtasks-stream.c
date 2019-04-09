@@ -164,6 +164,23 @@ xtasks_stat xtasksInit()
         return XTASKS_ENOAV;
     }
 
+    s = xdmaInitMem();
+    if (s != XDMA_SUCCESS) {
+        switch (s) {
+            case XDMA_ENOENT:
+                PRINT_ERROR("InitMem failed: File not found");
+                ret = XTASKS_ENOENTRY;
+                break;
+            case XDMA_EACCES:
+                PRINT_ERROR("InitMem failed: Permission denied");
+                ret = XTASKS_ERROR;
+            default:
+                PRINT_ERROR("InitMem failed.");
+                ret = XTASKS_ERROR;
+        }
+        goto INIT_ERR_0;    //FIXME
+    }
+
     //Open libxdma
     s = xdmaOpen();
     if (s != XDMA_SUCCESS) {
