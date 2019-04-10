@@ -135,7 +135,7 @@ xtasks_stat xtasksInitHWIns(int nEvents)
 xtasks_stat xtasksFiniHWIns()
 {
     //TODO implement user instrumentation
-    return XTASKS_ENOSYS;
+    return XTASKS_SUCCESS;
 #if 0
     xdma_status s0 = XDMA_SUCCESS;
     if (_insTimerAddr != 0) {
