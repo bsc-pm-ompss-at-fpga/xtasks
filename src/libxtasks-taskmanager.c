@@ -305,8 +305,8 @@ xtasks_stat xtasksInit()
         return XTASKS_ENOAV;
     }
 
-    //Open libxdma
-    s = xdmaOpen();
+    //Initialize xdma memory subsystem
+    s = xdmaInitMem();
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
         if (s == XDMA_ENOENT) {
@@ -602,8 +602,8 @@ xtasks_stat xtasksFini()
     _numAccs = 0;
     free(_accs);
 
-    //Close xdma library
-    if (xdmaClose() != XDMA_SUCCESS) {
+    //Close xdma memory management
+    if (xdmaFiniMem() != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
     }
 
