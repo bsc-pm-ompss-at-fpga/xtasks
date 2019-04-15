@@ -87,17 +87,6 @@ typedef struct {
 } xtasks_acc_info;
 
 typedef struct {
-    xtasks_ins_timestamp start;        ///< Timestamp start
-    xtasks_ins_timestamp inTransfer;   ///< Timestamp after in transfers have finished
-    xtasks_ins_timestamp computation;  ///< Timestamp after computation have finished
-    xtasks_ins_timestamp outTransfer;  ///< Timestamp after output transfers have finished/acc end
-} xtasks_ins_times;
-
-#define XTASKS_LAST_EVENT_ID    (-1ULL)
-#define XTASKS_INSTR_OK         0       ///< Instrumentation finished successfully
-
-
-typedef struct {
     uint32_t eventId;       ///< Event id
     uint32_t eventType;     ///< Event type (one of xtasks_event_type)
     uint64_t value;         ///< Event value
@@ -105,10 +94,10 @@ typedef struct {
 } xtasks_ins_event;
 
 typedef enum {
-    XTASKS_EVENT_TYPE_BURST_OPEN = 0,
-    XTASKS_EVENT_TYPE_BURST_CLOSE,
-    XTASKS_EVENT_TYPE_POINT,
-    XTASKS_EVENT_TYPE_LAST = 0XFFFFFFFF
+    XTASKS_EVENT_TYPE_BURST_OPEN  = 0,
+    XTASKS_EVENT_TYPE_BURST_CLOSE = 1,
+    XTASKS_EVENT_TYPE_POINT       = 2,
+    XTASKS_EVENT_TYPE_INVALID     = 0xFFFFFFFF
 } xtasks_event_type;
 
 typedef struct {
@@ -235,24 +224,22 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     xtasks_task_handle * handle, xtasks_task_id * id);
 
 /*!
- * \brief Get instrumentation timestamps for a task
- * \param[in]  handle     Task handle which instrumentation data will be retrieved
- * \param[out] times      Pointer to an xtasks_ins_times array with that can fit at least maxCount elements
- * \param[in] maxCount    Number of events the event array can hold
- *                        of instrumentation data
- * Returns an array of xtasks_ins_event that is terminated with an event witt
- * eventId == XTASKS_LAST_EVENT_ID and the value set as
- * * == XTASKS_INSTR_OK on success
- * * != XTASKS_INSTR_OK if on instrumentation buffer overflow
- *
+ * \brief Get instrumentation events buffer for an accelerator
+ *        Events will be set in the events array until an XTASKS_EVENT_TYPE_INVALID is reached or maxCount
+ *        events are wrote into the buffer.
+ * \param[in]  accel      Accelerator handle of the accelerator which data will be retrieved
+ * \param[out] events     Pointer to an xtasks_ins_event array that can fit at least maxCount elements
+ * \param[in]  maxCount   Number of events the event array can hold
+ * \returns    XTASKS_ENOAV if instrumentation is not available,
+ *             XTASKS_SUCCESS if a some events have been wrote into events array
  */
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event *events, size_t maxCount);
+xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount);
 
 /*!
  * \brief Initialize hardware instrumentation
  * \param[in] nEvents   Maximum number of events that will be recorded per task execution
  */
-xtasks_stat xtasksInitHWIns(int nEvents);
+xtasks_stat xtasksInitHWIns(size_t const nEvents);
 
 /*!
  * \brief Finalize hardware instrumentation

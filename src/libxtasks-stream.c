@@ -40,10 +40,13 @@
 #define HW_TASK_HEAD_BYTES  32              ///< Size of hw_task_t without the args field
 #define HW_TASK_NUM_ARGS    14              ///< (256 - TASK_INFO_HEAD_BYTES)/sizeof(xdma_task_arg)
 #define INS_BUFFER_SIZE     8192            ///< 2 pages
-#define INS_NUM_ENTRIES  (INS_BUFFER_SIZE/sizeof(xtasks_ins_times))
-#define NUM_RUN_TASKS       INS_NUM_ENTRIES ///< Maximum number of concurrently running tasks
-#define HW_TASK_DEST_ID_PS  0x0000001F      ///< Processing System identifier for the destId field
-#define HW_TASK_DEST_ID_TM  0x00000011      ///< Task manager identifier for the destId field
+#define NUM_RUN_TASKS       8192/sizeof(hw_task_t) ///< Maximum number of concurrently running tasks
+#define HW_TASK_DEST_ID_PS  0x1F            ///< Processing System identifier for the destId field
+#define HW_TASK_DEST_ID_TM  0x11            ///< Task manager identifier for the destId field
+#define HW_TASK_CMD_EXEC_TASK            0x01  ///< Command code for execute task commands
+#define HW_TASK_CMD_SETUP_INS            0x02  ///< Command code for setup instrumentation info.
+#define HW_TASK_CMD_ARGS_COMPUTE_OFFSET  0     ///< Offset of Compute flag in the commandArgs array
+#define HW_TASK_CMD_ARGS_DEST_ID_OFFSET  1     ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 2
@@ -70,13 +73,9 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief Task information for the accelerator
 typedef struct __attribute__ ((__packed__)) {
+    uint8_t commandCode;                   ///< Command code
+    uint8_t commandArgs[7];                ///< Command arguments
     uint64_t taskId;                       ///< Task identifier
-    struct {
-        uint64_t timer;                    ///< Timer address for instrumentation
-        uint64_t buffer;                   ///< Buffer address to store instrumentation info
-    } profile;
-    xtasks_comp_flags compute;             ///< Compute flag
-    uint32_t destID;                       ///< Where the accelerator will send the comp. signal
     hw_arg_t args[HW_TASK_NUM_ARGS];       ///< Task arguments info
 } hw_task_t;
 
@@ -93,16 +92,16 @@ typedef struct {
 static int _init_cnt = 0;   ///< Counter of calls to init/fini
 static size_t   _numAccs;   ///< Number of accelerators in the system
 static acc_t *  _accs;      ///< Accelerators data
-static uint64_t             _insTimerAddr;      ///< Physical address of HW instrumentation timer
+//static uint64_t             _insTimerAddr;      ///< Physical address of HW instrumentation timer
 //static xtasks_ins_times *   _insBuff;           ///< Buffer for the HW instrumentation    //FIXME
-static xtasks_ins_times *   _insBuffPhy;        ///< Physical address of _insBuff
+//static xtasks_ins_times *   _insBuffPhy;        ///< Physical address of _insBuff
 //static xdma_buf_handle      _insBuffHandle;     ///< Handle of _insBuff in libxdma //FIXME
 static hw_task_t *          _tasksBuff;         ///< Buffer to send the HW tasks
 static hw_task_t *          _tasksBuffPhy;      ///< Physical address of _tasksBuff
 static xdma_buf_handle      _tasksBuffHandle;   ///< Handle of _tasksBuff in libxdma
 static task_t *             _tasks;             ///< Array with internal task information
 
-xtasks_stat xtasksInitHWIns(int nEvents)
+xtasks_stat xtasksInitHWIns(size_t const nEvents)
 {
     //TODO implement user instrumentation
     return XTASKS_ENOSYS;
@@ -405,12 +404,14 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     _tasks[idx].id = id;
     _tasks[idx].hwTask = &_tasksBuff[idx];
     _tasks[idx].argsCnt = 0;
-    //_tasks[idx].accel = accel; //NOTE: Done in getFreeTaskEntry()
-    _tasks[idx].hwTask->taskId = (uintptr_t)(&_tasks[idx]);
-    _tasks[idx].hwTask->profile.timer = _insTimerAddr;
-    _tasks[idx].hwTask->profile.buffer = (uintptr_t)(&_insBuffPhy[idx]);
-    _tasks[idx].hwTask->compute = compute;
-    _tasks[idx].hwTask->destID = HW_TASK_DEST_ID_PS;
+    //_tasks[idx].accel = accel; //NOTE: Done in getFreeTaskEntry
+
+    hw_task_t taskHeader;
+    taskHeader.commandCode = HW_TASK_CMD_EXEC_TASK;
+    taskHeader.commandArgs[HW_TASK_CMD_ARGS_COMPUTE_OFFSET] = compute;
+    taskHeader.commandArgs[HW_TASK_CMD_ARGS_DEST_ID_OFFSET] = HW_TASK_DEST_ID_PS;
+    taskHeader.taskId = (uintptr_t)(&_tasks[idx]);
+    memcpy(_tasks[idx].hwTask, &taskHeader, sizeof(hw_task_t));
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
@@ -472,7 +473,7 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     retD = xdmaStreamAsync(_tasksBuffHandle, size, descOffset,
            task->accel->xdmaDev, task->accel->inChannel, &task->descriptorTx);
     retS = xdmaStreamAsync(_tasksBuffHandle, sizeof(uint64_t),
-           descOffset + offsetof(hw_task_t, compute),
+           descOffset + offsetof(hw_task_t, taskId),
            task->accel->xdmaDev, task->accel->outChannel, &task->syncTx);
     queuePush(task->accel->tasksQueue, (void *)task);
 
@@ -545,7 +546,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     return ret;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event *events, size_t maxCount) {
+xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount) {
     return XTASKS_ENOSYS;
 }
 

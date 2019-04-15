@@ -412,7 +412,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     return t == NULL ? XTASKS_PENDING : XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_task_handle const handle, xtasks_ins_event *events, size_t maxCount)
+xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount)
 {
     return XTASKS_ENOSYS;
 }
@@ -490,7 +490,7 @@ xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle * handle)
     return toXtasksStat(status);
 }
 
-xtasks_stat xtasksInitHWIns(int nEvents)
+xtasks_stat xtasksInitHWIns(size_t const nEvents)
 {
     return XTASKS_ENOSYS;
 }
