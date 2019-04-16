@@ -195,9 +195,12 @@ static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Mana
 
 static uint64_t             _insTimerAddr;      ///< Physical address of HW instrumentation timer
 static size_t               _numInstrEvents;    ///< Number of instrumentation events for each accelerator buffer
-static xtasks_ins_event    *_instrBuff;          ///< Buffer of instrumentation events
+static xtasks_ins_event    *_instrBuff;         ///< Buffer of instrumentation events
 static xtasks_ins_event    *_instrBuffPhy;      ///< Physical address of _instrBuff
 static xdma_buf_handle      _instrBuffHandle;   ///< Handle of _instrBuff in libxdma
+static uint64_t            *_instrCmdBuff;      ///< Buffer of instrumentation commands
+static uint64_t            *_instrCmdBuffPhy;   ///< Physical address of _instrCmdBuff
+static xdma_buf_handle      _instrCmdBuffHandle;///< Handle of _instrCmdBuff in libxdma
 
 static inline __attribute__((always_inline)) void resetTaskManager()
 {
@@ -254,7 +257,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     }
 
     _numInstrEvents = nEvents;
-    insBufferSize = nEvents*_numAccs*sizeof(xtasks_ins_event);
+    insBufferSize = _numInstrEvents*_numAccs*sizeof(xtasks_ins_event);
     s = xdmaAllocateHost((void **)&_instrBuff, &_instrBuffHandle, insBufferSize);
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
@@ -270,23 +273,35 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     _instrBuffPhy = (xtasks_ins_event *)((uintptr_t)phyAddr);
 
     //Invalidate all entries
-    for (size_t i = 0; i < insBufferSize; ++i) {
+    for (size_t i = 0; i < _numInstrEvents; ++i) {
         _instrBuff[i].eventType = XTASKS_EVENT_TYPE_INVALID;
     }
 
+    insBufferSize = _numAccs*sizeof(uint64_t)*3;
+    s = xdmaAllocateHost((void **)&_instrCmdBuff, &_instrCmdBuffHandle, insBufferSize);
+    if (s != XDMA_SUCCESS) {
+        ret = XTASKS_ENOMEM;
+        goto instrCmdAllocErr;
+    }
+    s = xdmaGetDeviceAddress(_instrCmdBuffHandle, &phyAddr);
+    if (s != XDMA_SUCCESS) {
+        ret = XTASKS_ERROR;
+        goto instrCmdGetAddrErr;
+    }
+    _instrCmdBuffPhy = (uint64_t *)((uintptr_t)phyAddr);
+
     //Send the instrumentation buffer to each accelerator
     for (size_t i = 0; i < _numAccs; ++i) {
-        //NOTE: Use the same instrmentation buffer to send the command
-        uint64_t * data = (uint64_t *)(_instrBuff + _numInstrEvents*i);
-        //Comand code + arguments
+        uint64_t * data = (uint64_t *)(_instrCmdBuff + 3*i);
+        //Comand code + arguments (num slots avail. in instrumentation buffer)
         data[0] = (_numInstrEvents << 8) | HW_TASK_CMD_SETUP_INS;
         //Instrumentation timer address
         data[1] = _insTimerAddr;
-        //Instrumentation buffer phy address + Maximum event count (upper 16 bits)
+        //Instrumentation buffer phy address
         data[2] = (uintptr_t)(_instrBuffPhy + _numInstrEvents*i);
 
         ready_task_t cmd;
-        cmd.taskInfoAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents*i);
+        cmd.taskInfoAddr = (uintptr_t)(_instrCmdBuffPhy + 3*i);
         cmd.taskSize = 3; //< Command header + Timer address + Buffer address
         cmd.flags = READY_TASK_FLAG_AVAIL;
         cmd.accID = _accs[i].info.id;
@@ -302,6 +317,11 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     return XTASKS_SUCCESS;
 
 instrSendInit:
+instrCmdGetAddrErr:
+instrCmdAllocErr:
+    xdmaFree(_instrCmdBuffHandle);
+    _instrCmdBuff = NULL;
+    _instrCmdBuffPhy = NULL;
 instrGetAddrErr:
 instrAllocErr:
     xdmaFree(_instrBuffHandle);
@@ -315,19 +335,23 @@ xtasks_stat xtasksFiniHWIns()
 {
     xdma_status s0 = XDMA_SUCCESS;
     xdma_status s1 = XDMA_SUCCESS;
+    xdma_status s2 = XDMA_SUCCESS;
 
     if (_instrBuff == NULL) {
         //Instrumentation is not initialized or has been already finished
         return XDMA_SUCCESS;
     }
 
-    s0 = xdmaFree(_instrBuffHandle);
+    s2 = xdmaFree(_instrCmdBuffHandle);
+    _instrCmdBuff = NULL;
+    _instrCmdBuffPhy = NULL;
+    s1 = xdmaFree(_instrBuffHandle);
     _numInstrEvents = 0;
     _instrBuff = NULL;
     _instrBuffPhy = NULL;
-    s1 = xdmaFiniHWInstrumentation();
+    s0 = xdmaFiniHWInstrumentation();
 
-    return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
+    return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS && s2 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
 xtasks_stat xtasksInit()
@@ -942,11 +966,6 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
         }
         acc->instrIdx = (acc->instrIdx + i)%_numInstrEvents;
         __sync_lock_release(&acc->lock);
-
-        if (i == count && count < maxCount) {
-            //Put the last event identifier
-            events[i].eventType = XTASKS_EVENT_TYPE_INVALID;
-        }
     }
 
     return XTASKS_SUCCESS;
@@ -1174,7 +1193,7 @@ void accelPrintInstrBuffer(size_t const aIdx) {
     xtasks_ins_event *event = _instrBuff + aIdx*_numInstrEvents;
     fprintf(stderr, "timestamp, accid, eventid, value\n");
     while ( event->eventId != XTASKS_EVENT_TYPE_INVALID ) {
-        fprintf(stderr, "%lu,\t%u,\t%u,\t%lu\n", event->timestamp,
+        fprintf(stderr, "%llu,\t%u,\t%u,\t%llu\n", event->timestamp,
                 event->eventType, event->eventId, event->value);
         event++;
     }
