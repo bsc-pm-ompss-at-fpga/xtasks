@@ -310,11 +310,11 @@ xtasks_stat xtasksInit()
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
         if (s == XDMA_ENOENT) {
-            PRINT_ERROR("xdmaOpen failed. Check if xdma device exist in the system");
+            PRINT_ERROR("xdmaInitMem failed. Check if xdma device exist in the system");
         } else if (s == XDMA_EACCES) {
-            PRINT_ERROR("xdmaOpen failed. Current user cannot access xdma device");
+            PRINT_ERROR("xdmaInitMem failed. Current user cannot access xdma device");
         } else {
-            PRINT_ERROR("xdmaOpen failed");
+            PRINT_ERROR("xdmaInitMem failed");
         }
         goto INIT_ERR_0;
     }
