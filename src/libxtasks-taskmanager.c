@@ -112,19 +112,21 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief New task buffer representation  (Only the header part, N arguments follow the header)
 typedef struct __attribute__ ((__packed__)) {
-    uint16_t  numCopies;     //[0  :15 ] Number of copies after the task arguments
-    uint16_t  numArgs;       //[16 :31 ] Number of arguments after this header
+    uint8_t   _padding;      //[0  :7  ]
+    uint8_t   numArgs;       //[8  :15 ] Number of arguments after this header
+    uint8_t   numDeps;       //[16 :23 ] Number of dependencies after the task arguments
+    uint8_t   numCopies;     //[24 :31 ] Number of copies after the task dependencies
     uint32_t  archMask:24;   //[32 :55 ] Architecture mask in Picos style
     uint8_t   valid;         //[56 :63 ] Valid Entry
     uint64_t  parentID;      //[64 :127] Parent task identifier that is creating the task
     uint64_t  typeInfo;      //[128:191] Information of task type
 } new_task_header_t;
 
-//! \brief New task buffer representation (Only the argument part, repeated N times)
+//! \brief New task buffer representation (Only the dependence part, repeated N times)
 typedef struct __attribute__ ((__packed__)) {
-    uint64_t  value:56;   //[0  :55 ] Argument value
-    uint8_t   flags;      //[56 :63 ] Argument flags
-} new_task_arg_t;
+    uint64_t  address:56; //[0  :55 ] Dependence value
+    uint8_t   flags;      //[56 :63 ] Dependence flags
+} new_task_dep_t;
 
 //! \brief New task buffer representation (Only the argument part, repeated N times)
 typedef struct __attribute__ ((__packed__)) {
@@ -986,7 +988,8 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
         }
         taskSize = (
           sizeof(new_task_header_t) +
-          sizeof(new_task_arg_t)*hwTaskHeader->numArgs +
+          sizeof(uint64_t)*hwTaskHeader->numArgs +
+          sizeof(new_task_dep_t)*hwTaskHeader->numDeps +
           sizeof(new_task_copy_t)*hwTaskHeader->numCopies)/
           sizeof(uint64_t);
         next = (idx+taskSize)%NEW_QUEUE_LEN;
@@ -996,10 +999,13 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     *task = realloc(*task,
         sizeof(xtasks_newtask) +
         sizeof(xtasks_newtask_arg)*hwTaskHeader->numArgs +
+        sizeof(xtasks_newtask_dep)*hwTaskHeader->numDeps +
         sizeof(xtasks_newtask_copy)*hwTaskHeader->numCopies);
     (*task)->args = (xtasks_newtask_arg *)(*task + 1);
     (*task)->numArgs = hwTaskHeader->numArgs;
-    (*task)->copies = (xtasks_newtask_copy *)((*task)->args + (*task)->numArgs);
+    (*task)->deps = (xtasks_newtask_dep *)((*task)->args + (*task)->numArgs);
+    (*task)->numDeps = hwTaskHeader->numDeps;
+    (*task)->copies = (xtasks_newtask_copy *)((*task)->deps + (*task)->numDeps);
     (*task)->numCopies = hwTaskHeader->numCopies;
     (*task)->architecture = hwTaskHeader->archMask;
 
@@ -1015,11 +1021,19 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     for (size_t i = 0; i < (*task)->numArgs; ++i) {
         //Check that arg pointer is not out of bounds
         idx = (idx+1)%NEW_QUEUE_LEN;
-        new_task_arg_t * hwTaskArg = (new_task_arg_t *)(&_newQueue[idx]);
+        (*task)->args[i] = _newQueue[idx];
 
-        //Parse the arg information
-        (*task)->args[i].value = hwTaskArg->value;
-        (*task)->args[i].flags = hwTaskArg->flags;
+        //Cleanup the memory position
+        _newQueue[idx] = 0;
+    }
+
+    for (size_t i = 0; i < (*task)->numDeps; ++i) {
+        idx = (idx+1)%NEW_QUEUE_LEN;
+        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_newQueue[idx]);
+
+        //Parse the dependence information
+        (*task)->deps[i].address = hwTaskDep->address;
+        (*task)->deps[i].flags = hwTaskDep->flags;
 
         //Cleanup the memory position
         _newQueue[idx] = 0;

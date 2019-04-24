@@ -77,6 +77,7 @@ typedef uint64_t          xtasks_ins_timestamp;
 typedef void *            xtasks_mem_handle;
 typedef long unsigned int xtasks_memcpy_handle;
 typedef uint32_t          xtasks_newtask_arch;
+typedef uint64_t          xtasks_newtask_arg;
 
 typedef struct {
     xtasks_acc_id   id;               ///< Accelerator identifier
@@ -101,9 +102,9 @@ typedef enum {
 } xtasks_event_type;
 
 typedef struct {
-    uint64_t              value;        ///< Argument value
-    uint8_t               flags;        ///< Argument flags
-} xtasks_newtask_arg;
+    uint64_t              address;      ///< Dependence address
+    uint8_t               flags;        ///< Dependence flags
+} xtasks_newtask_dep;
 
 typedef struct {
     uint8_t               flags;        ///< Copy flags
@@ -119,6 +120,8 @@ typedef struct {
     uint64_t              typeInfo;     ///< Identifier of the task type
     size_t                numArgs;      ///< Number of arguments
     xtasks_newtask_arg *  args;         ///< Arguments array
+    size_t                numDeps;      ///< Number of dependences
+    xtasks_newtask_dep *  deps;         ///< Dependences array
     size_t                numCopies;    ///< Number of copies
     xtasks_newtask_copy * copies;       ///< Copies array
 } xtasks_newtask;
