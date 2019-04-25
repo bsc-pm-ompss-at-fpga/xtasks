@@ -72,9 +72,9 @@
 #define READY_TASK_FLAG_AVAIL   0x1             ///< Flag to do not set the accelerator unavailable when running
 #define READY_TASK_FLAG_BUSY    0x0             ///< Flag to set the accelerator unavailable when running
 #define HW_TASK_CMD_EXEC_TASK   0x01            ///< Command code for execute task commands
-#define HW_TASK_CMD_SETUP_INS   0x02            ///< Command code for setup instrumentation info.
-#define HW_TASK_CMD_ARGS_COMPUTE_OFFSET      0  ///< Offset of Compute flag in the commandArgs array
-#define HW_TASK_CMD_ARGS_DEST_ID_OFFSET      1  ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
+#define HW_TASK_CMD_SETUP_INS   0x02            ///< Command code for setup instrumentation info
+#define HW_TASK_CMD_ARGS_COMPUTE_OFFSET      3  ///< Offset of Compute flag in the commandArgs array
+#define HW_TASK_CMD_ARGS_DEST_ID_OFFSET      4  ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 2
@@ -154,14 +154,10 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief Task information for the accelerator
 typedef struct __attribute__ ((__packed__)) {
-    uint64_t parentTaskID;                   //[0  :63 ] Task identifier
-    uint8_t commandCode;                     //[64 :71 ] Command code
-    uint8_t commandArgs[7];                  //[72 :127] Command arguments
+    uint8_t commandCode;                     //[0  :7 ] Command code
+    uint8_t commandArgs[7];                  //[8  :63] Command arguments
+    uint64_t parentTaskID;                   //[64 :127] Parent task identifier
     uint64_t taskID;                         //[128:191] Task identifier
-    // struct {
-    //     uint64_t timerAddr;                  //[192:255] Timer address for instrumentation
-    //     uint64_t bufferAddr;                 //[256:319] Buffer address to store instrumentation info
-    // } profile;
 } hw_task_header_t;
 
 //! \brief Internal library task information
@@ -749,10 +745,10 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     _tasks[idx].tmTask.flags = READY_TASK_FLAG_BUSY;
 
     hw_task_header_t taskHeader;
-    taskHeader.parentTaskID = (uintptr_t)(parent);
     taskHeader.commandCode = HW_TASK_CMD_EXEC_TASK;
     taskHeader.commandArgs[HW_TASK_CMD_ARGS_COMPUTE_OFFSET] = compute;
     taskHeader.commandArgs[HW_TASK_CMD_ARGS_DEST_ID_OFFSET] = HW_TASK_DEST_ID_TM;
+    taskHeader.parentTaskID = (uintptr_t)(parent);
     taskHeader.taskID = (uintptr_t)(&_tasks[idx]);
     // taskHeader.profile.timerAddr = _insTimerAddr;
     // taskHeader.profile.bufferAddr = instrumentData;
@@ -867,8 +863,8 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     // NOTE: For now, already there
 
     // Update the task/command size
-    task->tmTask.taskSize = (sizeof(hw_task_header_t) - sizeof(uint64_t) /*taskID not considered*/ +
-        task->argsCnt*sizeof(hw_task_arg_t)) / sizeof(uint64_t);
+    task->tmTask.taskSize = (sizeof(hw_task_header_t) + task->argsCnt*sizeof(hw_task_arg_t))
+        / sizeof(uint64_t);
 
     return xtasksSubmitCommand(acc, &task->tmTask);
 }
@@ -1207,8 +1203,8 @@ void accelPrintInstrBuffer(size_t const aIdx) {
     xtasks_ins_event *event = _instrBuff + aIdx*_numInstrEvents;
     fprintf(stderr, "timestamp, accid, eventid, value\n");
     while ( event->eventId != XTASKS_EVENT_TYPE_INVALID ) {
-        fprintf(stderr, "%llu,\t%u,\t%u,\t%llu\n", event->timestamp,
-                event->eventType, event->eventId, event->value);
+        fprintf(stderr, "%llu,\t%u,\t%u,\t%llu\n", (unsigned long long int)event->timestamp,
+                event->eventType, event->eventId, (unsigned long long int)event->value);
         event++;
     }
 }
