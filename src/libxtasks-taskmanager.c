@@ -162,7 +162,7 @@ typedef struct {
     ticketLock_t             cmdInLock;         ///< Lock for atomic operations over cmd_in sub-queue
     unsigned short           finiQueueIdx;      ///< Reading index of the accelerator sub-queue in the finished queue
     unsigned short           instrIdx;          ///< Reading index of the accelerator instrumentation buffer
-    unsigned short volatile  lock;              ///< Lock for atomic operations over instrumentation buffers
+    unsigned short volatile  instrLock;         ///< Lock for atomic operations over instrumentation buffers
 } acc_t;
 
 //! \brief Internal library task information
@@ -311,7 +311,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     _instrBuffPhy = (xtasks_ins_event *)((uintptr_t)phyAddr);
 
     //Invalidate all entries
-    for (size_t i = 0; i < _numInstrEvents; ++i) {
+    for (size_t i = 0; i < _numInstrEvents*_numAccs; ++i) {
         _instrBuff[i].eventType = XTASKS_EVENT_TYPE_INVALID;
     }
 
@@ -328,6 +328,9 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
         if (ret != XTASKS_SUCCESS) {
             goto instrSendInit;
         }
+
+        _accs[i].instrIdx = 0;
+        _accs[i].instrLock = 0;
     }
 
     return XTASKS_SUCCESS;
@@ -455,7 +458,6 @@ xtasks_stat xtasksInit()
             _accs[i].cmdInRdIdx = 0;
             ticketLockInit(&_accs[i].cmdInLock);
             _accs[i].finiQueueIdx = 0;
-            _accs[i].lock = 0;
         }
     }
     fclose(accMapFile);
@@ -924,7 +926,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
     if (events == NULL || (acc - _accs) >= _numAccs || maxCount <= 0) return XTASKS_EINVAL;
     else if (_instrBuff == NULL) return XTASKS_ENOAV;
 
-    if (__sync_lock_test_and_set(&acc->lock, 1)) {
+    if (__sync_lock_test_and_set(&acc->instrLock, 1)) {
         //There is another thread reading the buffer for this accelerator
         events->eventType = XTASKS_EVENT_TYPE_INVALID;
     } else {
@@ -940,7 +942,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
             i++;
         }
         acc->instrIdx = (acc->instrIdx + i)%_numInstrEvents;
-        __sync_lock_release(&acc->lock);
+        __sync_lock_release(&acc->instrLock);
     }
 
     return XTASKS_SUCCESS;
