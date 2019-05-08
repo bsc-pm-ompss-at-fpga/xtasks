@@ -352,16 +352,16 @@ xtasks_stat xtasksInit()
         return XTASKS_ENOAV;
     }
 
-    //Open libxdma
-    s = xdmaOpen();
+    //Initialize xdma memory subsystem
+    s = xdmaInitMem();
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
         if (s == XDMA_ENOENT) {
-            PRINT_ERROR("xdmaOpen failed. Check if xdma device exist in the system");
+            PRINT_ERROR("xdmaInitMem failed. Check if xdma device exist in the system");
         } else if (s == XDMA_EACCES) {
-            PRINT_ERROR("xdmaOpen failed. Current user cannot access xdma device");
+            PRINT_ERROR("xdmaInitMem failed. Current user cannot access xdma device");
         } else {
-            PRINT_ERROR("xdmaOpen failed");
+            PRINT_ERROR("xdmaInitMem failed");
         }
         goto INIT_ERR_0;
     }
@@ -648,8 +648,8 @@ xtasks_stat xtasksFini()
     _accs = NULL;
     _numAccs = 0;
 
-    //Close xdma library
-    if (xdmaClose() != XDMA_SUCCESS) {
+    //Close xdma memory management
+    if (xdmaFiniMem() != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
     }
 

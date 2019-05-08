@@ -134,7 +134,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
 xtasks_stat xtasksFiniHWIns()
 {
     //TODO implement user instrumentation
-    return XTASKS_ENOSYS;
+    return XTASKS_SUCCESS;
 #if 0
     xdma_status s0 = XDMA_SUCCESS;
     if (_insTimerAddr != 0) {
@@ -161,6 +161,23 @@ xtasks_stat xtasksInit()
     if (checkBitstremFeature("dma") == BIT_FEATURE_NO_AVAIL) {
         PRINT_ERROR("OmpSs@FPGA DMA feature not available in the loaded FPGA bitstrem");
         return XTASKS_ENOAV;
+    }
+
+    s = xdmaInitMem();
+    if (s != XDMA_SUCCESS) {
+        switch (s) {
+            case XDMA_ENOENT:
+                PRINT_ERROR("InitMem failed: File not found");
+                ret = XTASKS_ENOENTRY;
+                break;
+            case XDMA_EACCES:
+                PRINT_ERROR("InitMem failed: Permission denied");
+                ret = XTASKS_ERROR;
+            default:
+                PRINT_ERROR("InitMem failed.");
+                ret = XTASKS_ERROR;
+        }
+        goto INIT_ERR_0;    //FIXME
     }
 
     //Open libxdma
@@ -270,13 +287,6 @@ xtasks_stat xtasksInit()
         //Init the tasks queue
         _accs[i].tasksQueue = queueInit();
         _accs[i].tasksQueueLock = 0;
-    }
-
-    //Init HW instrumentation
-    if (xtasksInitHWIns(0) != XTASKS_SUCCESS) {
-        ret = XTASKS_EFILE;
-        //NOTE: PRINT_ERROR done inside the function
-        goto INIT_ERR_2;
     }
 
     //Allocate the tasks buffer
