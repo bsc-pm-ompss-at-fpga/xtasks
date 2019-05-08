@@ -57,6 +57,33 @@ typedef enum {
     BIT_FEATURE_UNKNOWN = 2
 } bit_feature_t;
 
+//! \brief Command header type
+typedef struct __attribute__ ((__packed__)) {
+    uint8_t commandCode;     //[0  :7  ] Command code
+    uint8_t commandArgs[6];  //[8  :55 ] Command arguments
+    uint8_t valid;           //[56 :63 ] Valid entry
+} cmd_header_t;
+
+//! \brief Header of execute task command
+typedef struct __attribute__ ((__packed__)) {
+    cmd_header_t header;     //[0  :63 ] Command header
+    uint64_t     parentID;   //[64 :123] Parent task identifier (may be null)
+    uint64_t     taskID;     //[64 :123] Task identifier
+} cmd_exec_task_header_t;
+
+//! \brief Argument entry of execute task command
+typedef struct __attribute__ ((__packed__)) {
+    uint32_t argCached;      //[0  :31 ] Flags
+    uint32_t argID;          //[32 :63 ] Argument ID
+    uint64_t argAddr;        //[64 :127] Address
+} cmd_exec_task_arg_t;
+
+//! \brief Setup hw instrumentation command
+typedef struct __attribute__ ((__packed__)) {
+    cmd_header_t header;     //[0  :63 ] Command header
+    uint64_t     bufferAddr; //[64 :123] Instrumentation buffer address
+} cmd_setup_hw_ins_t;
+
 /*!
  * \brief Get the path of the configuration file
  *        The function allocates a buffer that caller must delete using free()

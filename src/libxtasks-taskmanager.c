@@ -125,33 +125,6 @@ typedef struct __attribute__ ((__packed__)) {
     uint64_t taskID;      //[64 :127] Parent task identifier that created the tasks
 } rem_fini_task_t;
 
-//! \brief Command header type
-typedef struct __attribute__ ((__packed__)) {
-    uint8_t commandCode;     //[0  :7  ] Command code
-    uint8_t commandArgs[6];  //[8  :55 ] Command arguments
-    uint8_t valid;           //[56 :63 ] Valid entry
-} cmd_header_t;
-
-//! \brief Header of execute task command
-typedef struct __attribute__ ((__packed__)) {
-    cmd_header_t header;     //[0  :63 ] Command header
-    uint64_t     parentID;   //[64 :123] Parent task identifier (may be null)
-    uint64_t     taskID;     //[64 :123] Task identifier
-} cmd_exec_task_header_t;
-
-//! \brief Argument entry of execute task command
-typedef struct __attribute__ ((__packed__)) {
-    uint32_t argCached;      //[0  :31 ] Flags
-    uint32_t argID;          //[32 :63 ] Argument ID
-    uint64_t argAddr;        //[64 :127] Address
-} cmd_exec_task_arg_t;
-
-//! \brief Setup hw instrumentation command
-typedef struct __attribute__ ((__packed__)) {
-    cmd_header_t header;     //[0  :63 ] Command header
-    uint64_t     bufferAddr; //[64 :123] Instrumentation buffer address
-} cmd_setup_hw_ins_t;
-
 //! \brief Internal library HW accelerator information
 typedef struct {
     char                     descBuffer[STR_BUFFER_SIZE];
@@ -192,7 +165,6 @@ static rem_fini_task_t     *_remFiniQueue;      ///< Buffer for the remote finis
 static size_t               _remFiniQueueIdx;   ///< Writing index of the _remFiniQueue
 static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Manager
 
-static uint64_t             _insTimerAddr;      ///< Physical address of HW instrumentation timer
 static size_t               _numInstrEvents;    ///< Number of instrumentation events for each accelerator buffer
 static xtasks_ins_event    *_instrBuff;         ///< Buffer of instrumentation events
 static xtasks_ins_event    *_instrBuffPhy;      ///< Physical address of _instrBuff
@@ -286,9 +258,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     }
 
     s = xdmaInitHWInstrumentation();
-    if (s == XDMA_SUCCESS) {
-        _insTimerAddr = (uint64_t)xdmaGetInstrumentationTimerAddr();
-    } else {
+    if (s != XDMA_SUCCESS) {
         //Return as there's nothing to undo
         return XTASKS_ENOAV;
         //goto intrInitErr;
@@ -450,7 +420,7 @@ xtasks_stat xtasksInit()
             _accs[i].info.id = i;
             _accs[i].info.type = t;
             _accs[i].info.freq = freq;
-            _accs[i].info.maxTasks = 64;
+            _accs[i].info.maxTasks = -1;
             _accs[i].info.description = _accs[i].descBuffer;
             strcpy(_accs[i].descBuffer, buffer);
             _accs[i].cmdInWrIdx = 0;
@@ -993,27 +963,6 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     (*task)->typeInfo = _newQueue[idx];
     _newQueue[idx] = 0; //< Cleanup the memory position
 
-    for (size_t i = 0; i < (*task)->numArgs; ++i) {
-        //Check that arg pointer is not out of bounds
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        (*task)->args[i] = _newQueue[idx];
-
-        //Cleanup the memory position
-        _newQueue[idx] = 0;
-    }
-
-    for (size_t i = 0; i < (*task)->numDeps; ++i) {
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_newQueue[idx]);
-
-        //Parse the dependence information
-        (*task)->deps[i].address = hwTaskDep->address;
-        (*task)->deps[i].flags = hwTaskDep->flags;
-
-        //Cleanup the memory position
-        _newQueue[idx] = 0;
-    }
-
     for (size_t i = 0; i < (*task)->numCopies; ++i) {
         //NOTE: Each copy uses 3 uint64_t elements in the newQueue
         //      After using each memory position, we have to clean it
@@ -1037,6 +986,27 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
         (*task)->copies[i].offset = copyOffset;
         uint32_t copyAccessedLen = _newQueue[idx] >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
         (*task)->copies[i].accessedLen = copyAccessedLen;
+        _newQueue[idx] = 0;
+    }
+
+    for (size_t i = 0; i < (*task)->numDeps; ++i) {
+        idx = (idx+1)%NEW_QUEUE_LEN;
+        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_newQueue[idx]);
+
+        //Parse the dependence information
+        (*task)->deps[i].address = hwTaskDep->address;
+        (*task)->deps[i].flags = hwTaskDep->flags;
+
+        //Cleanup the memory position
+        _newQueue[idx] = 0;
+    }
+
+    for (size_t i = 0; i < (*task)->numArgs; ++i) {
+        //Check that arg pointer is not out of bounds
+        idx = (idx+1)%NEW_QUEUE_LEN;
+        (*task)->args[i] = _newQueue[idx];
+
+        //Cleanup the memory position
         _newQueue[idx] = 0;
     }
 
