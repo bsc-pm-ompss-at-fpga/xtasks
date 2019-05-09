@@ -69,17 +69,9 @@
 #define NEW_TASK_COPY_OFFSET_WORDOFFSET      0  ///< Offset of new_task_copy_t->offset field in the 3rd word forming new_task_copy_t
 #define NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET 32 ///< Offset of new_task_copy_t->accessedLen field in the 3rd word forming new_task_copy_t
 
-#define CMD_EXEC_TASK_CODE                0x01 ///< Command code for execute task commands
-#define CMD_SETUP_INS_CODE                0x02 ///< Command code for setup instrumentation info
-#define CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET 0    ///< Offset of Num. Args. field in the commandArgs array
-#define CMD_EXEC_TASK_ARGS_COMP_OFFSET    3    ///< Offset of Compute flag in the commandArgs array
-#define CMD_EXEC_TASK_ARGS_DESTID_OFFSET  4    ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
-#define CMD_EXEC_TASK_ARGS_DESTID_PS      0x1F ///< Processing System identifier for the destId field
-#define CMD_EXEC_TASK_ARGS_DESTID_TM      0x11 ///< Task manager identifier for the destId field
-
 //! Check that libxdma version is compatible
-#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 2
-# error Installed libxdma is not supported (use >= 2.0)
+#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
+# error Installed libxdma is not supported (use >= 3.0)
 #endif
 
 //! \brief Finished task buffer representation
@@ -546,7 +538,7 @@ xtasks_stat xtasksInit()
         PRINT_ERROR("Cannot allocate memory for tasks");
         goto INIT_ERR_ALLOC_TASKS;
     }
-    _cmdExecTaskBuff = malloc(NUM_RUN_TASKS*DEF_EXEC_TASK_SIZE);
+    _cmdExecTaskBuff = (uint8_t *)malloc(NUM_RUN_TASKS*DEF_EXEC_TASK_SIZE);
     if (_cmdExecTaskBuff == NULL) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate memory for exec. tasks buffer");
@@ -753,9 +745,9 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
     }
 
     argsCnt = task->cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET]++;
-    task->cmdExecArgs[argsCnt].argCached = flags;
-    task->cmdExecArgs[argsCnt].argID = id;
-    task->cmdExecArgs[argsCnt].argAddr = value;
+    task->cmdExecArgs[argsCnt].flags = flags;
+    task->cmdExecArgs[argsCnt].id = id;
+    task->cmdExecArgs[argsCnt].value = value;
 
     return XTASKS_SUCCESS;
 }
@@ -785,9 +777,9 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
     }
 
     for (size_t i = 0, idx = argsCnt; i < num; ++i, ++idx) {
-        task->cmdExecArgs[idx].argCached = flags;
-        task->cmdExecArgs[idx].argID = idx;
-        task->cmdExecArgs[idx].argAddr = values[i];
+        task->cmdExecArgs[idx].flags = flags;
+        task->cmdExecArgs[idx].id = idx;
+        task->cmdExecArgs[idx].value = values[i];
     }
     task->cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] += num;
 

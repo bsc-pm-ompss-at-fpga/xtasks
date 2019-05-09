@@ -68,7 +68,7 @@ typedef void *            xtasks_task_handle;
 typedef uint64_t          xtasks_task_id;
 typedef uint64_t          xtasks_arg_val;
 typedef uint32_t          xtasks_arg_id;
-typedef uint32_t          xtasks_arg_flags;
+typedef uint8_t           xtasks_arg_flags;
 typedef void *            xtasks_acc_handle;
 typedef uint32_t          xtasks_acc_id;
 typedef uint32_t          xtasks_acc_type;

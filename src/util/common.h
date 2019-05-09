@@ -41,6 +41,14 @@
 #define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
 #define BIT_INFO_FEATURES_PATH  "/dev/ompss_fpga/bit_info/features"
 
+#define CMD_EXEC_TASK_CODE                0x01 ///< Command code for execute task commands
+#define CMD_SETUP_INS_CODE                0x02 ///< Command code for setup instrumentation info
+#define CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET 0    ///< Offset of Num. Args. field in the commandArgs array
+#define CMD_EXEC_TASK_ARGS_COMP_OFFSET    3    ///< Offset of Compute flag in the commandArgs array
+#define CMD_EXEC_TASK_ARGS_DESTID_OFFSET  4    ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
+#define CMD_EXEC_TASK_ARGS_DESTID_PS      0x1F ///< Processing System identifier for the destId field
+#define CMD_EXEC_TASK_ARGS_DESTID_TM      0x11 ///< Task manager identifier for the destId field
+
 #define max(a,b) \
     ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
@@ -73,9 +81,10 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief Argument entry of execute task command
 typedef struct __attribute__ ((__packed__)) {
-    uint32_t argCached;      //[0  :31 ] Flags
-    uint32_t argID;          //[32 :63 ] Argument ID
-    uint64_t argAddr;        //[64 :127] Address
+    uint8_t flags;           //[0  :7  ] Flags
+    uint8_t _padding[3];     //[8  :32 ]
+    uint32_t id;             //[32 :63 ] Argument ID
+    uint64_t value;          //[64 :127] Address
 } cmd_exec_task_arg_t;
 
 //! \brief Setup hw instrumentation command
