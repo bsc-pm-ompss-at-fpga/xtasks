@@ -18,9 +18,9 @@
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
-#include "libxtasks.h"
-#include "util/common.h"
-#include "util/ticket-lock.h"
+#include "../libxtasks.h"
+#include "../util/common.h"
+#include "../util/ticket-lock.h"
 
 #include <libxdma.h>
 #include <libxdma_version.h>

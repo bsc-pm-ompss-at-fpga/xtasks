@@ -18,9 +18,9 @@
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
-#include "libxtasks.h"
-#include "util/common.h"
-#include "util/queue.h"
+#include "../libxtasks.h"
+#include "../util/common.h"
+#include "../util/queue.h"
 
 #include <libpicos.h>
 #include <elf.h>
