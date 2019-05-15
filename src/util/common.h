@@ -43,11 +43,13 @@
 
 #define CMD_EXEC_TASK_CODE                0x01 ///< Command code for execute task commands
 #define CMD_SETUP_INS_CODE                0x02 ///< Command code for setup instrumentation info
+#define CMD_FINI_EXEC_CODE                0x03 ///< Command code for finished execute task commands
 #define CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET 0    ///< Offset of Num. Args. field in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_COMP_OFFSET    3    ///< Offset of Compute flag in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_OFFSET  4    ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_PS      0x1F ///< Processing System identifier for the destId field
 #define CMD_EXEC_TASK_ARGS_DESTID_TM      0x11 ///< Task manager identifier for the destId field
+#define CMD_FINI_EXEC_ARGS_ACCID_OFFSET   0    ///< Offset of Accelerator ID field in the commandArgs array
 
 #define max(a,b) \
     ({ __typeof__ (a) _a = (a); \
@@ -75,8 +77,8 @@ typedef struct __attribute__ ((__packed__)) {
 //! \brief Header of execute task command
 typedef struct __attribute__ ((__packed__)) {
     cmd_header_t header;     //[0  :63 ] Command header
-    uint64_t     parentID;   //[64 :123] Parent task identifier (may be null)
-    uint64_t     taskID;     //[64 :123] Task identifier
+    uint64_t     parentID;   //[64 :127] Parent task identifier (may be null)
+    uint64_t     taskID;     //[128:195] Task identifier
 } cmd_exec_task_header_t;
 
 //! \brief Argument entry of execute task command
@@ -90,7 +92,7 @@ typedef struct __attribute__ ((__packed__)) {
 //! \brief Setup hw instrumentation command
 typedef struct __attribute__ ((__packed__)) {
     cmd_header_t header;     //[0  :63 ] Command header
-    uint64_t     bufferAddr; //[64 :123] Instrumentation buffer address
+    uint64_t     bufferAddr; //[64 :127] Instrumentation buffer address
 } cmd_setup_hw_ins_t;
 
 /*!
