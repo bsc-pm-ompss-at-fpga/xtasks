@@ -35,8 +35,8 @@
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
-#define CMD_IN_QUEUE_PATH       "/dev/ompss_fpga/task_manager/ready_queue"
-#define CMD_OUT_QUEUE_PATH      "/dev/ompss_fpga/task_manager/finished_queue"
+#define CMD_IN_QUEUE_PATH       "/dev/ompss_fpga/task_manager/cmd_in_queue"
+#define CMD_OUT_QUEUE_PATH      "/dev/ompss_fpga/task_manager/cmd_out_queue"
 #define NEW_QUEUE_PATH          "/dev/ompss_fpga/task_manager/new_queue"
 #define REMFINI_QUEUE_PATH      "/dev/ompss_fpga/task_manager/remote_finished_queue"
 #define TASKMANAGER_RST_PATH    "/dev/ompss_fpga/task_manager/ctrl"
@@ -461,8 +461,8 @@ xtasks_stat xtasksInit()
         PROT_READ | PROT_WRITE, MAP_SHARED, _cmdInQFd, 0);
     if (_cmdInQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map ready queue of Task Manager");
-        goto INIT_ERR_MMAP_READY;
+        PRINT_ERROR("Cannot map cmd_in queue of Task Manager");
+        goto INIT_ERR_MMAP_CMD_IN;
     }
 
     //If any, invalidate commands in cmd_in queue
@@ -472,8 +472,8 @@ xtasks_stat xtasksInit()
         PROT_READ | PROT_WRITE, MAP_SHARED, _cmdOutQFd, 0);
     if (_cmdOutQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map finish queue of Task Manager");
-        goto INIT_ERR_MMAP_FINI;
+        PRINT_ERROR("Cannot map cmd_out queue of Task Manager");
+        goto INIT_ERR_MMAP_CMD_OUT;
     }
 
     //If any, invalidate commands in cmd_out queue
@@ -558,9 +558,9 @@ xtasks_stat xtasksInit()
             munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN);
     INIT_ERR_MAP_NEW:
         munmap(_cmdOutQueue, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN);
-    INIT_ERR_MMAP_FINI:
+    INIT_ERR_MMAP_CMD_OUT:
         munmap(_cmdInQueue, sizeof(uint64_t)*CMD_IN_QUEUE_LEN);
-    INIT_ERR_MMAP_READY:
+    INIT_ERR_MMAP_CMD_IN:
         if (_remFiniQFd != -1)
             close(_remFiniQFd);
     INIT_ERR_OPEN_REMFINI:
@@ -927,7 +927,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
     if (_newQueue == NULL) return XTASKS_PENDING;
 
-    // Get a non-empty slot into the manager finished queue
+    // Get a non-empty slot into the manager new queue
     size_t idx, next, taskSize;
     new_task_header_t * hwTaskHeader;
     do {
