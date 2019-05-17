@@ -879,7 +879,8 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
             }
 #endif /* XTASKS_DEBUG */
 
-            task_t * task = (task_t *)taskID;
+            uintptr_t taskPtr = (uintptr_t)taskID;
+            task_t * task = (task_t *)taskPtr;
             *handle = (xtasks_task_handle)task;
             *id = task->id;
 
