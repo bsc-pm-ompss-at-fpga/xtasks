@@ -1,7 +1,7 @@
 CC    = gcc
 CC_   = $(CC)
 
-CFLAGS_      = $(CFLAGS) -I$(ALPHADATA_SDK)/api-v1_4_16b9 -O3 -std=c99 -Wall -g -fpic
+CFLAGS_      = $(CFLAGS) -I../ -I$(ALPHADATA_SDK)/include -O3 -std=c99 -Wall -g -fpic
 LDFLAGS_     = $(LDFLAGS) -ladmxrc3
 TARGETS_     =
 
@@ -44,19 +44,6 @@ libxtasks-taskmanager.o: libxtasks-taskmanager.c
 
 libxtasks-taskmanager.so: libxtasks-taskmanager.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
-
-libxtasks-stream.o: libxtasks-stream.c
-	$(CC_) $(CFLAGS_) -c $^
-
-libxtasks-stream.so: libxtasks-stream.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
-
-libxtasks-picos.o: libxtasks-picos.c
-	$(CC_) $(CFLAGS_) $(LIBPICOS_INCS_) -c $^
-
-libxtasks-picos.so: libxtasks-picos.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-rpath=$(LIBPICOS_LIB_DIR),-soname,libxtasks.so \
-	-o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
 
 .PHONY: libxtasks_version.h
 libxtasks_version.h: ../libxtasks_version_template.h
