@@ -1,7 +1,7 @@
 CC    = gcc
 CC_   = $(CROSS_COMPILE)$(CC)
 
-CFLAGS_      = $(CFLAGS) -O3 -std=c99 -Wall -Werror -g -fpic
+CFLAGS_      = $(CFLAGS) -O3 -std=c99 -Wall -g -fpic
 LDFLAGS_     = $(LDFLAGS)
 TARGETS_     =
 
@@ -44,6 +44,12 @@ libxtasks-taskmanager.o: ./src/libxtasks-taskmanager.c
 
 libxtasks-taskmanager.so: libxtasks-taskmanager.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
+
+libxtasks-taskmanager-alphadata.o: ./src/libxtasks-taskmanager-alphadata.c
+	$(CC_) $(CFLAGS_) -I$(ALPHADATA_SDK)/api-v1_4_16b9/include -c $^
+
+libxtasks-taskmanager-alphadata.so: libxtasks-taskmanager-alphadata.o
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_) -ladmxrc3
 
 libxtasks-stream.o: ./src/libxtasks-stream.c
 	$(CC_) $(CFLAGS_) -c $^
