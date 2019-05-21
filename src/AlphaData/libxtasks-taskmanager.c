@@ -805,7 +805,6 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     }
 
     ticketLockAcquire(&_bufferTicket);
-    //printf("Try get finished task\n");
 
     // Get a non-empty slot into the manager finished queue
     size_t idx, next, offset;
@@ -826,8 +825,6 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     //Free the buffer slot
     __sync_synchronize();
     _finiQueue[offset + idx].valid = QUEUE_INVALID;
-
-    //printf("Found task\n");
 
     ticketLockRelease(&_bufferTicket);
 
@@ -1041,10 +1038,8 @@ xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t * addr)
 xtasks_stat xtasksMemcpy(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
     xtasks_memcpy_kind const kind)
 {
-    ticketLockAcquire(&_bufferTicket);
     xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
     xdma_status status = xdmaMemcpy(usr, handle, len, offset, mode);
-    ticketLockRelease(&_bufferTicket);
     return toXtasksStat(status);
 }
 
