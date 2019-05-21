@@ -1,33 +1,26 @@
-/*
-* Copyright (c) 2018-2019, BSC (Barcelona Supercomputing Center)
-* All rights reserved.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-*     * Redistributions of source code must retain the above copyright
-*       notice, this list of conditions and the following disclaimer.
-*     * Redistributions in binary form must reproduce the above copyright
-*       notice, this list of conditions and the following disclaimer in the
-*       documentation and/or other materials provided with the distribution.
-*     * Neither the name of the <organization> nor the
-*       names of its contributors may be used to endorse or promote products
-*       derived from this software without specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY BSC ''AS IS'' AND ANY
-* EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-* WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-* DISCLAIMED. IN NO EVENT SHALL <copyright holder> BE LIABLE FOR ANY
-* DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-* (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-* LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-* ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-* SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+/*--------------------------------------------------------------------
+  (C) Copyright 2017-2019 Barcelona Supercomputing Center
+                          Centro Nacional de Supercomputacion
 
-#include "libxtasks.h"
-#include "util/common.h"
-#include "util/ticket-lock.h"
+  This file is part of OmpSs@FPGA toolchain.
+
+  This code is free software; you can redistribute it and/or modify
+  it under the terms of the GNU Lesser General Public License as
+  published by the Free Software Foundation; either version 3 of
+  the License, or (at your option) any later version.
+
+  OmpSs@FPGA toolchain is distributed in the hope that it will be
+  useful, but WITHOUT ANY WARRANTY; without even the implied
+  warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the GNU General Public License for more details.
+
+  You should have received a copy of the GNU Lesser General Public
+  License along with this code. If not, see <www.gnu.org/licenses/>.
+--------------------------------------------------------------------*/
+
+#include "../libxtasks.h"
+#include "../util/common.h"
+#include "../util/ticket-lock.h"
 
 #include <libxdma.h>
 #include <libxdma_version.h>
@@ -42,16 +35,16 @@
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
-#define CMD_IN_QUEUE_PATH       "/dev/ompss_fpga/task_manager/ready_queue"
-#define FINI_QUEUE_PATH         "/dev/ompss_fpga/task_manager/finished_queue"
+#define CMD_IN_QUEUE_PATH       "/dev/ompss_fpga/task_manager/cmd_in_queue"
+#define CMD_OUT_QUEUE_PATH      "/dev/ompss_fpga/task_manager/cmd_out_queue"
 #define NEW_QUEUE_PATH          "/dev/ompss_fpga/task_manager/new_queue"
 #define REMFINI_QUEUE_PATH      "/dev/ompss_fpga/task_manager/remote_finished_queue"
 #define TASKMANAGER_RST_PATH    "/dev/ompss_fpga/task_manager/ctrl"
 
 #define CMD_IN_QUEUE_LEN        4096            ///< Total number of entries in the cmd_in queue
 #define CMD_IN_SUBQUEUE_LEN     128             ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
-#define FINI_QUEUE_LEN          1024            ///< Total number of entries in the finish queue
-#define FINI_QUEUE_ACC_LEN      32              ///< Number of entries in the sub-queue of finish queue for one accelerator
+#define CMD_OUT_QUEUE_LEN       1024            ///< Total number of entries in the cmd_out queue
+#define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
 #define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
 #define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
 #define QUEUE_VALID             0x80
@@ -74,13 +67,11 @@
 # error Installed libxdma is not supported (use >= 3.0)
 #endif
 
-//! \brief Finished task buffer representation
+//! \brief Response out command for execute task commands
 typedef struct __attribute__ ((__packed__)) {
-    uint64_t  taskID;        //[0  :63 ] Task identifier sent to the ready queue
-    uint32_t  accID;         //[64 :95 ] Accelerator ID that executed the task
-    uint8_t   _padding[3];
-    uint8_t   valid;         //[120:127] Valid Entry
-} fini_task_t;
+    cmd_header_t header;     //[0  :63 ] Command header
+    uint64_t     taskID;     //[64 :127] Executed task identifier
+} cmd_out_exec_task_t;
 
 //! \brief New task buffer representation  (Only the header part, N arguments follow the header)
 typedef struct __attribute__ ((__packed__)) {
@@ -125,8 +116,9 @@ typedef struct {
     unsigned short volatile  cmdInRdIdx;        ///< Reading index of the accelerator sub-queue in the cmd_in queue
     unsigned short volatile  cmdInAvSlots;      ///< Counter for available slots in cmd_in sub-queue
     ticketLock_t             cmdInLock;         ///< Lock for atomic operations over cmd_in sub-queue
-    unsigned short           finiQueueIdx;      ///< Reading index of the accelerator sub-queue in the finished queue
-    unsigned short           instrIdx;          ///< Reading index of the accelerator instrumentation buffer
+    unsigned short volatile  cmdOutIdx;         ///< Reading index of the accelerator sub-queue in the cmd_out queue
+    unsigned short volatile  cmdOutLock;        ///< Lock for atomic operations over cmd_out sub-queue
+    unsigned short volatile  instrIdx;          ///< Reading index of the accelerator instrumentation buffer
     unsigned short volatile  instrLock;         ///< Lock for atomic operations over instrumentation buffers
 } acc_t;
 
@@ -144,13 +136,13 @@ static size_t   _numAccs;   ///< Number of accelerators in the system
 static acc_t *  _accs;      ///< Accelerators data
 static uint8_t *            _cmdExecTaskBuff;   ///< Buffer to send the HW tasks
 static task_t *             _tasks;             ///< Array with internal task information
-static int                  _cmdInQFd;          ///< File descriptior of ready queue
-static int                  _finiQFd;           ///< File descriptior of finished queue
+static int                  _cmdInQFd;          ///< File descriptior of command IN queue
+static int                  _cmdOutQFd;         ///< File descriptior of command OUT queue
 static int                  _newQFd;            ///< File descriptior of new queue
 static int                  _remFiniQFd;        ///< File descriptior of remote finished queue
 static int                  _ctrlFd;            ///< File descriptior of gpioctrl device
 static uint64_t            *_cmdInQueue;        ///< Command IN queue
-static fini_task_t         *_finiQueue;         ///< Buffer for the finished tasks
+static uint64_t            *_cmdOutQueue;       ///< Command OUT queue
 static uint64_t            *_newQueue;          ///< Buffer for the new tasks created in the HW
 static size_t               _newQueueIdx;       ///< Reading index of the _newQueue
 static rem_fini_task_t     *_remFiniQueue;      ///< Buffer for the remote finished tasks
@@ -419,7 +411,8 @@ xtasks_stat xtasksInit()
             _accs[i].cmdInAvSlots = CMD_IN_SUBQUEUE_LEN;
             _accs[i].cmdInRdIdx = 0;
             ticketLockInit(&_accs[i].cmdInLock);
-            _accs[i].finiQueueIdx = 0;
+            _accs[i].cmdOutIdx = 0;
+            _accs[i].cmdOutLock = 0;
         }
     }
     fclose(accMapFile);
@@ -437,9 +430,9 @@ xtasks_stat xtasksInit()
 
     //Open and map the Task Manager queues into library memory
     _cmdInQFd = open(CMD_IN_QUEUE_PATH, O_RDWR, (mode_t) 0600);
-    _finiQFd = open(FINI_QUEUE_PATH, O_RDWR, (mode_t) 0600);
+    _cmdOutQFd = open(CMD_OUT_QUEUE_PATH, O_RDWR, (mode_t) 0600);
     _ctrlFd = open(TASKMANAGER_RST_PATH, O_RDWR, (mode_t) 0600);
-    if (_cmdInQFd < 0 || _finiQFd < 0 || _ctrlFd < 0) {
+    if (_cmdInQFd < 0 || _cmdOutQFd < 0 || _ctrlFd < 0) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot open taskmanager device files");
         goto INIT_ERR_OPEN_COMM;
@@ -468,25 +461,23 @@ xtasks_stat xtasksInit()
         PROT_READ | PROT_WRITE, MAP_SHARED, _cmdInQFd, 0);
     if (_cmdInQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map ready queue of Task Manager");
-        goto INIT_ERR_MMAP_READY;
+        PRINT_ERROR("Cannot map cmd_in queue of Task Manager");
+        goto INIT_ERR_MMAP_CMD_IN;
     }
 
     //If any, invalidate commands in cmd_in queue
     _memset(_cmdInQueue, 0, CMD_IN_QUEUE_LEN*sizeof(uint64_t));
 
-    _finiQueue = (fini_task_t *)mmap(NULL, sizeof(fini_task_t)*FINI_QUEUE_LEN,
-        PROT_READ | PROT_WRITE, MAP_SHARED, _finiQFd, 0);
-    if (_finiQueue == MAP_FAILED) {
+    _cmdOutQueue = (uint64_t *)mmap(NULL, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN,
+        PROT_READ | PROT_WRITE, MAP_SHARED, _cmdOutQFd, 0);
+    if (_cmdOutQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map finish queue of Task Manager");
-        goto INIT_ERR_MMAP_FINI;
+        PRINT_ERROR("Cannot map cmd_out queue of Task Manager");
+        goto INIT_ERR_MMAP_CMD_OUT;
     }
 
-    //If any, invalidate finished tasks in finiQueue
-    for (size_t idx = 0; idx < FINI_QUEUE_LEN; ++idx) {
-        _finiQueue[idx].valid = QUEUE_INVALID;
-    }
+    //If any, invalidate commands in cmd_out queue
+    _memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN*sizeof(uint64_t));
 
     _newQueueIdx = 0;
     if (_newQFd == -1) {
@@ -528,7 +519,7 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_MMAP_RST;
     }
 
-    //Reset _cmdInQueue and _finiQueue indexes
+    //Reset _cmdInQueue and _cmdOutQueue indexes
     resetTaskManager();
 
     //Allocate tasks array
@@ -566,10 +557,10 @@ xtasks_stat xtasksInit()
         if (_newQueue != NULL)
             munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN);
     INIT_ERR_MAP_NEW:
-        munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
-    INIT_ERR_MMAP_FINI:
+        munmap(_cmdOutQueue, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN);
+    INIT_ERR_MMAP_CMD_OUT:
         munmap(_cmdInQueue, sizeof(uint64_t)*CMD_IN_QUEUE_LEN);
-    INIT_ERR_MMAP_READY:
+    INIT_ERR_MMAP_CMD_IN:
         if (_remFiniQFd != -1)
             close(_remFiniQFd);
     INIT_ERR_OPEN_REMFINI:
@@ -578,7 +569,7 @@ xtasks_stat xtasksInit()
     INIT_ERR_OPEN_NEW:
     INIT_ERR_OPEN_COMM:
         close(_ctrlFd);
-        close(_finiQFd);
+        close(_cmdOutQFd);
         close(_cmdInQFd);
     INIT_ERR_1:
         free(_accs);
@@ -617,7 +608,7 @@ xtasks_stat xtasksFini()
     statusCtrl = munmap((void *)_taskmanagerRst, sizeof(uint32_t));
     statusRFi = _remFiniQueue != NULL ? munmap(_remFiniQueue, sizeof(rem_fini_task_t)*REMFINI_QUEUE_LEN) : 0;
     statusNw = _newQueue != NULL ? munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN) : 0;
-    statusFi = munmap(_finiQueue, sizeof(fini_task_t)*FINI_QUEUE_LEN);
+    statusFi = munmap(_cmdOutQueue, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN);
     statusRd = munmap(_cmdInQueue, sizeof(uint64_t)*CMD_IN_QUEUE_LEN);
     if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusRFi == -1 || statusCtrl == -1) {
         ret = XTASKS_EFILE;
@@ -626,7 +617,7 @@ xtasks_stat xtasksFini()
     statusCtrl = close(_ctrlFd);
     statusRFi = _remFiniQFd != -1 ? close(_remFiniQFd) : 0;
     statusNw = _newQFd != -1 ? close(_newQFd) : 0;
-    statusFi = close(_finiQFd);
+    statusFi = close(_cmdOutQFd);
     statusRd = close(_cmdInQFd);
     if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusRFi == -1 || statusCtrl == -1) {
         ret = XTASKS_EFILE;
@@ -839,44 +830,67 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     xtasks_task_handle * handle, xtasks_task_id * id)
 {
     acc_t * acc = (acc_t *)accel;
+    uint64_t * const subqueue = _cmdOutQueue + acc->info.id*CMD_OUT_SUBQUEUE_LEN;
 
     if (handle == NULL || id == NULL || acc == NULL) {
         return XTASKS_EINVAL;
     }
 
-    // Get a non-empty slot into the manager finished queue
-    size_t idx, next, offset;
-    offset = acc->info.id*FINI_QUEUE_ACC_LEN;
-    do {
-        idx = acc->finiQueueIdx;
-        if (_finiQueue[offset + idx].valid != QUEUE_VALID) {
-            return XTASKS_PENDING;
-        }
-        next = (idx+1)%FINI_QUEUE_ACC_LEN;
-    } while ( !__sync_bool_compare_and_swap(&acc->finiQueueIdx, idx, next) );
+    size_t idx = acc->cmdOutIdx;
+    uint64_t cmdBuffer = subqueue[idx];
+    cmd_header_t * cmd = (cmd_header_t *)&cmdBuffer;
 
-    //Extract the information from the finished buffer
-    uintptr_t tmp = _finiQueue[offset + idx].taskID;
+    if (cmd->valid == QUEUE_VALID) {
+        if (__sync_lock_test_and_set(&acc->cmdOutLock, 1) == 0) {
+            //Read the command header
+            idx = acc->cmdOutIdx;
+            cmdBuffer = subqueue[idx];
 
-    //Free the buffer slot
-    __sync_synchronize();
-    _finiQueue[offset + idx].valid = QUEUE_INVALID;
+            if (cmd->valid != QUEUE_VALID) {
+                __sync_lock_release(&acc->cmdOutLock);
+                return XTASKS_PENDING;
+            }
 
 #ifdef XTASKS_DEBUG
-    if (tmp < (uintptr_t)_tasks || tmp >= (uintptr_t)(_tasks + NUM_RUN_TASKS)) {
-        PRINT_ERROR("Found an invalid task identifier when executing xtasksTryGetFinishedTaskAccel");
-        return XTASKS_ERROR;
-    }
+            if (cmd->commandCode != CMD_FINI_EXEC_CODE || cmd->commandArgs[CMD_FINI_EXEC_ARGS_ACCID_OFFSET] != acc->info.id) {
+                PRINT_ERROR("Found unexpected data when executing xtasksTryGetFinishedTaskAccel");
+                __sync_lock_release(&acc->cmdOutLock);
+                return XTASKS_ERROR;
+            }
 #endif /* XTASKS_DEBUG */
 
-    task_t * task = (task_t *)tmp;
-    *handle = (xtasks_task_handle)task;
-    *id = task->id;
+            //Read the command payload (task identifier)
+            size_t const dataIdx = (idx+1)%CMD_OUT_SUBQUEUE_LEN;
+            uint64_t const taskID = subqueue[dataIdx];
+            subqueue[dataIdx] = 0; //< Clean the buffer slot
 
-    //Mark the task as executed (using the valid field as it is not used in the cached copy)<
-    task->cmdHeader->header.valid = QUEUE_INVALID;
+            //Invalidate the buffer entry
+            cmd = (cmd_header_t *)&subqueue[idx];
+            cmd->valid = QUEUE_INVALID;
 
-    return XTASKS_SUCCESS;
+            //Update the read index and release the lock
+            acc->cmdOutIdx = (idx + sizeof(cmd_out_exec_task_t)/sizeof(uint64_t))%CMD_OUT_SUBQUEUE_LEN;
+            __sync_lock_release(&acc->cmdOutLock);
+
+#ifdef XTASKS_DEBUG
+            if (taskID < (uintptr_t)_tasks || taskID >= (uintptr_t)(_tasks + NUM_RUN_TASKS)) {
+                PRINT_ERROR("Found an invalid task identifier when executing xtasksTryGetFinishedTaskAccel");
+                return XTASKS_ERROR;
+            }
+#endif /* XTASKS_DEBUG */
+
+            uintptr_t taskPtr = (uintptr_t)taskID;
+            task_t * task = (task_t *)taskPtr;
+            *handle = (xtasks_task_handle)task;
+            *id = task->id;
+
+            //Mark the task as executed (using the valid field as it is not used in the cached copy)<
+            task->cmdHeader->header.valid = QUEUE_INVALID;
+
+            return XTASKS_SUCCESS;
+        }
+    }
+    return XTASKS_PENDING;
 }
 
 xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event * events, size_t const maxCount)
@@ -914,7 +928,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
     if (_newQueue == NULL) return XTASKS_PENDING;
 
-    // Get a non-empty slot into the manager finished queue
+    // Get a non-empty slot into the manager new queue
     size_t idx, next, taskSize;
     new_task_header_t * hwTaskHeader;
     do {
@@ -1109,9 +1123,9 @@ uint64_t cmdInQueue(size_t const accID, size_t const idx)
     return _cmdInQueue[accID*CMD_IN_SUBQUEUE_LEN + idx];
 }
 
-fini_task_t finiQueue(size_t const idx)
+uint64_t cmdOutQueue(size_t const accID, size_t const idx)
 {
-    return _finiQueue[idx];
+    return _cmdOutQueue[accID*CMD_OUT_SUBQUEUE_LEN + idx];
 }
 
 uint64_t newQueue(size_t const idx)

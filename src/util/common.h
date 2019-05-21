@@ -1,29 +1,22 @@
-/*
-* Copyright (c) 2017, BSC (Barcelona Supercomputing Center)
-* All rights reserved.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-*     * Redistributions of source code must retain the above copyright
-*       notice, this list of conditions and the following disclaimer.
-*     * Redistributions in binary form must reproduce the above copyright
-*       notice, this list of conditions and the following disclaimer in the
-*       documentation and/or other materials provided with the distribution.
-*     * Neither the name of the <organization> nor the
-*       names of its contributors may be used to endorse or promote products
-*       derived from this software without specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY BSC ''AS IS'' AND ANY
-* EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-* WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-* DISCLAIMED. IN NO EVENT SHALL <copyright holder> BE LIABLE FOR ANY
-* DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-* (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-* LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-* ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-* SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+/*--------------------------------------------------------------------
+  (C) Copyright 2017-2019 Barcelona Supercomputing Center
+                          Centro Nacional de Supercomputacion
+
+  This file is part of OmpSs@FPGA toolchain.
+
+  This code is free software; you can redistribute it and/or modify
+  it under the terms of the GNU Lesser General Public License as
+  published by the Free Software Foundation; either version 3 of
+  the License, or (at your option) any later version.
+
+  OmpSs@FPGA toolchain is distributed in the hope that it will be
+  useful, but WITHOUT ANY WARRANTY; without even the implied
+  warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the GNU General Public License for more details.
+
+  You should have received a copy of the GNU Lesser General Public
+  License along with this code. If not, see <www.gnu.org/licenses/>.
+--------------------------------------------------------------------*/
 
 #ifndef __LIBXTASKS_COMMON_H__
 #define __LIBXTASKS_COMMON_H__
@@ -43,11 +36,13 @@
 
 #define CMD_EXEC_TASK_CODE                0x01 ///< Command code for execute task commands
 #define CMD_SETUP_INS_CODE                0x02 ///< Command code for setup instrumentation info
+#define CMD_FINI_EXEC_CODE                0x03 ///< Command code for finished execute task commands
 #define CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET 0    ///< Offset of Num. Args. field in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_COMP_OFFSET    3    ///< Offset of Compute flag in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_OFFSET  4    ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_PS      0x1F ///< Processing System identifier for the destId field
 #define CMD_EXEC_TASK_ARGS_DESTID_TM      0x11 ///< Task manager identifier for the destId field
+#define CMD_FINI_EXEC_ARGS_ACCID_OFFSET   0    ///< Offset of Accelerator ID field in the commandArgs array
 
 #define max(a,b) \
     ({ __typeof__ (a) _a = (a); \
@@ -75,8 +70,8 @@ typedef struct __attribute__ ((__packed__)) {
 //! \brief Header of execute task command
 typedef struct __attribute__ ((__packed__)) {
     cmd_header_t header;     //[0  :63 ] Command header
-    uint64_t     parentID;   //[64 :123] Parent task identifier (may be null)
-    uint64_t     taskID;     //[64 :123] Task identifier
+    uint64_t     parentID;   //[64 :127] Parent task identifier (may be null)
+    uint64_t     taskID;     //[128:195] Task identifier
 } cmd_exec_task_header_t;
 
 //! \brief Argument entry of execute task command
@@ -90,7 +85,7 @@ typedef struct __attribute__ ((__packed__)) {
 //! \brief Setup hw instrumentation command
 typedef struct __attribute__ ((__packed__)) {
     cmd_header_t header;     //[0  :63 ] Command header
-    uint64_t     bufferAddr; //[64 :123] Instrumentation buffer address
+    uint64_t     bufferAddr; //[64 :127] Instrumentation buffer address
 } cmd_setup_hw_ins_t;
 
 /*!
