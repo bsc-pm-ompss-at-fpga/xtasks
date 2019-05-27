@@ -439,9 +439,9 @@ xtasks_stat xtasksInit()
     }
 
     if (checkBitstremFeature("ext_task_manager") == BIT_FEATURE_NO_AVAIL) {
-	//Do not try to open the extended TM queues as we know that are not available
+        //Do not try to open the extended TM queues as we know that are not available
         _newQFd = -1;
-	_remFiniQFd = -1;
+        _remFiniQFd = -1;
     } else {
         _newQFd = open(NEW_QUEUE_PATH, O_RDWR, (mode_t) 0600);
         if (_newQFd < 0 && errno != ENOENT) {
@@ -972,6 +972,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     for (size_t i = 0; i < (*task)->numCopies; ++i) {
         //NOTE: Each copy uses 3 uint64_t elements in the newQueue
         //      After using each memory position, we have to clean it
+        uint64_t tmp;
 
         //NOTE: new_task_copy_t->address field is the 1st word
         idx = (idx+1)%NEW_QUEUE_LEN;
@@ -980,17 +981,19 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 
          //NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
         idx = (idx+1)%NEW_QUEUE_LEN;
-        uint32_t copyFlags = _newQueue[idx] >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
+        tmp = _newQueue[idx];
+        uint8_t copyFlags = tmp >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
         (*task)->copies[i].flags = copyFlags;
-        uint32_t copySize = _newQueue[idx] >> NEW_TASK_COPY_SIZE_WORDOFFSET;
+        uint32_t copySize = tmp >> NEW_TASK_COPY_SIZE_WORDOFFSET;
         (*task)->copies[i].size = copySize;
         _newQueue[idx] = 0;
 
          //NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
         idx = (idx+1)%NEW_QUEUE_LEN;
-        uint32_t copyOffset = _newQueue[idx] >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
+tmp = _newQueue[idx];
+        uint32_t copyOffset = tmp >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
         (*task)->copies[i].offset = copyOffset;
-        uint32_t copyAccessedLen = _newQueue[idx] >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
+        uint32_t copyAccessedLen = tmp >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
         (*task)->copies[i].accessedLen = copyAccessedLen;
         _newQueue[idx] = 0;
     }
