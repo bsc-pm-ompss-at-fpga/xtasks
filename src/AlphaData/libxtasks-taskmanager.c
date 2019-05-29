@@ -37,6 +37,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <errno.h>
+#include <sys/time.h>
 
 #include <assert.h>
 
@@ -44,12 +45,10 @@
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
-#define CMD_IN_QUEUE_LEN        4096            ///< Total number of entries in the cmd_in queue
+#define CMD_IN_QUEUE_LEN        1920            ///< Total number of entries in the cmd_in queue
 #define CMD_IN_SUBQUEUE_LEN     128             ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
-#define FINI_QUEUE_LEN          1024            ///< Total number of entries in the finish queue
-#define FINI_QUEUE_ACC_LEN      32              ///< Number of entries in the sub-queue of finish queue for one accelerator
-#define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
-#define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
+#define CMD_OUT_QUEUE_LEN       480             ///< Total number of entries in the finish queue
+#define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of finish queue for one accelerator
 #define QUEUE_VALID             0x80
 #define QUEUE_RESERVED          0x40
 #define QUEUE_INVALID           0x00
@@ -76,49 +75,11 @@
 # error Installed libxdma is not supported (use >= 3.0)
 #endif
 
-//! \brief Finished task buffer representation
+//! \brief Response out command for execute task commands
 typedef struct __attribute__ ((__packed__)) {
-    uint8_t  code;
-    uint8_t  accID;         //[64 :95 ] Accelerator ID that executed the task
-    uint8_t   _padding[5];
-    uint8_t   valid;         //[120:127] Valid Entry
-    uint64_t  taskID;        //[0  :63 ] Task identifier sent to the ready queue
-} fini_task_t;
-
-//! \brief New task buffer representation  (Only the header part, N arguments follow the header)
-typedef struct __attribute__ ((__packed__)) {
-    uint8_t   _padding;      //[0  :7  ]
-    uint8_t   numArgs;       //[8  :15 ] Number of arguments after this header
-    uint8_t   numDeps;       //[16 :23 ] Number of dependencies after the task arguments
-    uint8_t   numCopies;     //[24 :31 ] Number of copies after the task dependencies
-    uint32_t  archMask:24;   //[32 :55 ] Architecture mask in Picos style
-    uint8_t   valid;         //[56 :63 ] Valid Entry
-    uint64_t  parentID;      //[64 :127] Parent task identifier that is creating the task
-    uint64_t  typeInfo;      //[128:191] Information of task type
-} new_task_header_t;
-
-//! \brief New task buffer representation (Only the dependence part, repeated N times)
-typedef struct __attribute__ ((__packed__)) {
-    uint64_t  address:56; //[0  :55 ] Dependence value
-    uint8_t   flags;      //[56 :63 ] Dependence flags
-} new_task_dep_t;
-
-//! \brief New task buffer representation (Only the argument part, repeated N times)
-typedef struct __attribute__ ((__packed__)) {
-    uint64_t address;     //[0  :63 ] Copy address
-    uint32_t flags;       //[64 :95 ] Copy flags
-    uint32_t size;        //[96 :127] Size of the copy
-    uint32_t offset;      //[128:159] Offset of accessed region in the copy
-    uint32_t accessedLen; //[160:191] Length of accessed region in the copy
-} new_task_copy_t;
-
-//! \brief Remote finished task buffer representation
-typedef struct __attribute__ ((__packed__)) {
-    uint8_t  valid;       //[0  :7  ] Valid Entry
-    uint8_t _padding[3];
-    uint32_t components;  //[32 :63 ] Number of tasks that have finished
-    uint64_t taskID;      //[64 :127] Parent task identifier that created the tasks
-} rem_fini_task_t;
+    cmd_header_t header;     //[0  :63 ] Command header
+    uint64_t     taskID;     //[64 :127] Executed task identifier
+} cmd_out_exec_task_t;
 
 //! \brief Internal library HW accelerator information
 typedef struct {
@@ -127,10 +88,7 @@ typedef struct {
     unsigned short volatile  cmdInWrIdx;        ///< Writing index of the accelerator sub-queue in the cmd_in queue
     unsigned short volatile  cmdInRdIdx;        ///< Reading index of the accelerator sub-queue in the cmd_in queue
     unsigned short volatile  cmdInAvSlots;      ///< Counter for available slots in cmd_in sub-queue
-    ticketLock_t             cmdInLock;         ///< Lock for atomic operations over cmd_in sub-queue
-    unsigned short           finiQueueIdx;      ///< Reading index of the accelerator sub-queue in the finished queue
-    unsigned short           instrIdx;          ///< Reading index of the accelerator instrumentation buffer
-    unsigned short volatile  instrLock;         ///< Lock for atomic operations over instrumentation buffers
+    unsigned short volatile  cmdOutIdx;         ///< Reading index of the accelerator sub-queue in the cmd_out queue
 } acc_t;
 
 //! \brief Internal library task information
@@ -148,19 +106,8 @@ static acc_t *  _accs;      ///< Accelerators data
 static uint8_t *            _cmdExecTaskBuff;   ///< Buffer to send the HW tasks
 static task_t *             _tasks;             ///< Array with internal task information
 static uint64_t            *_cmdInQueue;        ///< Command IN queue
-static fini_task_t         *_finiQueue;         ///< Buffer for the finished tasks
-static uint64_t            *_newQueue;          ///< Buffer for the new tasks created in the HW
-static size_t               _newQueueIdx;       ///< Reading index of the _newQueue
-static rem_fini_task_t     *_remFiniQueue;      ///< Buffer for the remote finished tasks
-static size_t               _remFiniQueueIdx;   ///< Writing index of the _remFiniQueue
+static uint64_t            *_cmdOutQueue;       ///< Command OUT queue
 static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Manager
-static uint32_t *_resetPicos0;
-static uint32_t *_resetPicos1;
-
-static size_t               _numInstrEvents;    ///< Number of instrumentation events for each accelerator buffer
-static xtasks_ins_event    *_instrBuff;         ///< Buffer of instrumentation events
-static xtasks_ins_event    *_instrBuffPhy;      ///< Physical address of _instrBuff
-static xdma_buf_handle      _instrBuffHandle;   ///< Handle of _instrBuff in libxdma
 
 static ticketLock_t         _bufferTicket;      ///< Lock to atomically access PCI direct slave
 static ADMXRC3_HANDLE       _hDevice;           ///< Alphadata device handle
@@ -171,14 +118,6 @@ static inline __attribute__((always_inline)) void resetTaskManager()
     *_taskmanagerRst = 0x00;
     for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
     *_taskmanagerRst = 0x01;
-
-    *_resetPicos0 = 0x01;
-    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
-    *_resetPicos0 = 0x00;
-
-    *_resetPicos1 = 0x01;
-    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
-    *_resetPicos1 = 0x00;
 }
 
 static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t const length)
@@ -188,10 +127,9 @@ static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t c
     size_t const offset = acc->info.id*CMD_IN_SUBQUEUE_LEN;
     cmd_header_t * const cmdHeaderPtr = (cmd_header_t * const)&cmdHeader;
 
-    ticketLockAcquire(&_bufferTicket);
-
     // While there is not enough space in the queue, look for already read commands
     while (acc->cmdInAvSlots < length) {
+        ticketLockAcquire(&_bufferTicket);
         if (acc->cmdInAvSlots < length) {
 SUB_CMD_CHECK_RD:
             idx = acc->cmdInRdIdx;
@@ -208,8 +146,10 @@ SUB_CMD_CHECK_RD:
             //      The lock will be released in the code after the atomic operations
             goto SUB_CMD_UPDATE_IDX;
         }
+        ticketLockRelease(&_bufferTicket);
     }
 
+    ticketLockAcquire(&_bufferTicket);
     if (acc->cmdInAvSlots >= length) {
 SUB_CMD_UPDATE_IDX:
         idx = acc->cmdInWrIdx;
@@ -245,93 +185,12 @@ SUB_CMD_UPDATE_IDX:
 
 xtasks_stat xtasksInitHWIns(size_t const nEvents)
 {
-    xtasks_stat ret = XTASKS_SUCCESS;
-    xdma_status s;
-    size_t insBufferSize;
-    unsigned long phyAddr;
-
-    //At least we need 1 event + last event mark
-    if (nEvents <= 1) return XTASKS_EINVAL;
-
-    //Check if bitstrem has the HW instrumentation feature
-    if (checkBitstremFeature("hw_instrumentation") == BIT_FEATURE_NO_AVAIL) {
-        return XTASKS_ENOAV;
-    }
-
-    s = xdmaInitHWInstrumentation();
-    if (s != XDMA_SUCCESS) {
-        //Return as there's nothing to undo
-        return XTASKS_ENOAV;
-        //goto intrInitErr;
-    }
-
-    _numInstrEvents = nEvents;
-    insBufferSize = _numInstrEvents*_numAccs*sizeof(xtasks_ins_event);
-    s = xdmaAllocateHost((void **)&_instrBuff, &_instrBuffHandle, insBufferSize);
-    if (s != XDMA_SUCCESS) {
-        ret = XTASKS_ENOMEM;
-        goto instrAllocErr;
-    }
-
-    //get phy address
-    s = xdmaGetDeviceAddress(_instrBuffHandle, &phyAddr);
-    if (s != XDMA_SUCCESS) {
-        ret = XTASKS_ERROR;
-        goto instrGetAddrErr;
-    }
-    _instrBuffPhy = (xtasks_ins_event *)((uintptr_t)phyAddr);
-
-    //Invalidate all entries
-    for (size_t i = 0; i < _numInstrEvents*_numAccs; ++i) {
-        _instrBuff[i].eventType = XTASKS_EVENT_TYPE_INVALID;
-    }
-
-    //Send the instrumentation buffer to each accelerator
-    for (size_t i = 0; i < _numAccs; ++i) {
-        cmd_setup_hw_ins_t cmd;
-
-        cmd.header.commandCode = CMD_SETUP_INS_CODE;
-        uint32_t * cmdArgs = (uint32_t *)&cmd.header.commandArgs;
-        *cmdArgs = _numInstrEvents;
-        cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents*i);
-
-        ret = xtasksSubmitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t)/sizeof(uint64_t));
-        if (ret != XTASKS_SUCCESS) {
-            goto instrSendInit;
-        }
-
-        _accs[i].instrIdx = 0;
-        _accs[i].instrLock = 0;
-    }
-
-    return XTASKS_SUCCESS;
-
-instrSendInit:
-instrGetAddrErr:
-instrAllocErr:
-    xdmaFree(_instrBuffHandle);
-    _numInstrEvents = 0;
-    _instrBuff = NULL;
-    _instrBuffPhy = NULL;
-    return ret;
+    return XTASKS_ENOSYS;
 }
 
 xtasks_stat xtasksFiniHWIns()
 {
-    xdma_status s0 = XDMA_SUCCESS;
-    xdma_status s1 = XDMA_SUCCESS;
-
-    if (_instrBuff == NULL) {
-        //Instrumentation is not initialized or has been already finished
-        return XDMA_SUCCESS;
-    }
-    s1 = xdmaFree(_instrBuffHandle);
-    _numInstrEvents = 0;
-    _instrBuff = NULL;
-    _instrBuffPhy = NULL;
-    s0 = xdmaFiniHWInstrumentation();
-
-    return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksInit()
@@ -340,19 +199,8 @@ xtasks_stat xtasksInit()
     int init_cnt = __sync_fetch_and_add(&_init_cnt, 1);
     if (init_cnt > 0) return XTASKS_SUCCESS;
 
-    //Always initialize instrumentation as disabled
-    _instrBuff = NULL;
-    _numInstrEvents = 0;
-
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
-
-    //TODO: implement checkBitstreamFeature for Alphadata devices
-    //Check if bitstrem has the task manager feature
-    /*if (checkBitstremFeature("task_manager") == BIT_FEATURE_NO_AVAIL) {
-        PRINT_ERROR("OmpSs@FPGA Task Manager not available in the loaded FPGA bitstrem");
-        return XTASKS_ENOAV;
-    }*/
 
     //Initialize xdma memory subsystem
     s = xdmaInitMem();
@@ -428,8 +276,7 @@ xtasks_stat xtasksInit()
             _accs[i].cmdInWrIdx = 0;
             _accs[i].cmdInAvSlots = CMD_IN_SUBQUEUE_LEN;
             _accs[i].cmdInRdIdx = 0;
-            ticketLockInit(&_accs[i].cmdInLock);
-            _accs[i].finiQueueIdx = 0;
+            _accs[i].cmdOutIdx = 0;
         }
     }
     fclose(accMapFile);
@@ -464,39 +311,21 @@ xtasks_stat xtasksInit()
     //If any, invalidate commands in cmd_in queue
     _memset(_cmdInQueue, 0, CMD_IN_QUEUE_LEN*sizeof(uint64_t));
 
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, FINI_QUEUE_ADDRESS, sizeof(fini_task_t)*FINI_QUEUE_LEN, (void**)&_finiQueue);
+    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, FINI_QUEUE_ADDRESS, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN, (void**)&_cmdOutQueue);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map finish queue of Task Manager");
         goto INIT_ERR_MMAP_FINI;
     }
 
-    //If any, invalidate finished tasks in finiQueue
-    for (size_t idx = 0; idx < FINI_QUEUE_LEN; ++idx) {
-        _finiQueue[idx].valid = QUEUE_INVALID;
-    }
-
-    _newQueueIdx = 0;
-    _newQueue = NULL;
-    _remFiniQueue = NULL;
+    //If any, invalidate commands in cmd_out queue
+    _memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN*sizeof(uint64_t));
 
     admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, TASKMANAGER_RESET_ADDRESS, sizeof(uint32_t), (void**)&_taskmanagerRst);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map control registers of Task Manager");
         goto INIT_ERR_MMAP_RST;
-    }
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, PICOS_RESET0_ADDRESS, sizeof(uint32_t), (void**)&_resetPicos0);
-    if (admxrc3_status != ADMXRC3_SUCCESS) {
-        ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map control registers of Task Manager");
-        goto INIT_ERR_MMAP_RESET0;
-    }
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, PICOS_RESET1_ADDRESS, sizeof(uint32_t), (void**)&_resetPicos1);
-    if (admxrc3_status != ADMXRC3_SUCCESS) {
-        ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map control registers of Task Manager");
-        goto INIT_ERR_MMAP_RESET1;
     }
 
     //Reset _cmdInQueue and _finiQueue indexes
@@ -530,13 +359,9 @@ xtasks_stat xtasksInit()
     INIT_ERR_ALLOC_EXEC_TASKS_BUFF:
         free(_tasks);
     INIT_ERR_ALLOC_TASKS:
-        ADMXRC3_UnmapWindow(_hDevice, (void*)_resetPicos1);
-    INIT_ERR_MMAP_RESET1:
-        ADMXRC3_UnmapWindow(_hDevice, (void*)_resetPicos0);
-    INIT_ERR_MMAP_RESET0:
         ADMXRC3_UnmapWindow(_hDevice, (void*)_taskmanagerRst);
     INIT_ERR_MMAP_RST:
-        ADMXRC3_UnmapWindow(_hDevice, _finiQueue);
+        ADMXRC3_UnmapWindow(_hDevice, _cmdOutQueue);
     INIT_ERR_MMAP_FINI:
         ADMXRC3_UnmapWindow(_hDevice, _cmdInQueue);
     INIT_ERR_MMAP_READY:
@@ -579,18 +404,12 @@ xtasks_stat xtasksFini()
     //Unmap the Task Manager queues
     ADMXRC3_STATUS statusRd, statusFi, statusCtrl;
     statusCtrl = ADMXRC3_UnmapWindow(_hDevice, (void*)_taskmanagerRst);
-    statusFi = ADMXRC3_UnmapWindow(_hDevice, _finiQueue);
+    statusFi = ADMXRC3_UnmapWindow(_hDevice, _cmdOutQueue);
     statusRd = ADMXRC3_UnmapWindow(_hDevice, _cmdInQueue);
-    ADMXRC3_UnmapWindow(_hDevice, (void*)_resetPicos0);
-    ADMXRC3_UnmapWindow(_hDevice, (void*)_resetPicos1);
     if (statusRd != ADMXRC3_SUCCESS || statusFi != ADMXRC3_SUCCESS || statusCtrl != ADMXRC3_SUCCESS) {
-        ret = XTASKS_ERROR;;
+        ret = XTASKS_ERROR;
     }
 
-    //Free the accelerators array
-    for (size_t idx = 0; idx < _numAccs; ++idx) {
-        ticketLockFini(&_accs[idx].cmdInLock);
-    }
     ticketLockFini(&_bufferTicket);
     ADMXRC3_STATUS statusDev = ADMXRC3_Close(_hDevice);
     if (statusDev != ADMXRC3_SUCCESS) {
@@ -799,6 +618,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     xtasks_task_handle * handle, xtasks_task_id * id)
 {
     acc_t * acc = (acc_t *)accel;
+    uint64_t * const subqueue = _cmdOutQueue + acc->info.id*CMD_OUT_SUBQUEUE_LEN;
 
     if (handle == NULL || id == NULL || acc == NULL) {
         return XTASKS_EINVAL;
@@ -806,201 +626,72 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
 
     ticketLockAcquire(&_bufferTicket);
 
-    // Get a non-empty slot into the manager finished queue
-    size_t idx, next, offset;
-    offset = acc->info.id*FINI_QUEUE_ACC_LEN;
-    do {
-        idx = acc->finiQueueIdx;
-        if (_finiQueue[offset + idx].valid != QUEUE_VALID) {
-            //printf("No task found\n");
-            ticketLockRelease(&_bufferTicket);
-            return XTASKS_PENDING;
-        }
-        next = (idx+1)%FINI_QUEUE_ACC_LEN;
-    } while ( !__sync_bool_compare_and_swap(&acc->finiQueueIdx, idx, next) );
+    size_t idx = acc->cmdOutIdx;
+    uint64_t cmdBuffer = subqueue[idx];
+    cmd_header_t * cmd = (cmd_header_t *)&cmdBuffer;
 
-    //Extract the information from the finished buffer
-    uintptr_t tmp = _finiQueue[offset + idx].taskID;
-
-    //Free the buffer slot
-    __sync_synchronize();
-    _finiQueue[offset + idx].valid = QUEUE_INVALID;
-
-    ticketLockRelease(&_bufferTicket);
+    if (cmd->valid == QUEUE_VALID) {
+        //Read the command header
+        idx = acc->cmdOutIdx;
+        cmdBuffer = subqueue[idx];
 
 #ifdef XTASKS_DEBUG
-    if (tmp < (uintptr_t)_tasks || tmp >= (uintptr_t)(_tasks + NUM_RUN_TASKS)) {
-        PRINT_ERROR("Found an invalid task identifier when executing xtasksTryGetFinishedTaskAccel");
-        return XTASKS_ERROR;
-    }
+        if (cmd->commandCode != CMD_FINI_EXEC_CODE || cmd->commandArgs[CMD_FINI_EXEC_ARGS_ACCID_OFFSET] != acc->info.id) {
+            PRINT_ERROR("Found unexpected data when executing xtasksTryGetFinishedTaskAccel");
+            __sync_lock_release(&acc->cmdOutLock);
+            return XTASKS_ERROR;
+        }
 #endif /* XTASKS_DEBUG */
 
-    task_t * task = (task_t *)tmp;
-    *handle = (xtasks_task_handle)task;
-    *id = task->id;
+        //Read the command payload (task identifier)
+        size_t const dataIdx = (idx+1)%CMD_OUT_SUBQUEUE_LEN;
+        uint64_t const taskID = subqueue[dataIdx];
+        subqueue[dataIdx] = 0; //< Clean the buffer slot
 
-    //Mark the task as executed (using the valid field as it is not used in the cached copy)<
-    task->cmdHeader->header.valid = QUEUE_INVALID;
+        //Invalidate the buffer entry
+        cmd = (cmd_header_t *)&subqueue[idx];
+        cmd->valid = QUEUE_INVALID;
 
-    return XTASKS_SUCCESS;
+        //Update the read index and release the lock
+        acc->cmdOutIdx = (idx + sizeof(cmd_out_exec_task_t)/sizeof(uint64_t))%CMD_OUT_SUBQUEUE_LEN;
+        ticketLockRelease(&_bufferTicket);
+
+#ifdef XTASKS_DEBUG
+        if (taskID < (uintptr_t)_tasks || taskID >= (uintptr_t)(_tasks + NUM_RUN_TASKS)) {
+            PRINT_ERROR("Found an invalid task identifier when executing xtasksTryGetFinishedTaskAccel");
+            return XTASKS_ERROR;
+        }
+#endif /* XTASKS_DEBUG */
+
+        uintptr_t taskPtr = (uintptr_t)taskID;
+        task_t * task = (task_t *)taskPtr;
+        *handle = (xtasks_task_handle)task;
+        *id = task->id;
+
+        //Mark the task as executed (using the valid field as it is not used in the cached copy)<
+        task->cmdHeader->header.valid = QUEUE_INVALID;
+
+        return XTASKS_SUCCESS;
+
+    }
+
+    ticketLockRelease(&_bufferTicket);
+    return XTASKS_PENDING;
 }
 
 xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event * events, size_t const maxCount)
 {
-    acc_t * acc = (acc_t *)(accel);
-    xtasks_ins_event * accBuffer = _instrBuff + acc->info.id*_numInstrEvents;
-    size_t count, i;
-
-    if (events == NULL || (acc - _accs) >= _numAccs || maxCount <= 0) return XTASKS_EINVAL;
-    else if (_instrBuff == NULL) return XTASKS_ENOAV;
-
-    if (__sync_lock_test_and_set(&acc->instrLock, 1)) {
-        //There is another thread reading the buffer for this accelerator
-        events->eventType = XTASKS_EVENT_TYPE_INVALID;
-    } else {
-        count = min(maxCount, _numInstrEvents - acc->instrIdx);
-        accBuffer += acc->instrIdx;
-        memcpy(events, accBuffer, count*sizeof(xtasks_ins_event));
-
-        i = 0;
-        while (i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID)
-        {
-            //Invalidate all read entries in the accelerator buffer
-            accBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
-            i++;
-        }
-        acc->instrIdx = (acc->instrIdx + i)%_numInstrEvents;
-        __sync_lock_release(&acc->instrLock);
-    }
-
-    return XTASKS_SUCCESS;
+    return XTASKS_ENOSYS;
 }
 
 xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
-    if (_newQueue == NULL) return XTASKS_PENDING;
-
-    // Get a non-empty slot into the manager finished queue
-    size_t idx, next, taskSize;
-    new_task_header_t * hwTaskHeader;
-    do {
-        idx = _newQueueIdx;
-        hwTaskHeader = (new_task_header_t *)(&_newQueue[idx]);
-        if (hwTaskHeader->valid != QUEUE_VALID) {
-            return XTASKS_PENDING;
-        }
-        taskSize = (
-          sizeof(new_task_header_t) +
-          sizeof(uint64_t)*hwTaskHeader->numArgs +
-          sizeof(new_task_dep_t)*hwTaskHeader->numDeps +
-          sizeof(new_task_copy_t)*hwTaskHeader->numCopies)/
-          sizeof(uint64_t);
-        next = (idx+taskSize)%NEW_QUEUE_LEN;
-    } while ( !__sync_bool_compare_and_swap(&_newQueueIdx, idx, next) );
-
-    //Extract the information from the new buffer
-    *task = realloc(*task,
-        sizeof(xtasks_newtask) +
-        sizeof(xtasks_newtask_arg)*hwTaskHeader->numArgs +
-        sizeof(xtasks_newtask_dep)*hwTaskHeader->numDeps +
-        sizeof(xtasks_newtask_copy)*hwTaskHeader->numCopies);
-    (*task)->args = (xtasks_newtask_arg *)(*task + 1);
-    (*task)->numArgs = hwTaskHeader->numArgs;
-    (*task)->deps = (xtasks_newtask_dep *)((*task)->args + (*task)->numArgs);
-    (*task)->numDeps = hwTaskHeader->numDeps;
-    (*task)->copies = (xtasks_newtask_copy *)((*task)->deps + (*task)->numDeps);
-    (*task)->numCopies = hwTaskHeader->numCopies;
-    (*task)->architecture = hwTaskHeader->archMask;
-
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 2nd word
-    task_t * parentTask = (task_t *)((uintptr_t)(_newQueue[idx]));
-    (*task)->parentId = parentTask->id; //< The external parent identifier must be returned (not the xtasks internal one)
-    _newQueue[idx] = 0; //< Cleanup the memory position
-
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 3rd word
-    (*task)->typeInfo = _newQueue[idx];
-    _newQueue[idx] = 0; //< Cleanup the memory position
-
-    for (size_t i = 0; i < (*task)->numCopies; ++i) {
-        //NOTE: Each copy uses 3 uint64_t elements in the newQueue
-        //      After using each memory position, we have to clean it
-
-        //NOTE: new_task_copy_t->address field is the 1st word
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        (*task)->copies[i].address = (void *)((uintptr_t)_newQueue[idx]);
-        _newQueue[idx] = 0;
-
-         //NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        uint32_t copyFlags = _newQueue[idx] >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
-        (*task)->copies[i].flags = copyFlags;
-        uint32_t copySize = _newQueue[idx] >> NEW_TASK_COPY_SIZE_WORDOFFSET;
-        (*task)->copies[i].size = copySize;
-        _newQueue[idx] = 0;
-
-         //NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        uint32_t copyOffset = _newQueue[idx] >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
-        (*task)->copies[i].offset = copyOffset;
-        uint32_t copyAccessedLen = _newQueue[idx] >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
-        (*task)->copies[i].accessedLen = copyAccessedLen;
-        _newQueue[idx] = 0;
-    }
-
-    for (size_t i = 0; i < (*task)->numDeps; ++i) {
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_newQueue[idx]);
-
-        //Parse the dependence information
-        (*task)->deps[i].address = hwTaskDep->address;
-        (*task)->deps[i].flags = hwTaskDep->flags;
-
-        //Cleanup the memory position
-        _newQueue[idx] = 0;
-    }
-
-    for (size_t i = 0; i < (*task)->numArgs; ++i) {
-        //Check that arg pointer is not out of bounds
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        (*task)->args[i] = _newQueue[idx];
-
-        //Cleanup the memory position
-        _newQueue[idx] = 0;
-    }
-
-    //Free the buffer slot
-    //NOTE: This word cannot be set to 0 as the task size information must be keept
-    __sync_synchronize();
-    hwTaskHeader->valid = QUEUE_INVALID;
-
-    return XDMA_SUCCESS;
+    return XTASKS_ENOSYS;
 }
 
 xtasks_stat xtasksNotifyFinishedTask(xtasks_task_handle const parent, size_t count)
 {
-    task_t * task = (task_t *)(parent);
-
-    if (task == NULL) {
-        return XTASKS_EINVAL;
-    }
-
-    // Get an empty slot into the TM remote finished queue
-    size_t idx, next;
-    do {
-        idx = _remFiniQueueIdx;
-        if (_remFiniQueue[idx].valid == QUEUE_VALID) {
-            return XTASKS_ENOENTRY;
-        }
-        next = (idx+1)%REMFINI_QUEUE_LEN;
-    } while ( !__sync_bool_compare_and_swap(&_remFiniQueueIdx, idx, next) );
-
-    // Copy the information into the queue
-    _remFiniQueue[idx].taskID = (uintptr_t)(task);
-    _remFiniQueue[idx].components = count;
-    __sync_synchronize();
-    _remFiniQueue[idx].valid = QUEUE_VALID;
-
-    return XTASKS_SUCCESS;
+    return XTASKS_ENOSYS;
 }
 
 xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp * timestamp)
