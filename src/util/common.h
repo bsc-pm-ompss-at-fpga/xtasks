@@ -1,29 +1,22 @@
-/*
-* Copyright (c) 2017, BSC (Barcelona Supercomputing Center)
-* All rights reserved.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-*     * Redistributions of source code must retain the above copyright
-*       notice, this list of conditions and the following disclaimer.
-*     * Redistributions in binary form must reproduce the above copyright
-*       notice, this list of conditions and the following disclaimer in the
-*       documentation and/or other materials provided with the distribution.
-*     * Neither the name of the <organization> nor the
-*       names of its contributors may be used to endorse or promote products
-*       derived from this software without specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY BSC ''AS IS'' AND ANY
-* EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-* WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-* DISCLAIMED. IN NO EVENT SHALL <copyright holder> BE LIABLE FOR ANY
-* DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-* (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-* LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-* ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-* SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+/*--------------------------------------------------------------------
+  (C) Copyright 2017-2019 Barcelona Supercomputing Center
+                          Centro Nacional de Supercomputacion
+
+  This file is part of OmpSs@FPGA toolchain.
+
+  This code is free software; you can redistribute it and/or modify
+  it under the terms of the GNU Lesser General Public License as
+  published by the Free Software Foundation; either version 3 of
+  the License, or (at your option) any later version.
+
+  OmpSs@FPGA toolchain is distributed in the hope that it will be
+  useful, but WITHOUT ANY WARRANTY; without even the implied
+  warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the GNU General Public License for more details.
+
+  You should have received a copy of the GNU Lesser General Public
+  License along with this code. If not, see <www.gnu.org/licenses/>.
+--------------------------------------------------------------------*/
 
 #ifndef __LIBXTASKS_COMMON_H__
 #define __LIBXTASKS_COMMON_H__
@@ -41,16 +34,59 @@
 #define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
 #define BIT_INFO_FEATURES_PATH  "/dev/ompss_fpga/bit_info/features"
 
+#define CMD_EXEC_TASK_CODE                0x01 ///< Command code for execute task commands
+#define CMD_SETUP_INS_CODE                0x02 ///< Command code for setup instrumentation info
+#define CMD_FINI_EXEC_CODE                0x03 ///< Command code for finished execute task commands
+#define CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET 0    ///< Offset of Num. Args. field in the commandArgs array
+#define CMD_EXEC_TASK_ARGS_COMP_OFFSET    3    ///< Offset of Compute flag in the commandArgs array
+#define CMD_EXEC_TASK_ARGS_DESTID_OFFSET  4    ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
+#define CMD_EXEC_TASK_ARGS_DESTID_PS      0x1F ///< Processing System identifier for the destId field
+#define CMD_EXEC_TASK_ARGS_DESTID_TM      0x11 ///< Task manager identifier for the destId field
+#define CMD_FINI_EXEC_ARGS_ACCID_OFFSET   0    ///< Offset of Accelerator ID field in the commandArgs array
+
 #define max(a,b) \
     ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
        _a > _b ? _a : _b; })
+
+#define min(a,b) \
+    ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+       _a < _b ? _a : _b; })
 
 typedef enum {
     BIT_FEATURE_NO_AVAIL = 0,
     BIT_FEATURE_AVAIL = 1,
     BIT_FEATURE_UNKNOWN = 2
 } bit_feature_t;
+
+//! \brief Command header type
+typedef struct __attribute__ ((__packed__)) {
+    uint8_t commandCode;     //[0  :7  ] Command code
+    uint8_t commandArgs[6];  //[8  :55 ] Command arguments
+    uint8_t valid;           //[56 :63 ] Valid entry
+} cmd_header_t;
+
+//! \brief Header of execute task command
+typedef struct __attribute__ ((__packed__)) {
+    cmd_header_t header;     //[0  :63 ] Command header
+    uint64_t     parentID;   //[64 :127] Parent task identifier (may be null)
+    uint64_t     taskID;     //[128:195] Task identifier
+} cmd_exec_task_header_t;
+
+//! \brief Argument entry of execute task command
+typedef struct __attribute__ ((__packed__)) {
+    uint8_t flags;           //[0  :7  ] Flags
+    uint8_t _padding[3];     //[8  :32 ]
+    uint32_t id;             //[32 :63 ] Argument ID
+    uint64_t value;          //[64 :127] Address
+} cmd_exec_task_arg_t;
+
+//! \brief Setup hw instrumentation command
+typedef struct __attribute__ ((__packed__)) {
+    cmd_header_t header;     //[0  :63 ] Command header
+    uint64_t     bufferAddr; //[64 :127] Instrumentation buffer address
+} cmd_setup_hw_ins_t;
 
 /*!
  * \brief Get the path of the configuration file
@@ -131,13 +167,13 @@ static inline void __attribute__((optimize("O1")))
 }
 
 /*!
- * \brief Checks whether a bitstrem feature is present in the current fpga configuration or not
+ * \brief Checks whether a bitstream feature is present in the current fpga configuration or not
  * \return  BIT_FEATURE_NO_AVAIL if the feature is not available
  *          BIT_FEATURE_AVAIL if the feature is available
  *          BIT_FEATURE_UNKNOWN if the check cannot be done or failed
  *
  */
-bit_feature_t checkBitstremFeature(const char * featureName) {
+bit_feature_t checkbitstreamFeature(const char * featureName) {
     bit_feature_t available = BIT_FEATURE_UNKNOWN;
     char buffer[strlen(BIT_INFO_FEATURES_PATH) + strlen(featureName) + 1];
 
@@ -145,8 +181,12 @@ bit_feature_t checkBitstremFeature(const char * featureName) {
     strcat(buffer, "/");
     strcat(buffer, featureName);
     FILE * infoFile = fopen(buffer, "r");
+    size_t nRead;
     if (infoFile != NULL) {
-        fread(&buffer, sizeof(char), 1, infoFile);
+        nRead = fread(&buffer, sizeof(char), 1, infoFile);
+        if (nRead != sizeof(char)) {
+            fprintf(stderr, "ERROR: xTasks could not read feature %s\n", featureName);
+        }
         fclose(infoFile);
         available = buffer[0] == '1' ? BIT_FEATURE_AVAIL :
             (buffer[0] == '0' ? BIT_FEATURE_NO_AVAIL : BIT_FEATURE_UNKNOWN);

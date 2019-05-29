@@ -39,35 +39,28 @@ endif
 .PHONY: all
 all: $(TARGETS_)
 
-libxtasks-taskmanager.o: ./src/libxtasks-taskmanager.c
+libxtasks-taskmanager.o: libxtasks-taskmanager.c
 	$(CC_) $(CFLAGS_) -c $^
 
 libxtasks-taskmanager.so: libxtasks-taskmanager.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
 
-libxtasks-stream.o: ./src/libxtasks-stream.c
+libxtasks-stream.o: libxtasks-stream.c
 	$(CC_) $(CFLAGS_) -c $^
 
 libxtasks-stream.so: libxtasks-stream.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
 
-libxtasks-picos.o: ./src/libxtasks-picos.c
+libxtasks-picos.o: libxtasks-picos.c
 	$(CC_) $(CFLAGS_) $(LIBPICOS_INCS_) -c $^
 
 libxtasks-picos.so: libxtasks-picos.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-rpath=$(LIBPICOS_LIB_DIR),-soname,libxtasks.so \
 	-o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
 
-libxtasks.o: ./src/libxtasks.c
-	$(CC_) $(CFLAGS_) -c $^
-
-libxtasks-stub.so: libxtasks.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasjs.so -o $@ $^ $(LDFLAGS_)
-
-
 .PHONY: libxtasks_version.h
-libxtasks_version.h: ./src/libxtasks_version_template.h
-	@head -n 6 $^ >$@
+libxtasks_version.h: ../libxtasks_version_template.h
+	@head -n 26 $^ >$@
 ifeq (x$(shell git rev-parse --is-bare-repository 2>/dev/null), xfalse)
 	@echo "/* Build commit" >>$@
 	git show -s >>$@
@@ -84,11 +77,11 @@ else
 endif
 	@tail -n 2 $^ >>$@
 
-install: $(TARGETS_) ./src/libxtasks.h libxtasks_version.h
+install: $(TARGETS_) ../libxtasks.h libxtasks_version.h
 	mkdir -p $(PREFIX)/lib
 	cp libxtasks-*.so $(PREFIX)/lib
 	mkdir -p $(PREFIX)/include
-	cp ./src/libxtasks.h $(PREFIX)/include
+	cp ../libxtasks.h $(PREFIX)/include
 	cp libxtasks_version.h $(PREFIX)/include
 	@echo "========================= NOTE ========================="
 	@echo "== Remember to create the symlink $(PREFIX)/lib/libxtasks.so to your desired backend!"
@@ -98,4 +91,4 @@ install: $(TARGETS_) ./src/libxtasks.h libxtasks_version.h
 
 .PHONY: clean
 clean:
-	rm -f *.o *.so *.a libxtasks_version.h
+	rm -f *.o *.so libxtasks_version.h
