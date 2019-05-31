@@ -45,10 +45,19 @@
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
+#ifdef PICOS
 #define CMD_IN_QUEUE_LEN        1920            ///< Total number of entries in the cmd_in queue
 #define CMD_IN_SUBQUEUE_LEN     128             ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
-#define CMD_OUT_QUEUE_LEN       480             ///< Total number of entries in the finish queue
-#define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of finish queue for one accelerator
+#define CMD_OUT_QUEUE_LEN       480             ///< Total number of entries in the cmd_out queue
+#define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
+#else
+#define CMD_IN_QUEUE_LEN        2048            ///< Total number of entries in the cmd_in queue
+#define CMD_IN_SUBQUEUE_LEN     64              ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
+#define CMD_OUT_QUEUE_LEN       1024            ///< Total number of entries in the cmd_out queue
+#define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
+#endif
+#define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
+#define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
 #define QUEUE_VALID             0x80
 #define QUEUE_RESERVED          0x40
 #define QUEUE_INVALID           0x00
@@ -64,11 +73,20 @@
 #define NEW_TASK_COPY_OFFSET_WORDOFFSET      0  ///< Offset of new_task_copy_t->offset field in the 3rd word forming new_task_copy_t
 #define NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET 32 ///< Offset of new_task_copy_t->accessedLen field in the 3rd word forming new_task_copy_t
 
+#ifdef PICOS
 #define READY_QUEUE_ADDRESS 0
 #define FINI_QUEUE_ADDRESS 0x30000
 #define PICOS_RESET0_ADDRESS 0x10000
 #define PICOS_RESET1_ADDRESS 0x20000
-#define TASKMANAGER_RESET_ADDRESS 0x40000
+#define PICOS_DEBUG_ADDRESS 0x50000
+#else
+#define READY_QUEUE_ADDRESS 0x00000000
+#define FINI_QUEUE_ADDRESS 0x00004000
+#endif
+
+#define NEW_QUEUE_ADDRESS 0x00008000
+#define REMFINI_QUEUE_ADDRESS 0x0000C000
+#define TASKMANAGER_RESET_ADDRESS 0x00010000
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
@@ -81,6 +99,41 @@ typedef struct __attribute__ ((__packed__)) {
     uint64_t     taskID;     //[64 :127] Executed task identifier
 } cmd_out_exec_task_t;
 
+//! \brief New task buffer representation  (Only the header part, N arguments follow the header)
+typedef struct __attribute__ ((__packed__)) {
+    uint8_t   _padding;      //[0  :7  ]
+    uint8_t   numArgs;       //[8  :15 ] Number of arguments after this header
+    uint8_t   numDeps;       //[16 :23 ] Number of dependencies after the task arguments
+    uint8_t   numCopies;     //[24 :31 ] Number of copies after the task dependencies
+    uint32_t  archMask:24;   //[32 :55 ] Architecture mask in Picos style
+    uint8_t   valid;         //[56 :63 ] Valid Entry
+    uint64_t  parentID;      //[64 :127] Parent task identifier that is creating the task
+    uint64_t  typeInfo;      //[128:191] Information of task type
+} new_task_header_t;
+
+//! \brief New task buffer representation (Only the dependence part, repeated N times)
+typedef struct __attribute__ ((__packed__)) {
+    uint64_t  address:56; //[0  :55 ] Dependence value
+    uint8_t   flags;      //[56 :63 ] Dependence flags
+} new_task_dep_t;
+
+//! \brief New task buffer representation (Only the argument part, repeated N times)
+typedef struct __attribute__ ((__packed__)) {
+    uint64_t address;     //[0  :63 ] Copy address
+    uint32_t flags;       //[64 :95 ] Copy flags
+    uint32_t size;        //[96 :127] Size of the copy
+    uint32_t offset;      //[128:159] Offset of accessed region in the copy
+    uint32_t accessedLen; //[160:191] Length of accessed region in the copy
+} new_task_copy_t;
+
+//! \brief Remote finished task buffer representation
+typedef struct __attribute__ ((__packed__)) {
+    uint8_t  valid;       //[0  :7  ] Valid Entry
+    uint8_t _padding[3];
+    uint32_t components;  //[32 :63 ] Number of tasks that have finished
+    uint64_t taskID;      //[64 :127] Parent task identifier that created the tasks
+} rem_fini_task_t;
+
 //! \brief Internal library HW accelerator information
 typedef struct {
     char                     descBuffer[STR_BUFFER_SIZE];
@@ -89,6 +142,7 @@ typedef struct {
     unsigned short volatile  cmdInRdIdx;        ///< Reading index of the accelerator sub-queue in the cmd_in queue
     unsigned short volatile  cmdInAvSlots;      ///< Counter for available slots in cmd_in sub-queue
     unsigned short volatile  cmdOutIdx;         ///< Reading index of the accelerator sub-queue in the cmd_out queue
+    unsigned short volatile  instrIdx;          ///< Reading index of the accelerator instrumentation buffer
 } acc_t;
 
 //! \brief Internal library task information
@@ -107,7 +161,16 @@ static uint8_t *            _cmdExecTaskBuff;   ///< Buffer to send the HW tasks
 static task_t *             _tasks;             ///< Array with internal task information
 static uint64_t            *_cmdInQueue;        ///< Command IN queue
 static uint64_t            *_cmdOutQueue;       ///< Command OUT queue
+static uint64_t            *_newQueue;          ///< Buffer for the new tasks created in the HW
+static size_t               _newQueueIdx;       ///< Reading index of the _newQueue
+static rem_fini_task_t     *_remFiniQueue;      ///< Buffer for the remote finished tasks
+static size_t               _remFiniQueueIdx;   ///< Writing index of the _remFiniQueue
 static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Manager
+#ifdef PICOS
+static uint32_t            *_picosRst0;         ///< Register to reset Picos (Picos clock domain)
+static uint32_t            *_picosRst1;         ///< Register to reset Picos (hwacc clock domain)
+static uint32_t            *_picosDebug;        ///< Picos debug registers
+#endif
 
 static ticketLock_t         _bufferTicket;      ///< Lock to atomically access PCI direct slave
 static ADMXRC3_HANDLE       _hDevice;           ///< Alphadata device handle
@@ -118,6 +181,18 @@ static inline __attribute__((always_inline)) void resetTaskManager()
     *_taskmanagerRst = 0x00;
     for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
     *_taskmanagerRst = 0x01;
+
+#ifdef PICOS
+    //Nudge one register
+    *_picosRst0 = 1;
+    __sync_synchronize();
+    *_picosRst0 = 0;
+
+    //Nudge one register
+    *_picosRst1 = 1;
+    __sync_synchronize();
+    *_picosRst1 = 0;
+#endif
 }
 
 static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t const length)
@@ -321,6 +396,26 @@ xtasks_stat xtasksInit()
     //If any, invalidate commands in cmd_out queue
     _memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN*sizeof(uint64_t));
 
+    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, NEW_QUEUE_ADDRESS, sizeof(uint64_t)*NEW_QUEUE_LEN, (void**)&_newQueue);
+    if (admxrc3_status != ADMXRC3_SUCCESS) {
+        ret = XTASKS_EFILE;
+        PRINT_ERROR("Cannot map new queue of Task Manager");
+        goto INIT_ERR_MAP_NEW;
+    }
+
+    //If any, invalidate tasks in newQueue
+    _memset(_newQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
+
+    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, REMFINI_QUEUE_ADDRESS, sizeof(uint64_t)*REMFINI_QUEUE_LEN, (void**)&_remFiniQueue);
+    if (admxrc3_status != ADMXRC3_SUCCESS) {
+        ret = XTASKS_EFILE;
+        PRINT_ERROR("Cannot map remote finished queue of Task Manager");
+        goto INIT_ERR_MAP_REMFINI;
+    }
+
+    //If any, invalidate tasks in remFiniQueue
+    _memset(_remFiniQueue, 0, REMFINI_QUEUE_LEN*sizeof(uint64_t));
+
     admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, TASKMANAGER_RESET_ADDRESS, sizeof(uint32_t), (void**)&_taskmanagerRst);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
         ret = XTASKS_EFILE;
@@ -328,7 +423,29 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_MMAP_RST;
     }
 
-    //Reset _cmdInQueue and _finiQueue indexes
+#ifdef PICOS
+    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, PICOS_DEBUG_ADDRESS, sizeof(uint32_t)*36, (void**)&_picosDebug);
+    if (admxrc3_status != ADMXRC3_SUCCESS) {
+        ret = XTASKS_ERROR;
+        PRINT_ERROR("Cannot map Picos debug registers");
+        goto INIT_ERR_MMAP_PICOSDEBUG;
+    }
+
+    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, PICOS_RESET0_ADDRESS, sizeof(uint32_t), (void**)&_picosRst0);
+    if (admxrc3_status != ADMXRC3_SUCCESS) {
+        ret = XTASKS_ERROR;
+        PRINT_ERROR("Cannot map Picos reset register 0");
+        goto INIT_ERR_MMAP_PICOSRST0;
+    }
+
+    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, PICOS_RESET1_ADDRESS, sizeof(uint32_t), (void**)&_picosRst1);
+    if (admxrc3_status != ADMXRC3_SUCCESS) {
+        ret = XTASKS_ERROR;
+        PRINT_ERROR("Cannot map Picos reset register 1");
+        goto INIT_ERR_MMAP_PICOSRST1;
+    }
+#endif
+
     resetTaskManager();
 
     //Allocate tasks array
@@ -359,8 +476,20 @@ xtasks_stat xtasksInit()
     INIT_ERR_ALLOC_EXEC_TASKS_BUFF:
         free(_tasks);
     INIT_ERR_ALLOC_TASKS:
+#ifdef PICOS
+        ADMXRC3_UnmapWindow(_hDevice, (void*)_picosRst1);
+    INIT_ERR_MMAP_PICOSRST1:
+        ADMXRC3_UnmapWindow(_hDevice, (void*)_picosRst0);
+    INIT_ERR_MMAP_PICOSRST0:
+        ADMXRC3_UnmapWindow(_hDevice, (void*)_picosDebug);
+    INIT_ERR_MMAP_PICOSDEBUG:
+#endif
         ADMXRC3_UnmapWindow(_hDevice, (void*)_taskmanagerRst);
     INIT_ERR_MMAP_RST:
+        ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
+    INIT_ERR_MAP_REMFINI:
+        ADMXRC3_UnmapWindow(_hDevice, _newQueue);
+    INIT_ERR_MAP_NEW:
         ADMXRC3_UnmapWindow(_hDevice, _cmdOutQueue);
     INIT_ERR_MMAP_FINI:
         ADMXRC3_UnmapWindow(_hDevice, _cmdInQueue);
@@ -381,6 +510,31 @@ xtasks_stat xtasksFini()
     int init_cnt = __sync_sub_and_fetch(&_init_cnt, 1);
     if (init_cnt > 0) return XTASKS_SUCCESS;
 
+#ifdef PICOS
+    static const char* regNames[] = {
+        "new",
+        "ready",
+        "finish",
+        "remote ready",
+        "remote finish",
+        "smp finish"
+    };
+
+    //Picos-only code:
+    printf("----------------------------\n");
+    printf("Picos debug registers:\n");
+    for (int i = 0; i < 6; ++i) {
+        printf("%s:\t%u\n", regNames[i], _picosDebug[i]);
+    }
+    for (int i = 6; i < 6+15; ++i) {
+        printf("hwacc %d finish:\t%u\n", i-6, _picosDebug[i]);
+    }
+    for (int i = 6+15; i < 6+15+15; ++i) {
+        printf("hwacc %d time:\t%u\n", i-6-15, _picosDebug[i]);
+    }
+    printf("----------------------------\n");
+#endif
+
     xtasks_stat ret = XTASKS_SUCCESS;
 
     //Free tasks array
@@ -394,19 +548,28 @@ xtasks_stat xtasksFini()
     free(_tasks);
     _tasks = NULL;
 
+#ifdef PICOS
     *_taskmanagerRst = 0;
-
-    //Finialize the HW instrumentation if needed
-    /*if (xtasksFiniHWIns() != XTASKS_SUCCESS) {
-        ret = XTASKS_ERROR;
-    }*/
+#endif
 
     //Unmap the Task Manager queues
-    ADMXRC3_STATUS statusRd, statusFi, statusCtrl;
+    ADMXRC3_STATUS statusRd, statusFi, statusNw, statusRFi, statusCtrl;
     statusCtrl = ADMXRC3_UnmapWindow(_hDevice, (void*)_taskmanagerRst);
     statusFi = ADMXRC3_UnmapWindow(_hDevice, _cmdOutQueue);
+    statusNw = ADMXRC3_UnmapWindow(_hDevice, _newQueue);
+    statusRFi = ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
     statusRd = ADMXRC3_UnmapWindow(_hDevice, _cmdInQueue);
-    if (statusRd != ADMXRC3_SUCCESS || statusFi != ADMXRC3_SUCCESS || statusCtrl != ADMXRC3_SUCCESS) {
+    ADMXRC3_STATUS statusDbg = ADMXRC3_SUCCESS;
+    ADMXRC3_STATUS statusRst0 = ADMXRC3_SUCCESS;
+    ADMXRC3_STATUS statusRst1 = ADMXRC3_SUCCESS;
+#ifdef PICOS
+    statusDbg = ADMXRC3_UnmapWindow(_hDevice, _picosDebug);
+    statusRst0 = ADMXRC3_UnmapWindow(_hDevice, _picosRst0);
+    statusRst1 = ADMXRC3_UnmapWindow(_hDevice, _picosRst1);
+#endif
+    if (statusRd != ADMXRC3_SUCCESS || statusFi != ADMXRC3_SUCCESS || statusCtrl != ADMXRC3_SUCCESS ||
+            statusDbg != ADMXRC3_SUCCESS || statusRst0 != ADMXRC3_SUCCESS || statusRst1 != ADMXRC3_SUCCESS ||
+            statusRFi != ADMXRC3_SUCCESS || statusNw != ADMXRC3_SUCCESS) {
         ret = XTASKS_ERROR;
     }
 
@@ -686,12 +849,133 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
 
 xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
-    return XTASKS_ENOSYS;
+    if (_newQueue == NULL) return XTASKS_PENDING;
+
+    // Get a non-empty slot into the manager new queue
+    size_t idx, taskSize;
+    new_task_header_t * hwTaskHeader;
+    ticketLockAcquire(&_bufferTicket);
+
+    idx = _newQueueIdx;
+    hwTaskHeader = (new_task_header_t *)(&_newQueue[idx]);
+    if (hwTaskHeader->valid != QUEUE_VALID) {
+        ticketLockRelease(&_bufferTicket);
+        return XTASKS_PENDING;
+    }
+    taskSize = (
+                sizeof(new_task_header_t) +
+                sizeof(uint64_t)*hwTaskHeader->numArgs +
+                sizeof(new_task_dep_t)*hwTaskHeader->numDeps +
+                sizeof(new_task_copy_t)*hwTaskHeader->numCopies)/
+            sizeof(uint64_t);
+    _newQueueIdx = (idx+taskSize)%NEW_QUEUE_LEN;
+
+    //Extract the information from the new buffer
+    *task = realloc(*task,
+        sizeof(xtasks_newtask) +
+        sizeof(xtasks_newtask_arg)*hwTaskHeader->numArgs +
+        sizeof(xtasks_newtask_dep)*hwTaskHeader->numDeps +
+        sizeof(xtasks_newtask_copy)*hwTaskHeader->numCopies);
+    (*task)->args = (xtasks_newtask_arg *)(*task + 1);
+    (*task)->numArgs = hwTaskHeader->numArgs;
+    (*task)->deps = (xtasks_newtask_dep *)((*task)->args + (*task)->numArgs);
+    (*task)->numDeps = hwTaskHeader->numDeps;
+    (*task)->copies = (xtasks_newtask_copy *)((*task)->deps + (*task)->numDeps);
+    (*task)->numCopies = hwTaskHeader->numCopies;
+    (*task)->architecture = hwTaskHeader->archMask;
+
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 2nd word
+    task_t * parentTask = (task_t *)((uintptr_t)(_newQueue[idx]));
+    (*task)->parentId = parentTask->id; //< The external parent identifier must be returned (not the xtasks internal one)
+    _newQueue[idx] = 0; //< Cleanup the memory position
+
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 3rd word
+    (*task)->typeInfo = _newQueue[idx];
+    _newQueue[idx] = 0; //< Cleanup the memory position
+
+    for (size_t i = 0; i < (*task)->numCopies; ++i) {
+        //NOTE: Each copy uses 3 uint64_t elements in the newQueue
+        //      After using each memory position, we have to clean it
+
+        //NOTE: new_task_copy_t->address field is the 1st word
+        idx = (idx+1)%NEW_QUEUE_LEN;
+        (*task)->copies[i].address = (void *)((uintptr_t)_newQueue[idx]);
+        _newQueue[idx] = 0;
+
+         //NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
+        idx = (idx+1)%NEW_QUEUE_LEN;
+        uint32_t copyFlags = _newQueue[idx] >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
+        (*task)->copies[i].flags = copyFlags;
+        uint32_t copySize = _newQueue[idx] >> NEW_TASK_COPY_SIZE_WORDOFFSET;
+        (*task)->copies[i].size = copySize;
+        _newQueue[idx] = 0;
+
+         //NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
+        idx = (idx+1)%NEW_QUEUE_LEN;
+        uint32_t copyOffset = _newQueue[idx] >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
+        (*task)->copies[i].offset = copyOffset;
+        uint32_t copyAccessedLen = _newQueue[idx] >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
+        (*task)->copies[i].accessedLen = copyAccessedLen;
+        _newQueue[idx] = 0;
+    }
+
+    for (size_t i = 0; i < (*task)->numDeps; ++i) {
+        idx = (idx+1)%NEW_QUEUE_LEN;
+        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_newQueue[idx]);
+
+        //Parse the dependence information
+        (*task)->deps[i].address = hwTaskDep->address;
+        (*task)->deps[i].flags = hwTaskDep->flags;
+
+        //Cleanup the memory position
+        _newQueue[idx] = 0;
+    }
+
+    for (size_t i = 0; i < (*task)->numArgs; ++i) {
+        //Check that arg pointer is not out of bounds
+        idx = (idx+1)%NEW_QUEUE_LEN;
+        (*task)->args[i] = _newQueue[idx];
+
+        //Cleanup the memory position
+        _newQueue[idx] = 0;
+    }
+
+    //Free the buffer slot
+    //NOTE: This word cannot be set to 0 as the task size information must be keept
+    __sync_synchronize();
+    hwTaskHeader->valid = QUEUE_INVALID;
+    ticketLockFini(&_bufferTicket);
+
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksNotifyFinishedTask(xtasks_task_handle const parent, size_t count)
 {
-    return XTASKS_ENOSYS;
+    task_t * task = (task_t *)(parent);
+
+    if (task == NULL) {
+        return XTASKS_EINVAL;
+    }
+
+    ticketLockAcquire(&_bufferTicket);
+
+    // Get an empty slot into the TM remote finished queue
+    size_t idx;
+    idx = _remFiniQueueIdx;
+    if (_remFiniQueue[idx].valid == QUEUE_VALID) {
+        ticketLockRelease(&_bufferTicket);
+        return XTASKS_ENOENTRY;
+    }
+    _remFiniQueueIdx = (idx+1)%REMFINI_QUEUE_LEN;
+
+    // Copy the information into the queue
+    _remFiniQueue[idx].taskID = (uintptr_t)(task);
+    _remFiniQueue[idx].components = count;
+    __sync_synchronize();
+    _remFiniQueue[idx].valid = QUEUE_VALID;
+    ticketLockRelease(&_bufferTicket);
+
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp * timestamp)
