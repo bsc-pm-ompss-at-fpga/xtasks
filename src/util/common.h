@@ -181,8 +181,12 @@ bit_feature_t checkBitstremFeature(const char * featureName) {
     strcat(buffer, "/");
     strcat(buffer, featureName);
     FILE * infoFile = fopen(buffer, "r");
+    size_t nRead;
     if (infoFile != NULL) {
-        fread(&buffer, sizeof(char), 1, infoFile);
+        nRead = fread(&buffer, sizeof(char), 1, infoFile);
+        if (nRead != sizeof(char)) {
+            fprintf(stderr, "ERROR: xTasks could not read feature %s\n", featureName);
+        }
         fclose(infoFile);
         available = buffer[0] == '1' ? BIT_FEATURE_AVAIL :
             (buffer[0] == '0' ? BIT_FEATURE_NO_AVAIL : BIT_FEATURE_UNKNOWN);
