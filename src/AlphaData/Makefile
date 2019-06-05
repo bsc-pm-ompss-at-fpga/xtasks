@@ -27,12 +27,12 @@ LIBPICOS_SUPPORT_ = $(if $(and $(wildcard $(LIBPICOS_INC_DIR)/libpicos.h ), \
 ifeq ($(LIBXDMA_SUPPORT_),YES)
 	CFLAGS_  += $(LIBXDMA_INCS_)
 	LDFLAGS_ += $(LIBXDMA_LIBS_)
-	TARGETS_ += libxtasks-stream.so libxtasks-taskmanager.so
+	TARGETS_ += libxtasks-taskmanager.so
 
 	ifeq ($(LIBPICOS_SUPPORT_),YES)
 		CFLAGS_  +=
 		LDFLAGS_ +=
-		TARGETS_ += libxtasks-picos.so
+		TARGETS_ +=
 	endif
 endif
 

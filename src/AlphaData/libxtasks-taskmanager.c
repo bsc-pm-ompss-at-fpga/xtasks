@@ -43,6 +43,8 @@
 
 #include <admxrc3.h>
 
+//#define PICOS
+
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
 #ifdef PICOS
@@ -74,19 +76,16 @@
 #define NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET 32 ///< Offset of new_task_copy_t->accessedLen field in the 3rd word forming new_task_copy_t
 
 #ifdef PICOS
-#define READY_QUEUE_ADDRESS 0
-#define FINI_QUEUE_ADDRESS 0x30000
-#define PICOS_RESET0_ADDRESS 0x10000
-#define PICOS_RESET1_ADDRESS 0x20000
+#define PICOS_RESET0_ADDRESS 0x14000
+#define PICOS_RESET1_ADDRESS 0x18000
 #define PICOS_DEBUG_ADDRESS 0x50000
-#else
-#define READY_QUEUE_ADDRESS 0x00000000
-#define FINI_QUEUE_ADDRESS 0x00004000
 #endif
 
+#define READY_QUEUE_ADDRESS 0x00000000
+#define FINI_QUEUE_ADDRESS 0x00004000
+#define TASKMANAGER_RESET_ADDRESS 0x00010000
 #define NEW_QUEUE_ADDRESS 0x00008000
 #define REMFINI_QUEUE_ADDRESS 0x0000C000
-#define TASKMANAGER_RESET_ADDRESS 0x00010000
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
