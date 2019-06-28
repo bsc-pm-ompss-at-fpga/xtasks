@@ -47,17 +47,10 @@
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
-#ifdef PICOS
-#define CMD_IN_QUEUE_LEN        1920            ///< Total number of entries in the cmd_in queue
-#define CMD_IN_SUBQUEUE_LEN     128             ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
-#define CMD_OUT_QUEUE_LEN       480             ///< Total number of entries in the cmd_out queue
-#define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
-#else
 #define CMD_IN_QUEUE_LEN        2048            ///< Total number of entries in the cmd_in queue
 #define CMD_IN_SUBQUEUE_LEN     64              ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
 #define CMD_OUT_QUEUE_LEN       1024            ///< Total number of entries in the cmd_out queue
 #define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
-#endif
 #define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
 #define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
 #define QUEUE_VALID             0x80
@@ -169,6 +162,7 @@ static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Mana
 static uint32_t            *_picosRst0;         ///< Register to reset Picos (Picos clock domain)
 static uint32_t            *_picosRst1;         ///< Register to reset Picos (hwacc clock domain)
 static uint32_t            *_picosDebug;        ///< Picos debug registers
+static uint64_t             _copyTime;
 #endif
 
 static ticketLock_t         _bufferTicket;      ///< Lock to atomically access PCI direct slave
@@ -229,9 +223,6 @@ SUB_CMD_UPDATE_IDX:
         idx = acc->cmdInWrIdx;
         acc->cmdInWrIdx = (idx + length)%CMD_IN_SUBQUEUE_LEN;
         acc->cmdInAvSlots -= length;
-        cmdHeader = _cmdInQueue[offset + idx];
-        cmdHeaderPtr->valid = QUEUE_RESERVED;
-        _cmdInQueue[offset + idx] = cmdHeader;
 
         // Do no write the header (1st word pointer by command ptr) until all payload is write
         // Check if 2 writes have to be done because there is not enough space at the end of subqueue
@@ -275,6 +266,9 @@ xtasks_stat xtasksInit()
 
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
+#ifdef PICOS
+    _copyTime = 0;
+#endif
 
     //Initialize xdma memory subsystem
     s = xdmaInitMem();
@@ -383,7 +377,10 @@ xtasks_stat xtasksInit()
     }
 
     //If any, invalidate commands in cmd_in queue
-    _memset(_cmdInQueue, 0, CMD_IN_QUEUE_LEN*sizeof(uint64_t));
+    //_memset(_cmdInQueue, 0, CMD_IN_QUEUE_LEN*sizeof(uint64_t));
+    for (int i = 0; i < CMD_IN_QUEUE_LEN; ++i) {
+        _cmdInQueue[i] = 0;
+    }
 
     admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, FINI_QUEUE_ADDRESS, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN, (void**)&_cmdOutQueue);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
@@ -393,7 +390,10 @@ xtasks_stat xtasksInit()
     }
 
     //If any, invalidate commands in cmd_out queue
-    _memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN*sizeof(uint64_t));
+    //_memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN*sizeof(uint64_t));
+    for (int i = 0; i < CMD_OUT_QUEUE_LEN; ++i) {
+        _cmdOutQueue[i] = 0;
+    }
 
     admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, NEW_QUEUE_ADDRESS, sizeof(uint64_t)*NEW_QUEUE_LEN, (void**)&_newQueue);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
@@ -403,7 +403,10 @@ xtasks_stat xtasksInit()
     }
 
     //If any, invalidate tasks in newQueue
-    _memset(_newQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
+    //_memset(_newQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
+    /*for (int i = 0; i < NEW_QUEUE_LEN; ++i) {
+        _newQueue[i] = 0;
+    }*/
 
     admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, REMFINI_QUEUE_ADDRESS, sizeof(uint64_t)*REMFINI_QUEUE_LEN, (void**)&_remFiniQueue);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
@@ -413,7 +416,10 @@ xtasks_stat xtasksInit()
     }
 
     //If any, invalidate tasks in remFiniQueue
-    _memset(_remFiniQueue, 0, REMFINI_QUEUE_LEN*sizeof(uint64_t));
+    //_memset(_remFiniQueue, 0, REMFINI_QUEUE_LEN*sizeof(uint64_t));
+    /*for (int i = 0; i < REMFINI_QUEUE_LEN; ++i) {
+        _remFiniQueue[i] = 0;
+    }*/
 
     admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, TASKMANAGER_RESET_ADDRESS, sizeof(uint32_t), (void**)&_taskmanagerRst);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
@@ -510,7 +516,7 @@ xtasks_stat xtasksFini()
     if (init_cnt > 0) return XTASKS_SUCCESS;
 
 #ifdef PICOS
-    static const char* regNames[] = {
+    /*static const char* regNames[] = {
         "new",
         "ready",
         "finish",
@@ -531,7 +537,9 @@ xtasks_stat xtasksFini()
     for (int i = 6+15; i < 6+15+15; ++i) {
         printf("hwacc %d time:\t%u\n", i-6-15, _picosDebug[i]);
     }
-    printf("----------------------------\n");
+    printf("----------------------------\n");*/
+    printf("compute %d\n", _picosDebug[6+15]);
+    printf("copy %lu\n", _copyTime);
 #endif
 
     xtasks_stat ret = XTASKS_SUCCESS;
@@ -1013,7 +1021,18 @@ xtasks_stat xtasksMemcpy(xtasks_mem_handle const handle, size_t offset, size_t l
     xtasks_memcpy_kind const kind)
 {
     xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
+#ifdef PICOS
+    struct timeval time1, time2;
+    gettimeofday(&time1, NULL);
+#endif
     xdma_status status = xdmaMemcpy(usr, handle, len, offset, mode);
+#ifdef PICOS
+    gettimeofday(&time2, NULL);
+    uint64_t elapsed = (time2.tv_sec*1000000 + time2.tv_usec) - (time1.tv_sec*1000000 + time1.tv_usec);
+    if (elapsed == 0)
+        printf("Warning, lost precision\n");
+    _copyTime += elapsed;
+#endif
     return toXtasksStat(status);
 }
 
