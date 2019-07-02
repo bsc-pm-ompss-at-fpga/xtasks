@@ -130,6 +130,18 @@ xtasks_stat xtasksInit();
 xtasks_stat xtasksFini();
 
 /*!
+ * \brief Get the platform name that libxtasks targets
+ * \param[out] name       Pointer that will be set with the platform string address
+ */
+xtasks_stat xtasksGetPlatform(const char ** name);
+
+/*!
+ * \brief Get the communication backend name that libxtasks uses
+ * \param[out] name       Pointer that will be set with the backend string address
+ */
+xtasks_stat xtasksGetBackend(const char ** name);
+
+/*!
  * \brief Get the number of available accelerators in the system
  */
 xtasks_stat xtasksGetNumAccs(size_t * count);

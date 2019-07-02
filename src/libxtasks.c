@@ -30,6 +30,16 @@ xtasks_stat xtasksFini()
     return XTASKS_ENOSYS;
 }
 
+xtasks_stat xtasksGetPlatform(const char ** name)
+{
+    return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksGetBackend(const char ** name)
+{
+    return XTASKS_ENOSYS;
+}
+
 xtasks_stat xtasksGetNumAccs(size_t * count)
 {
     return XTASKS_ENOSYS;
