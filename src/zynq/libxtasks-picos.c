@@ -32,6 +32,10 @@
 #define NUM_RUN_TASKS           256             ///< Maximum number of concurrently running tasks
 #define NUM_DEPS_EXEC_MASK      0xFFFF          ///< Mask used to set numDeps field and mark task as executed
 
+//! \brief Platform and Backend strings
+const char _platformName[] = "zynq";
+const char _backendName[] = "picos";
+
 //! \brief HW accelerator representation
 typedef struct {
     uint16_t        picosArchMask;
@@ -201,6 +205,24 @@ xtasks_stat xtasksFini()
     }
 
     return ret;
+}
+
+xtasks_stat xtasksGetPlatform(const char ** name)
+{
+    if (name == NULL) return XTASKS_EINVAL;
+
+    *name = _platformName;
+
+    return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksGetBackend(const char ** name)
+{
+    if (name == NULL) return XTASKS_EINVAL;
+
+    *name = _backendName;
+
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetNumAccs(size_t * count)
