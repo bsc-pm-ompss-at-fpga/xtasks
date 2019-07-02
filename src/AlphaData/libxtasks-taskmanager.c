@@ -171,9 +171,9 @@ static ADMXRC3_HANDLE       _hDevice;           ///< Alphadata device handle
 static inline __attribute__((always_inline)) void resetTaskManager()
 {
     //Nudge one register
-    *_taskmanagerRst = 0x00;
-    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
     *_taskmanagerRst = 0x01;
+    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
+    *_taskmanagerRst = 0x00;
 
 #ifdef PICOS
     //Nudge one register
