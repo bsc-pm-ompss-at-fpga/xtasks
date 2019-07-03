@@ -161,9 +161,9 @@ static xdma_buf_handle      _instrBuffHandle;   ///< Handle of _instrBuff in lib
 static inline __attribute__((always_inline)) void resetTaskManager()
 {
     //Nudge one register
-    *_taskmanagerRst = 0x00;
-    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
     *_taskmanagerRst = 0x01;
+    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
+    *_taskmanagerRst = 0x00;
 }
 
 static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t const length)
