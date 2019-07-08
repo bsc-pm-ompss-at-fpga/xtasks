@@ -158,12 +158,33 @@ static xtasks_ins_event    *_instrBuff;         ///< Buffer of instrumentation e
 static xtasks_ins_event    *_instrBuffPhy;      ///< Physical address of _instrBuff
 static xdma_buf_handle      _instrBuffHandle;   ///< Handle of _instrBuff in libxdma
 
+static int getResetPolarity()
+{
+    int ret = -1; //< Unknown
+    const char * polarity = getenv("XTASKS_RESET_POLARITY");
+    if (polarity != NULL) {
+        ret = *polarity - '0';
+        if (ret > 1 || ret < 0) {
+            PRINT_ERROR("Found unvalid value in XTASKS_RESET_POLARITY environment variable");
+            ret = -1;
+        }
+    }
+    return ret;
+}
+
 static inline __attribute__((always_inline)) void resetTaskManager()
 {
-    //Nudge one register
-    *_taskmanagerRst = 0x01;
-    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
-    *_taskmanagerRst = 0x00;
+    //Nudge reset register
+    const int polarity = getResetPolarity();
+    if (polarity == 0) {
+        *_taskmanagerRst = 0x00;
+        for ( volatile int i = 0; i < 10; i++ ) i = i; // Lose some time
+        *_taskmanagerRst = 0x01;
+    } else {
+        *_taskmanagerRst = 0x01;
+        for ( volatile int i = 0; i < 10; i++ ) i = i; // Lose some time
+        *_taskmanagerRst = 0x00;
+    }
 }
 
 static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t const length)

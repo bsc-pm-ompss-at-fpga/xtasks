@@ -53,8 +53,14 @@ make PREFIX=/opt/install-arm/libxtasks install
 ```
 Note that the install step does not create the `libxtasks.so` in the `$PREFIX/lib` directory. You have to create it using one of the compiled back-end libraries.
 
-### Additional info
-##### Execution requirements
+### Execution
+
+##### Requirements
 
 During the execution, libxtasks uses the device files inside `/dev/ompss_fpga` folder to communicate with different elements in the fpga bitstream and check the available features.
 Those device files are created by the [OmpSs@FPGA kernel module](https://pm.bsc.es/gitlab/ompss-at-fpga/ompss-at-fpga-kernel-module) which must be loaded before the execution and the device files must be available for opening by the user.
+
+##### Environment variables
+
+ - `XTASKS_CONFIG_FILE`. Defines the path of xtasks config file to use during library initialization. By default, the path is `/dev/ompss_fpga/bit_info/xtasks`.
+ - `XTASKS_RESET_POLARITY` Defines the reset polarity of Task Manager (and accelerators) in the bitstream. By default, the polarity is `1`.
