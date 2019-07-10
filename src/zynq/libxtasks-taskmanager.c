@@ -1013,8 +1013,14 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 
     idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 2nd word
     task_t * parentTask = (task_t *)((uintptr_t)(_newQueue[idx]));
-    (*task)->parentId = parentTask->id; //< The external parent identifier must be returned (not the xtasks internal one)
     _newQueue[idx] = 0; //< Cleanup the memory position
+#ifdef XTASKS_DEBUG
+    if (parentTask < _tasks) {
+        PRINT_ERROR("Found a child task of a FPGA created task. Path not supported yet");
+        return XTASKS_ERROR;
+    }
+#endif /* XTASKS_DEBUG */
+    (*task)->parentId = parentTask->id; //< The external parent identifier must be returned (not the xtasks internal one)
 
     idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 3rd word
     (*task)->typeInfo = _newQueue[idx];
