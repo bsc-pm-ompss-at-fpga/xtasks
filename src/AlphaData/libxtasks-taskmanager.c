@@ -170,10 +170,17 @@ static ADMXRC3_HANDLE       _hDevice;           ///< Alphadata device handle
 
 static inline __attribute__((always_inline)) void resetTaskManager()
 {
+#ifdef PICOS
+    //Nudge one register
+    *_taskmanagerRst = 0x00;
+    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
+    *_taskmanagerRst = 0x01;
+#else
     //Nudge one register
     *_taskmanagerRst = 0x01;
     for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
     *_taskmanagerRst = 0x00;
+#endif
 
 #ifdef PICOS
     //Nudge one register
@@ -395,31 +402,30 @@ xtasks_stat xtasksInit()
         _cmdOutQueue[i] = 0;
     }
 
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, NEW_QUEUE_ADDRESS, sizeof(uint64_t)*NEW_QUEUE_LEN, (void**)&_newQueue);
+    _newQueue = NULL;
+    /*admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, NEW_QUEUE_ADDRESS, sizeof(uint64_t)*NEW_QUEUE_LEN, (void**)&_newQueue);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map new queue of Task Manager");
         goto INIT_ERR_MAP_NEW;
-    }
+    }*/
 
     //If any, invalidate tasks in newQueue
     //_memset(_newQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
-    /*for (int i = 0; i < NEW_QUEUE_LEN; ++i) {
-        _newQueue[i] = 0;
-    }*/
-
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, REMFINI_QUEUE_ADDRESS, sizeof(uint64_t)*REMFINI_QUEUE_LEN, (void**)&_remFiniQueue);
+    //for (int i = 0; i < NEW_QUEUE_LEN; ++i) {
+    //    _newQueue[i] = 0;
+    //}
+    
+    _remFiniQueue = NULL;
+    /*admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, REMFINI_QUEUE_ADDRESS, sizeof(uint64_t)*REMFINI_QUEUE_LEN, (void**)&_remFiniQueue);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map remote finished queue of Task Manager");
         goto INIT_ERR_MAP_REMFINI;
-    }
+    }*/
 
     //If any, invalidate tasks in remFiniQueue
     //_memset(_remFiniQueue, 0, REMFINI_QUEUE_LEN*sizeof(uint64_t));
-    /*for (int i = 0; i < REMFINI_QUEUE_LEN; ++i) {
-        _remFiniQueue[i] = 0;
-    }*/
 
     admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, TASKMANAGER_RESET_ADDRESS, sizeof(uint32_t), (void**)&_taskmanagerRst);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
@@ -491,9 +497,9 @@ xtasks_stat xtasksInit()
 #endif
         ADMXRC3_UnmapWindow(_hDevice, (void*)_taskmanagerRst);
     INIT_ERR_MMAP_RST:
-        ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
+        //ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
     INIT_ERR_MAP_REMFINI:
-        ADMXRC3_UnmapWindow(_hDevice, _newQueue);
+        //ADMXRC3_UnmapWindow(_hDevice, _newQueue);
     INIT_ERR_MAP_NEW:
         ADMXRC3_UnmapWindow(_hDevice, _cmdOutQueue);
     INIT_ERR_MMAP_FINI:
@@ -516,29 +522,32 @@ xtasks_stat xtasksFini()
     if (init_cnt > 0) return XTASKS_SUCCESS;
 
 #ifdef PICOS
-    /*static const char* regNames[] = {
+    static const char* regNames[] = {
         "new",
         "ready",
         "finish",
         "remote ready",
-        "remote finish",
-        "smp finish"
+        "remote finish"
     };
+
+    const int picosQueues = 5;
 
     //Picos-only code:
     printf("----------------------------\n");
     printf("Picos debug registers:\n");
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 5; ++i) {
         printf("%s:\t%u\n", regNames[i], _picosDebug[i]);
     }
-    for (int i = 6; i < 6+15; ++i) {
-        printf("hwacc %d finish:\t%u\n", i-6, _picosDebug[i]);
+    for (int i = 6; i < 5+15; ++i) {
+        printf("hwacc %d finish:\t%u\n", i-5, _picosDebug[i]);
     }
-    for (int i = 6+15; i < 6+15+15; ++i) {
-        printf("hwacc %d time:\t%u\n", i-6-15, _picosDebug[i]);
+    for (int i = 6+15; i < 5+15+15; ++i) {
     }
-    printf("----------------------------\n");*/
-    printf("compute %d\n", _picosDebug[6+15]);
+    for (int i = picosQueues+15; i < picosQueues+15+15; ++i) {
+        printf("hwacc %d time:\t%u\n", i-picosQueues-15, _picosDebug[i]);
+    }
+    printf("----------------------------\n");
+    printf("compute %d\n", _picosDebug[picosQueues+15]);
     printf("copy %lu\n", _copyTime);
 #endif
 
@@ -563,8 +572,9 @@ xtasks_stat xtasksFini()
     ADMXRC3_STATUS statusRd, statusFi, statusNw, statusRFi, statusCtrl;
     statusCtrl = ADMXRC3_UnmapWindow(_hDevice, (void*)_taskmanagerRst);
     statusFi = ADMXRC3_UnmapWindow(_hDevice, _cmdOutQueue);
-    statusNw = ADMXRC3_UnmapWindow(_hDevice, _newQueue);
-    statusRFi = ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
+    statusNw = statusRFi = ADMXRC3_SUCCESS;
+    //statusNw = ADMXRC3_UnmapWindow(_hDevice, _newQueue);
+    //statusRFi = ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
     statusRd = ADMXRC3_UnmapWindow(_hDevice, _cmdInQueue);
     ADMXRC3_STATUS statusDbg = ADMXRC3_SUCCESS;
     ADMXRC3_STATUS statusRst0 = ADMXRC3_SUCCESS;
@@ -1097,5 +1107,3 @@ void accelPrintInstrBuffer(size_t const aIdx) {
         event++;
     }
 }
-
-#endif
