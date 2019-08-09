@@ -202,6 +202,11 @@ static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t c
     size_t const offset = acc->info.id*CMD_IN_SUBQUEUE_LEN;
     cmd_header_t * const cmdHeaderPtr = (cmd_header_t * const)&cmdHeader;
 
+    /*printf("Length is %lu\n", length);
+    for (int i = 0; i < length; ++i) {
+        printf("%lx\n", command[i]);
+    }*/
+
     // While there is not enough space in the queue, look for already read commands
     while (acc->cmdInAvSlots < length) {
         ticketLockAcquire(&_bufferTicket);
@@ -1107,3 +1112,4 @@ void accelPrintInstrBuffer(size_t const aIdx) {
         event++;
     }
 }
+#endif
