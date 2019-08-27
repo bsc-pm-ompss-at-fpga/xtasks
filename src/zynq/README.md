@@ -64,3 +64,4 @@ Those device files are created by the [OmpSs@FPGA kernel module](https://pm.bsc.
 
  - `XTASKS_CONFIG_FILE`. Defines the path of xtasks config file to use during library initialization. By default, the path is `/dev/ompss_fpga/bit_info/xtasks`.
  - `XTASKS_RESET_POLARITY` Defines the reset polarity of Task Manager (and accelerators) in the bitstream. By default, the polarity is `1`.
+ - `XTASKS_FEATURES_CHECK` Defines whether the features checking in `/dev/ompss_fpga/bit_info/features/` must be done or not. By default, the checking is done.
