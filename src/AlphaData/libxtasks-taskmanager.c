@@ -43,7 +43,7 @@
 
 #include <admxrc3.h>
 
-#define PICOS
+//#define PICOS
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
@@ -211,7 +211,7 @@ static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t c
 SUB_CMD_CHECK_RD:
             idx = acc->cmdInRdIdx;
             cmdHeader = _cmdInQueue[offset + idx];
-            printf("Checking if update for rdIdx is available in %d\n", (int)(offset+idx));
+            //printf("Checking if update for rdIdx is available in %d\n", (int)(offset+idx));
             if (cmdHeaderPtr->valid == QUEUE_INVALID) {
                 uint8_t const cmdNumArgs = cmdHeaderPtr->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
                 size_t const cmdNumWords = (sizeof(cmd_exec_task_header_t) +
@@ -234,7 +234,7 @@ SUB_CMD_UPDATE_IDX:
         acc->cmdInWrIdx = (idx + length)%CMD_IN_SUBQUEUE_LEN;
         acc->cmdInAvSlots -= length;
 
-        printf("Sending command in %d\n", (int)offset+idx);
+        //printf("Sending command in %d\n", (int)offset+idx);
 
         // Do no write the header (1st word pointer by command ptr) until all payload is write
         // Check if 2 writes have to be done because there is not enough space at the end of subqueue
@@ -244,7 +244,7 @@ SUB_CMD_UPDATE_IDX:
             perror("Error submitting command\n");
         }
         if ((length - 1) > count) {
-            printf("Split command\n");
+            //printf("Split command\n");
             //memcpy(&_cmdInQueue[offset], command + 1 + count, (length - count)*sizeof(uint64_t));
             if (ADMXRC3_Write(_hDevice, 1, 0, READY_QUEUE_ADDRESS + offset*sizeof(uint64_t), (length - count)*sizeof(uint64_t), command + 1 + count) != ADMXRC3_SUCCESS) {
                 perror("Error submitting command\n");
@@ -822,7 +822,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     cmd_header_t * cmd = (cmd_header_t *)&cmdBuffer;
 
     if (cmd->valid == QUEUE_VALID) {
-        printf("Found finished task\n");
+        //printf("Found finished task\n");
         //Read the command header
         idx = acc->cmdOutIdx;
         cmdBuffer = subqueue[idx];
