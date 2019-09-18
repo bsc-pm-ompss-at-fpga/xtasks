@@ -365,7 +365,7 @@ xtasks_stat xtasksInit()
 
     //Check if bitstream is compatible
     if (checkbitstreamCompatibility() == BIT_NO_COMPAT) {
-        PRINT_ERROR("Loaded FPGA bitstream is not compatible with this version of libxtasks");
+        printErrorBitstreamCompatibility();
         return XTASKS_ERROR;
     }
 

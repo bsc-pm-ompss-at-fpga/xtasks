@@ -34,6 +34,7 @@
 #define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
 #define BIT_INFO_FEATURES_PATH  "/dev/ompss_fpga/bit_info/features"
 #define BIT_INFO_WRAPPER_PATH   "/dev/ompss_fpga/bit_info/wrapper_version"
+#define COMPATIBLE_WRAPPER_VER  1
 
 #define CMD_EXEC_TASK_CODE                0x01 ///< Command code for execute task commands
 #define CMD_SETUP_INS_CODE                0x02 ///< Command code for setup instrumentation info
@@ -135,6 +136,18 @@ void printErrorMsgCfgFile()
 }
 
 /*!
+ * \brief Prints an error message in STDERR about bitstream compatibility
+ */
+void printErrorBitstreamCompatibility()
+{
+    fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
+    fprintf(stderr, "       Check the wrapper version in '%s' .\n", BIT_INFO_WRAPPER_PATH);
+    fprintf(stderr, "       The compatible wrappers with this libxtasks are: %d.\n", COMPATIBLE_WRAPPER_VER);
+    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting \
+        XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
+}
+
+/*!
  * \brief Returns a xtasks_stat based on a xdma_status
  */
 xtasks_stat toXtasksStat(xdma_status const status)
@@ -229,8 +242,7 @@ bit_compatibility_t checkbitstreamCompatibility() {
     FILE * infoFile = fopen(BIT_INFO_WRAPPER_PATH, "r");
     if (infoFile != NULL) {
         int wrapperVersion;
-        int compatWrapperVersion = 1; //< Only version 1 is compatible
-        if (fscanf(infoFile, "%d", &wrapperVersion) != 1 || wrapperVersion != compatWrapperVersion) {
+        if (fscanf(infoFile, "%d", &wrapperVersion) != 1 || wrapperVersion != COMPATIBLE_WRAPPER_VER) {
             //NOTE: If read value is not an integer, probably it is "?" which means that the
             //      bitstream is too old
             compatible = BIT_NO_COMPAT;
