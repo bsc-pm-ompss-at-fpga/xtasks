@@ -33,6 +33,8 @@
 //#define PRINT_ERROR(_str_)
 #define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
 #define BIT_INFO_FEATURES_PATH  "/dev/ompss_fpga/bit_info/features"
+#define BIT_INFO_WRAPPER_PATH   "/dev/ompss_fpga/bit_info/wrapper_version"
+#define COMPATIBLE_WRAPPER_VER  1
 
 #define CMD_EXEC_TASK_CODE                0x01 ///< Command code for execute task commands
 #define CMD_SETUP_INS_CODE                0x02 ///< Command code for setup instrumentation info
@@ -60,6 +62,13 @@ typedef enum {
     BIT_FEATURE_UNKNOWN = 2,
     BIT_FEATURE_SKIP = 3
 } bit_feature_t;
+
+typedef enum {
+    BIT_NO_COMPAT = 0,
+    BIT_COMPAT = 1,
+    BIT_COMPAT_UNKNOWN = 2,
+    BIT_COMPAT_SKIP = 3
+} bit_compatibility_t;
 
 //! \brief Command header type
 typedef struct __attribute__ ((__packed__)) {
@@ -124,6 +133,18 @@ void printErrorMsgCfgFile()
         XTASKS_CONFIG_FILE_PATH);
     fprintf(stderr, "       Alternatively, you may force the configuration file path with \
         XTASKS_CONFIG_FILE environment variable.\n");
+}
+
+/*!
+ * \brief Prints an error message in STDERR about bitstream compatibility
+ */
+void printErrorBitstreamCompatibility()
+{
+    fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
+    fprintf(stderr, "       Check the wrapper version in '%s' .\n", BIT_INFO_WRAPPER_PATH);
+    fprintf(stderr, "       The compatible wrappers with this libxtasks are: %d.\n", COMPATIBLE_WRAPPER_VER);
+    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting \
+        XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
 }
 
 /*!
@@ -200,6 +221,34 @@ bit_feature_t checkbitstreamFeature(const char * featureName) {
             (buffer[0] == '0' ? BIT_FEATURE_NO_AVAIL : BIT_FEATURE_UNKNOWN);
     }
     return available;
+}
+
+/*!
+ * \brief Checks whether the current fpga bitstream is compatible with the libxtasks version or not
+ * \return  BIT_NO_COMPAT if the bitstream is not compatible
+ *          BIT_COMPAT if the bitstream is compatible
+ *          BIT_COMPAT_SKIP if the check was skipped due to user requirements
+ *          BIT_COMPAT_UNKNOWN if the compatibility cannot be determined or failed
+ */
+bit_compatibility_t checkbitstreamCompatibility() {
+    const char * compatCheck = getenv("XTASKS_COMPATIBILITY_CHECK");
+    if (compatCheck != NULL && compatCheck[0] == '0') {
+        return BIT_COMPAT_SKIP;
+    } else if (compatCheck != NULL && compatCheck[0] != '1') {
+        PRINT_ERROR("Invalid value in XTASKS_COMPATIBILITY_CHECK, must be 0 or 1. Ignoring it");
+    }
+
+    bit_compatibility_t compatible = BIT_COMPAT_UNKNOWN;
+    FILE * infoFile = fopen(BIT_INFO_WRAPPER_PATH, "r");
+    if (infoFile != NULL) {
+        int wrapperVersion;
+        if (fscanf(infoFile, "%d", &wrapperVersion) != 1 || wrapperVersion != COMPATIBLE_WRAPPER_VER) {
+            //NOTE: If read value is not an integer, probably it is "?" which means that the
+            //      bitstream is too old
+            compatible = BIT_NO_COMPAT;
+        }
+    }
+    return compatible;
 }
 
 #endif /* __LIBXTASKS_COMMON_H__ */

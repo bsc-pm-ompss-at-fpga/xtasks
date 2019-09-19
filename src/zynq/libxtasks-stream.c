@@ -194,6 +194,12 @@ xtasks_stat xtasksInit()
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
 
+    //Check if bitstream is compatible
+    if (checkbitstreamCompatibility() == BIT_NO_COMPAT) {
+        printErrorBitstreamCompatibility();
+        return XTASKS_ERROR;
+    }
+
     //Check if bitstream has the task manager feature
     if (checkbitstreamFeature("dma") == BIT_FEATURE_NO_AVAIL) {
         ret = XTASKS_ENOAV;

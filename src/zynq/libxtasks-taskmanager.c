@@ -363,6 +363,12 @@ xtasks_stat xtasksInit()
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
 
+    //Check if bitstream is compatible
+    if (checkbitstreamCompatibility() == BIT_NO_COMPAT) {
+        printErrorBitstreamCompatibility();
+        return XTASKS_ERROR;
+    }
+
     //Check if bitstream has the task manager feature
     if (checkbitstreamFeature("task_manager") == BIT_FEATURE_NO_AVAIL) {
         PRINT_ERROR("OmpSs@FPGA Task Manager not available in the loaded FPGA bitstream");
