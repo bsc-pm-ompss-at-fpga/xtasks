@@ -80,8 +80,8 @@ typedef struct __attribute__ ((__packed__)) {
 //! \brief Header of execute task command
 typedef struct __attribute__ ((__packed__)) {
     cmd_header_t header;     //[0  :63 ] Command header
-    uint64_t     parentID;   //[64 :127] Parent task identifier (may be null)
-    uint64_t     taskID;     //[128:195] Task identifier
+    uint64_t     taskID;     //[64 :127] Task identifier
+    uint64_t     parentID;   //[128:195] Parent task identifier (may be null)
 } cmd_exec_task_header_t;
 
 //! \brief Argument entry of execute task command
