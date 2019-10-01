@@ -67,6 +67,10 @@
 # error Installed libxdma is not supported (use >= 3.0)
 #endif
 
+//! \brief Platform and Backend strings
+const char _platformName[] = "zynq";
+const char _backendName[] = "taskmanager";
+
 //! \brief Response out command for execute task commands
 typedef struct __attribute__ ((__packed__)) {
     cmd_header_t header;     //[0  :63 ] Command header
@@ -154,12 +158,33 @@ static xtasks_ins_event    *_instrBuff;         ///< Buffer of instrumentation e
 static xtasks_ins_event    *_instrBuffPhy;      ///< Physical address of _instrBuff
 static xdma_buf_handle      _instrBuffHandle;   ///< Handle of _instrBuff in libxdma
 
+static int getResetPolarity()
+{
+    int ret = -1; //< Unknown
+    const char * polarity = getenv("XTASKS_RESET_POLARITY");
+    if (polarity != NULL) {
+        ret = *polarity - '0';
+        if (ret > 1 || ret < 0) {
+            PRINT_ERROR("Found unvalid value in XTASKS_RESET_POLARITY environment variable");
+            ret = -1;
+        }
+    }
+    return ret;
+}
+
 static inline __attribute__((always_inline)) void resetTaskManager()
 {
-    //Nudge one register
-    *_taskmanagerRst = 0x00;
-    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
-    *_taskmanagerRst = 0x01;
+    //Nudge reset register
+    const int polarity = getResetPolarity();
+    if (polarity == 0) {
+        *_taskmanagerRst = 0x00;
+        for ( volatile int i = 0; i < 10; i++ ) i = i; // Lose some time
+        *_taskmanagerRst = 0x01;
+    } else {
+        *_taskmanagerRst = 0x01;
+        for ( volatile int i = 0; i < 10; i++ ) i = i; // Lose some time
+        *_taskmanagerRst = 0x00;
+    }
 }
 
 static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t const length)
@@ -178,6 +203,13 @@ SUB_CMD_CHECK_RD:
             cmdHeader = _cmdInQueue[offset + idx];
             if (cmdHeaderPtr->valid == QUEUE_INVALID) {
                 uint8_t const cmdNumArgs = cmdHeaderPtr->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+#ifdef XTASKS_DEBUG
+                if (cmdNumArgs > EXT_HW_TASK_ARGS_LEN) {
+                    PRINT_ERROR("Found unexpected data when executing xtasksSubmitCommand");
+                    ticketLockRelease(&acc->cmdInLock);
+                    return XTASKS_ERROR;
+                }
+#endif /* XTASKS_DEBUG */
                 size_t const cmdNumWords = (sizeof(cmd_exec_task_header_t) +
                     sizeof(cmd_exec_task_arg_t)*cmdNumArgs)/sizeof(uint64_t);
                 acc->cmdInRdIdx = (idx + cmdNumWords)%CMD_IN_SUBQUEUE_LEN;
@@ -202,6 +234,7 @@ SUB_CMD_UPDATE_IDX:
         _cmdInQueue[offset + idx] = cmdHeader;
 
         // Release the lock as it is not needed anymore
+        __sync_synchronize();
         ticketLockRelease(&acc->cmdInLock);
 
         // Do no write the header (1st word pointer by command ptr) until all payload is write
@@ -236,8 +269,8 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     //At least we need 1 event + last event mark
     if (nEvents <= 1) return XTASKS_EINVAL;
 
-    //Check if bitstrem has the HW instrumentation feature
-    if (checkBitstremFeature("hw_instrumentation") == BIT_FEATURE_NO_AVAIL) {
+    //Check if bitstream has the HW instrumentation feature
+    if (checkbitstreamFeature("hw_instrumentation") == BIT_FEATURE_NO_AVAIL) {
         return XTASKS_ENOAV;
     }
 
@@ -330,9 +363,15 @@ xtasks_stat xtasksInit()
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
 
-    //Check if bitstrem has the task manager feature
-    if (checkBitstremFeature("task_manager") == BIT_FEATURE_NO_AVAIL) {
-        PRINT_ERROR("OmpSs@FPGA Task Manager not available in the loaded FPGA bitstrem");
+    //Check if bitstream is compatible
+    if (checkbitstreamCompatibility() == BIT_NO_COMPAT) {
+        printErrorBitstreamCompatibility();
+        return XTASKS_ERROR;
+    }
+
+    //Check if bitstream has the task manager feature
+    if (checkbitstreamFeature("task_manager") == BIT_FEATURE_NO_AVAIL) {
+        PRINT_ERROR("OmpSs@FPGA Task Manager not available in the loaded FPGA bitstream");
         return XTASKS_ENOAV;
     }
 
@@ -438,7 +477,7 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_OPEN_COMM;
     }
 
-    if (checkBitstremFeature("ext_task_manager") == BIT_FEATURE_NO_AVAIL) {
+    if (checkbitstreamFeature("ext_task_manager") == BIT_FEATURE_NO_AVAIL) {
         //Do not try to open the extended TM queues as we know that are not available
         _newQFd = -1;
         _remFiniQFd = -1;
@@ -637,6 +676,24 @@ xtasks_stat xtasksFini()
     }
 
     return ret;
+}
+
+xtasks_stat xtasksGetPlatform(const char ** name)
+{
+    if (name == NULL) return XTASKS_EINVAL;
+
+    *name = _platformName;
+
+    return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksGetBackend(const char ** name)
+{
+    if (name == NULL) return XTASKS_EINVAL;
+
+    *name = _backendName;
+
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetNumAccs(size_t * count)
@@ -962,8 +1019,14 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 
     idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 2nd word
     task_t * parentTask = (task_t *)((uintptr_t)(_newQueue[idx]));
-    (*task)->parentId = parentTask->id; //< The external parent identifier must be returned (not the xtasks internal one)
     _newQueue[idx] = 0; //< Cleanup the memory position
+#ifdef XTASKS_DEBUG
+    if (parentTask < _tasks) {
+        PRINT_ERROR("Found a child task of a FPGA created task. Path not supported yet");
+        return XTASKS_ERROR;
+    }
+#endif /* XTASKS_DEBUG */
+    (*task)->parentId = parentTask->id; //< The external parent identifier must be returned (not the xtasks internal one)
 
     idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 3rd word
     (*task)->typeInfo = _newQueue[idx];

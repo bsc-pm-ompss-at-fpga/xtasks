@@ -39,6 +39,10 @@
 # error Installed libxdma is not supported (use >= 3.0)
 #endif
 
+//! \brief Platform and Backend strings
+const char _platformName[] = "zynq";
+const char _backendName[] = "stream";
+
 //! \brief Response out command for execute task commands
 typedef struct __attribute__ ((__packed__)) {
     cmd_header_t header;     //[0  :63 ] Command header
@@ -93,8 +97,8 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     _numInstrEvents = 0;
     if (nEvents <= 1) return XTASKS_EINVAL;
 
-    //Check if bitstrem has the HW instrumentation feature
-    if (checkBitstremFeature("hw_instrumentation") == BIT_FEATURE_NO_AVAIL) {
+    //Check if bitstream has the HW instrumentation feature
+    if (checkbitstreamFeature("hw_instrumentation") == BIT_FEATURE_NO_AVAIL) {
         return XTASKS_ENOAV;
     }
 
@@ -190,10 +194,16 @@ xtasks_stat xtasksInit()
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
 
-    //Check if bitstrem has the task manager feature
-    if (checkBitstremFeature("dma") == BIT_FEATURE_NO_AVAIL) {
+    //Check if bitstream is compatible
+    if (checkbitstreamCompatibility() == BIT_NO_COMPAT) {
+        printErrorBitstreamCompatibility();
+        return XTASKS_ERROR;
+    }
+
+    //Check if bitstream has the task manager feature
+    if (checkbitstreamFeature("dma") == BIT_FEATURE_NO_AVAIL) {
         ret = XTASKS_ENOAV;
-        PRINT_ERROR("OmpSs@FPGA DMA feature not available in the loaded FPGA bitstrem");
+        PRINT_ERROR("OmpSs@FPGA DMA feature not available in the loaded FPGA bitstream");
         goto INIT_ERR_CHECK_FEAT;
     }
 
@@ -401,6 +411,24 @@ xtasks_stat xtasksFini()
     if (xdmaClose() != XDMA_SUCCESS) {
         return XTASKS_ERROR;
     }
+
+    return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksGetPlatform(const char ** name)
+{
+    if (name == NULL) return XTASKS_EINVAL;
+
+    *name = _platformName;
+
+    return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksGetBackend(const char ** name)
+{
+    if (name == NULL) return XTASKS_EINVAL;
+
+    *name = _backendName;
 
     return XTASKS_SUCCESS;
 }

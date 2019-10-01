@@ -81,10 +81,10 @@ typedef struct {
 } xtasks_acc_info;
 
 typedef struct {
-    uint32_t eventId;       ///< Event id
-    uint32_t eventType;     ///< Event type (one of xtasks_event_type)
     uint64_t value;         ///< Event value
     uint64_t timestamp;     ///< Event timestamp
+    uint32_t eventId;       ///< Event id
+    uint32_t eventType;     ///< Event type (one of xtasks_event_type)
 } xtasks_ins_event;
 
 typedef enum {
@@ -128,6 +128,18 @@ xtasks_stat xtasksInit();
  * \brief Cleanup the library
  */
 xtasks_stat xtasksFini();
+
+/*!
+ * \brief Get the platform name that libxtasks targets
+ * \param[out] name       Pointer that will be set with the platform string address
+ */
+xtasks_stat xtasksGetPlatform(const char ** name);
+
+/*!
+ * \brief Get the communication backend name that libxtasks uses
+ * \param[out] name       Pointer that will be set with the backend string address
+ */
+xtasks_stat xtasksGetBackend(const char ** name);
 
 /*!
  * \brief Get the number of available accelerators in the system
