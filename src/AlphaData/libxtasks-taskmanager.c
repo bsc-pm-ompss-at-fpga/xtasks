@@ -202,7 +202,13 @@ static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t c
     size_t const offset = acc->info.id*CMD_IN_SUBQUEUE_LEN;
     cmd_header_t * const cmdHeaderPtr = (cmd_header_t * const)&cmdHeader;
 
-    //printf("Submitting task\n");
+    //eturn XTASKS_SUCCESS;
+
+    /*printf("Submitting task\n");
+
+    for (int i = 0; i < 3; ++i) {
+        printf("0x%lX\n", command[i*2 + 3]);
+    }*/
 
     // While there is not enough space in the queue, look for already read commands
     while (acc->cmdInAvSlots < length) {
@@ -715,7 +721,7 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
     }
 
     argsCnt = task->cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET]++;
-    task->cmdExecArgs[argsCnt].flags = flags;
+    task->cmdExecArgs[argsCnt].flags = flags;//(flags & 0xFF) == 0x32 ? 0x12:flags;
     task->cmdExecArgs[argsCnt].id = id;
     task->cmdExecArgs[argsCnt].value = value;
 
@@ -815,7 +821,11 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
         return XTASKS_EINVAL;
     }
 
+    //return XTASKS_PENDING;
+
     ticketLockAcquire(&_bufferTicket);
+
+    //printf("Hi\n");
 
     size_t idx = acc->cmdOutIdx;
     uint64_t cmdBuffer = subqueue[idx];
