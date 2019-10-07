@@ -85,8 +85,9 @@ typedef struct __attribute__ ((__packed__)) {
     uint8_t   numCopies;     //[24 :31 ] Number of copies after the task dependencies
     uint32_t  archMask:24;   //[32 :55 ] Architecture mask in Picos style
     uint8_t   valid;         //[56 :63 ] Valid Entry
-    uint64_t  parentID;      //[64 :127] Parent task identifier that is creating the task
-    uint64_t  typeInfo;      //[128:191] Information of task type
+    uint64_t  taskID;        //[64 :127] Task identifier
+    uint64_t  parentID;      //[128:191] Parent task identifier that is creating the task
+    uint64_t  typeInfo;      //[192:255] Information of task type
 } new_task_header_t;
 
 //! \brief New task buffer representation (Only the dependence part, repeated N times)
@@ -107,9 +108,9 @@ typedef struct __attribute__ ((__packed__)) {
 //! \brief Remote finished task buffer representation
 typedef struct __attribute__ ((__packed__)) {
     uint8_t  valid;       //[0  :7  ] Valid Entry
-    uint8_t _padding[3];
-    uint32_t components;  //[32 :63 ] Number of tasks that have finished
-    uint64_t taskID;      //[64 :127] Parent task identifier that created the tasks
+    uint8_t _padding[7];
+    uint64_t taskID;      //[64 :127] Task identifier
+    uint64_t parentID;    //[128:191] Parent task identifier that created the tasks
 } rem_fini_task_t;
 
 //! \brief Internal library HW accelerator information
@@ -1017,18 +1018,15 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     (*task)->numCopies = hwTaskHeader->numCopies;
     (*task)->architecture = hwTaskHeader->archMask;
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 2nd word
-    task_t * parentTask = (task_t *)((uintptr_t)(_newQueue[idx]));
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->taskID field is the 2nd word
+    (*task)->taskId = _newQueue[idx];
     _newQueue[idx] = 0; //< Cleanup the memory position
-#ifdef XTASKS_DEBUG
-    if (parentTask < _tasks) {
-        PRINT_ERROR("Found a child task of a FPGA created task. Path not supported yet");
-        return XTASKS_ERROR;
-    }
-#endif /* XTASKS_DEBUG */
-    (*task)->parentId = parentTask->id; //< The external parent identifier must be returned (not the xtasks internal one)
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 3rd word
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 3th word
+    (*task)->parentId = _newQueue[idx]; //< NOTE: We don't know what is that ID (SW or HW)
+    _newQueue[idx] = 0; //< Cleanup the memory position
+
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 4th word
     (*task)->typeInfo = _newQueue[idx];
     _newQueue[idx] = 0; //< Cleanup the memory position
 
@@ -1053,7 +1051,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 
          //NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
         idx = (idx+1)%NEW_QUEUE_LEN;
-tmp = _newQueue[idx];
+        tmp = _newQueue[idx];
         uint32_t copyOffset = tmp >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
         (*task)->copies[i].offset = copyOffset;
         uint32_t copyAccessedLen = tmp >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
@@ -1090,14 +1088,8 @@ tmp = _newQueue[idx];
     return XDMA_SUCCESS;
 }
 
-xtasks_stat xtasksNotifyFinishedTask(xtasks_task_handle const parent, size_t count)
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
 {
-    task_t * task = (task_t *)(parent);
-
-    if (task == NULL) {
-        return XTASKS_EINVAL;
-    }
-
     // Get an empty slot into the TM remote finished queue
     size_t idx, next;
     do {
@@ -1109,8 +1101,8 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_handle const parent, size_t cou
     } while ( !__sync_bool_compare_and_swap(&_remFiniQueueIdx, idx, next) );
 
     // Copy the information into the queue
-    _remFiniQueue[idx].taskID = (uintptr_t)(task);
-    _remFiniQueue[idx].components = count;
+    _remFiniQueue[idx].taskID = (uintptr_t)(id);
+    _remFiniQueue[idx].parentID = (uintptr_t)(parent);
     __sync_synchronize();
     _remFiniQueue[idx].valid = QUEUE_VALID;
 

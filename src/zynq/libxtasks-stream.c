@@ -685,7 +685,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksNotifyFinishedTask(xtasks_task_handle const parent, size_t count)
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
 {
     return XTASKS_ENOSYS;
 }
