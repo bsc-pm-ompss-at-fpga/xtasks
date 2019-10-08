@@ -63,8 +63,12 @@
 #define NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET 32 ///< Offset of new_task_copy_t->accessedLen field in the 3rd word forming new_task_copy_t
 
 //! Check that libxdma version is compatible
-#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
-# error Installed libxdma is not supported (use >= 3.0)
+#define LIBXTASKS_MIN_MAJOR 3
+#define LIBXTASKS_MIN_MINOR 1
+#if !defined(LIBXDMA_VERSION_MAJOR) || !defined(LIBXDMA_VERSION_MINOR) || \
+    LIBXDMA_VERSION_MAJOR < LIBXTASKS_MIN_MAJOR || \
+    (LIBXDMA_VERSION_MAJOR == LIBXTASKS_MIN_MAJOR && LIBXDMA_VERSION_MINOR < LIBXTASKS_MIN_MINOR)
+# error Installed libxdma is not supported (use >= 3.1)
 #endif
 
 //! \brief Platform and Backend strings
