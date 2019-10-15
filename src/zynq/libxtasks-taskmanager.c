@@ -45,8 +45,8 @@
 #define CMD_IN_SUBQUEUE_LEN     64              ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
 #define CMD_OUT_QUEUE_LEN       1024            ///< Total number of entries in the cmd_out queue
 #define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
-#define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
-#define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
+#define NEW_QUEUE_LEN           1024            ///< Total number of entries in the new queue (tasks created inside the FPGA)
+#define REMFINI_QUEUE_LEN       2048            ///< Total number of entries in the remote finished queue
 #define QUEUE_VALID             0x80
 #define QUEUE_RESERVED          0x40
 #define QUEUE_INVALID           0x00
@@ -111,8 +111,8 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief Remote finished task buffer representation
 typedef struct __attribute__ ((__packed__)) {
-    uint8_t  valid;       //[0  :7  ] Valid Entry
-    uint8_t _padding[7];
+    uint8_t  _padding[7];
+    uint8_t  valid;       //[56 :63 ] Valid Entry
     uint64_t taskID;      //[64 :127] Task identifier
     uint64_t parentID;    //[128:191] Parent task identifier that created the tasks
 } rem_fini_task_t;
@@ -154,7 +154,7 @@ static uint64_t            *_cmdInQueue;        ///< Command IN queue
 static uint64_t            *_cmdOutQueue;       ///< Command OUT queue
 static uint64_t            *_newQueue;          ///< Buffer for the new tasks created in the HW
 static size_t               _newQueueIdx;       ///< Reading index of the _newQueue
-static rem_fini_task_t     *_remFiniQueue;      ///< Buffer for the remote finished tasks
+static uint64_t            *_remFiniQueue;      ///< Buffer for the remote finished tasks
 static size_t               _remFiniQueueIdx;   ///< Writing index of the _remFiniQueue
 static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Manager
 
@@ -543,7 +543,7 @@ xtasks_stat xtasksInit()
     if (_remFiniQFd == -1) {
        _remFiniQueue = NULL;
     } else {
-        _remFiniQueue = (rem_fini_task_t *)mmap(NULL, sizeof(rem_fini_task_t)*REMFINI_QUEUE_LEN,
+        _remFiniQueue = (uint64_t *)mmap(NULL, sizeof(uint64_t)*REMFINI_QUEUE_LEN,
             PROT_READ | PROT_WRITE, MAP_SHARED, _remFiniQFd, 0);
         if (_remFiniQueue == MAP_FAILED) {
             ret = XTASKS_EFILE;
@@ -552,7 +552,7 @@ xtasks_stat xtasksInit()
         }
 
         //If any, invalidate tasks in remFiniQueue
-        _memset(_remFiniQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
+        _memset(_remFiniQueue, 0, REMFINI_QUEUE_LEN*sizeof(uint64_t));
     }
 
     _taskmanagerRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE,
@@ -596,7 +596,7 @@ xtasks_stat xtasksInit()
     INIT_ERR_ALLOC_TASKS:
     INIT_ERR_MMAP_RST:
         if (_remFiniQueue != NULL)
-            munmap(_remFiniQueue, sizeof(rem_fini_task_t)*REMFINI_QUEUE_LEN);
+            munmap(_remFiniQueue, sizeof(uint64_t)*REMFINI_QUEUE_LEN);
     INIT_ERR_MAP_REMFINI:
         if (_newQueue != NULL)
             munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN);
@@ -650,7 +650,7 @@ xtasks_stat xtasksFini()
     //Unmap the Task Manager queues
     int statusRd, statusFi, statusNw, statusRFi, statusCtrl;
     statusCtrl = munmap((void *)_taskmanagerRst, sizeof(uint32_t));
-    statusRFi = _remFiniQueue != NULL ? munmap(_remFiniQueue, sizeof(rem_fini_task_t)*REMFINI_QUEUE_LEN) : 0;
+    statusRFi = _remFiniQueue != NULL ? munmap(_remFiniQueue, sizeof(uint64_t)*REMFINI_QUEUE_LEN) : 0;
     statusNw = _newQueue != NULL ? munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN) : 0;
     statusFi = munmap(_cmdOutQueue, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN);
     statusRd = munmap(_cmdInQueue, sizeof(uint64_t)*CMD_IN_QUEUE_LEN);
@@ -1096,19 +1096,26 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id
 {
     // Get an empty slot into the TM remote finished queue
     size_t idx, next;
+    rem_fini_task_t * entryHeader;
     do {
         idx = _remFiniQueueIdx;
-        if (_remFiniQueue[idx].valid == QUEUE_VALID) {
+        entryHeader = (rem_fini_task_t *)(&_remFiniQueue[idx]);
+        if (entryHeader->valid == QUEUE_VALID) {
             return XTASKS_ENOENTRY;
         }
-        next = (idx+1)%REMFINI_QUEUE_LEN;
+        next = (idx+sizeof(rem_fini_task_t)/sizeof(uint64_t))%REMFINI_QUEUE_LEN;
     } while ( !__sync_bool_compare_and_swap(&_remFiniQueueIdx, idx, next) );
 
-    // Copy the information into the queue
-    _remFiniQueue[idx].taskID = (uintptr_t)(id);
-    _remFiniQueue[idx].parentID = (uintptr_t)(parent);
+    //NOTE: rem_fini_task_t->taskId is the 1st word
+    idx = (idx+1)%REMFINI_QUEUE_LEN;
+    _remFiniQueue[idx] = id;
+
+    //NOTE: rem_fini_task_t->taskId is the 2nd word
+    idx = (idx+1)%REMFINI_QUEUE_LEN;
+    _remFiniQueue[idx] = parent;
+
     __sync_synchronize();
-    _remFiniQueue[idx].valid = QUEUE_VALID;
+    entryHeader->valid = QUEUE_VALID;
 
     return XTASKS_SUCCESS;
 }
@@ -1195,7 +1202,7 @@ uint64_t newQueue(size_t const idx)
     return _newQueue[idx];
 }
 
-rem_fini_task_t remFiniQueue(size_t const idx)
+uint64_t remFiniQueue(size_t const idx)
 {
     return _remFiniQueue[idx];
 }
