@@ -46,7 +46,7 @@
 #define CMD_OUT_QUEUE_LEN       1024            ///< Total number of entries in the cmd_out queue
 #define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
 #define NEW_QUEUE_LEN           1024            ///< Total number of entries in the new queue (tasks created inside the FPGA)
-#define REMFINI_QUEUE_LEN       2048            ///< Total number of entries in the remote finished queue
+#define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
 #define QUEUE_VALID             0x80
 #define QUEUE_RESERVED          0x40
 #define QUEUE_INVALID           0x00
