@@ -1110,7 +1110,7 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id
     idx = (idx+1)%REMFINI_QUEUE_LEN;
     _remFiniQueue[idx] = id;
 
-    //NOTE: rem_fini_task_t->taskId is the 2nd word
+    //NOTE: rem_fini_task_t->parentId is the 2nd word
     idx = (idx+1)%REMFINI_QUEUE_LEN;
     _remFiniQueue[idx] = parent;
 
