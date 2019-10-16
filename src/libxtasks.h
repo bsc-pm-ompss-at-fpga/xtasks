@@ -166,12 +166,12 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * i
  * \brief Create a new task
  * \param[in]  id         Task identifier that will be associated to the task
  * \param[in]  accel      Accelerator handle of the accelerator where the task will be sent
- * \param[in]  parent     Task handle of the parent task (it can be NULL if not knwon or not needed)
+ * \param[in]  parent     Parent task identifier (it can be NULL if not knwon or not needed)
  * \param[in]  compute    Compute flags. Defines whether the accelerator should execute the task core or not
  * \param[out] handle     Pointer to a valid xtasks_task_handle where the task handle will be set
  */
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_task_handle const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle);
+    xtasks_task_id const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle);
 
 /*!
  * \brief Delete a task

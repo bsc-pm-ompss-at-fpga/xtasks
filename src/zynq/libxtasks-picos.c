@@ -272,7 +272,7 @@ static int getFreeTaskEntry()
 }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_task_handle const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
+    xtasks_task_id const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
     acc_t * accel = (acc_t *)accId;
     int idx = getFreeTaskEntry();
