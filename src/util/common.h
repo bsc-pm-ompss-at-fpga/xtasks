@@ -131,8 +131,8 @@ void printErrorMsgCfgFile()
     fprintf(stderr, "ERROR: xTasks Library cannot access the fpga configuration device file.\n");
     fprintf(stderr, "       Ensure that file '%s' exists and it has read permissions.\n",
         XTASKS_CONFIG_FILE_PATH);
-    fprintf(stderr, "       Alternatively, you may force the configuration file path with \
-        XTASKS_CONFIG_FILE environment variable.\n");
+    fprintf(stderr, "       Alternatively, you may force the configuration file path with");
+    fprintf(stderr, " XTASKS_CONFIG_FILE environment variable.\n");
 }
 
 /*!
@@ -141,10 +141,10 @@ void printErrorMsgCfgFile()
 void printErrorBitstreamCompatibility()
 {
     fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
-    fprintf(stderr, "       Check the wrapper version in '%s' .\n", BIT_INFO_WRAPPER_PATH);
-    fprintf(stderr, "       The compatible wrappers with this libxtasks are: %d.\n", COMPATIBLE_WRAPPER_VER);
-    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting \
-        XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
+    fprintf(stderr, "       Check the wrapper version of loaded bitstream at '%s'.\n", BIT_INFO_WRAPPER_PATH);
+    fprintf(stderr, "       The compatible versions are: %d.\n", COMPATIBLE_WRAPPER_VER);
+    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting");
+    fprintf(stderr, " XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
 }
 
 /*!

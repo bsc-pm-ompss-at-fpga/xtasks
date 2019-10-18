@@ -45,7 +45,7 @@
 #define CMD_IN_SUBQUEUE_LEN     64              ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
 #define CMD_OUT_QUEUE_LEN       1024            ///< Total number of entries in the cmd_out queue
 #define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
-#define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
+#define NEW_QUEUE_LEN           1024            ///< Total number of entries in the new queue (tasks created inside the FPGA)
 #define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
 #define QUEUE_VALID             0x80
 #define QUEUE_RESERVED          0x40
@@ -63,8 +63,12 @@
 #define NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET 32 ///< Offset of new_task_copy_t->accessedLen field in the 3rd word forming new_task_copy_t
 
 //! Check that libxdma version is compatible
-#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
-# error Installed libxdma is not supported (use >= 3.0)
+#define LIBXTASKS_MIN_MAJOR 3
+#define LIBXTASKS_MIN_MINOR 1
+#if !defined(LIBXDMA_VERSION_MAJOR) || !defined(LIBXDMA_VERSION_MINOR) || \
+    LIBXDMA_VERSION_MAJOR < LIBXTASKS_MIN_MAJOR || \
+    (LIBXDMA_VERSION_MAJOR == LIBXTASKS_MIN_MAJOR && LIBXDMA_VERSION_MINOR < LIBXTASKS_MIN_MINOR)
+# error Installed libxdma is not supported (use >= 3.1)
 #endif
 
 //! \brief Platform and Backend strings
@@ -85,8 +89,9 @@ typedef struct __attribute__ ((__packed__)) {
     uint8_t   numCopies;     //[24 :31 ] Number of copies after the task dependencies
     uint32_t  archMask:24;   //[32 :55 ] Architecture mask in Picos style
     uint8_t   valid;         //[56 :63 ] Valid Entry
-    uint64_t  parentID;      //[64 :127] Parent task identifier that is creating the task
-    uint64_t  typeInfo;      //[128:191] Information of task type
+    uint64_t  taskID;        //[64 :127] Task identifier
+    uint64_t  parentID;      //[128:191] Parent task identifier that is creating the task
+    uint64_t  typeInfo;      //[192:255] Information of task type
 } new_task_header_t;
 
 //! \brief New task buffer representation (Only the dependence part, repeated N times)
@@ -106,10 +111,10 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief Remote finished task buffer representation
 typedef struct __attribute__ ((__packed__)) {
-    uint8_t  valid;       //[0  :7  ] Valid Entry
-    uint8_t _padding[3];
-    uint32_t components;  //[32 :63 ] Number of tasks that have finished
-    uint64_t taskID;      //[64 :127] Parent task identifier that created the tasks
+    uint8_t  _padding[7];
+    uint8_t  valid;       //[56 :63 ] Valid Entry
+    uint64_t taskID;      //[64 :127] Task identifier
+    uint64_t parentID;    //[128:191] Parent task identifier that created the tasks
 } rem_fini_task_t;
 
 //! \brief Internal library HW accelerator information
@@ -149,7 +154,7 @@ static uint64_t            *_cmdInQueue;        ///< Command IN queue
 static uint64_t            *_cmdOutQueue;       ///< Command OUT queue
 static uint64_t            *_newQueue;          ///< Buffer for the new tasks created in the HW
 static size_t               _newQueueIdx;       ///< Reading index of the _newQueue
-static rem_fini_task_t     *_remFiniQueue;      ///< Buffer for the remote finished tasks
+static uint64_t            *_remFiniQueue;      ///< Buffer for the remote finished tasks
 static size_t               _remFiniQueueIdx;   ///< Writing index of the _remFiniQueue
 static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Manager
 
@@ -538,7 +543,7 @@ xtasks_stat xtasksInit()
     if (_remFiniQFd == -1) {
        _remFiniQueue = NULL;
     } else {
-        _remFiniQueue = (rem_fini_task_t *)mmap(NULL, sizeof(rem_fini_task_t)*REMFINI_QUEUE_LEN,
+        _remFiniQueue = (uint64_t *)mmap(NULL, sizeof(uint64_t)*REMFINI_QUEUE_LEN,
             PROT_READ | PROT_WRITE, MAP_SHARED, _remFiniQFd, 0);
         if (_remFiniQueue == MAP_FAILED) {
             ret = XTASKS_EFILE;
@@ -547,7 +552,7 @@ xtasks_stat xtasksInit()
         }
 
         //If any, invalidate tasks in remFiniQueue
-        _memset(_remFiniQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
+        _memset(_remFiniQueue, 0, REMFINI_QUEUE_LEN*sizeof(uint64_t));
     }
 
     _taskmanagerRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE,
@@ -591,7 +596,7 @@ xtasks_stat xtasksInit()
     INIT_ERR_ALLOC_TASKS:
     INIT_ERR_MMAP_RST:
         if (_remFiniQueue != NULL)
-            munmap(_remFiniQueue, sizeof(rem_fini_task_t)*REMFINI_QUEUE_LEN);
+            munmap(_remFiniQueue, sizeof(uint64_t)*REMFINI_QUEUE_LEN);
     INIT_ERR_MAP_REMFINI:
         if (_newQueue != NULL)
             munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN);
@@ -645,7 +650,7 @@ xtasks_stat xtasksFini()
     //Unmap the Task Manager queues
     int statusRd, statusFi, statusNw, statusRFi, statusCtrl;
     statusCtrl = munmap((void *)_taskmanagerRst, sizeof(uint32_t));
-    statusRFi = _remFiniQueue != NULL ? munmap(_remFiniQueue, sizeof(rem_fini_task_t)*REMFINI_QUEUE_LEN) : 0;
+    statusRFi = _remFiniQueue != NULL ? munmap(_remFiniQueue, sizeof(uint64_t)*REMFINI_QUEUE_LEN) : 0;
     statusNw = _newQueue != NULL ? munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN) : 0;
     statusFi = munmap(_cmdOutQueue, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN);
     statusRd = munmap(_cmdInQueue, sizeof(uint64_t)*CMD_IN_QUEUE_LEN);
@@ -741,7 +746,7 @@ static int getFreeTaskEntry()
 }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_task_handle const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
+    xtasks_task_id const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
     acc_t * accel = (acc_t *)accId;
     int idx = getFreeTaskEntry();
@@ -1017,18 +1022,15 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     (*task)->numCopies = hwTaskHeader->numCopies;
     (*task)->architecture = hwTaskHeader->archMask;
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 2nd word
-    task_t * parentTask = (task_t *)((uintptr_t)(_newQueue[idx]));
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->taskID field is the 2nd word
+    (*task)->taskId = _newQueue[idx];
     _newQueue[idx] = 0; //< Cleanup the memory position
-#ifdef XTASKS_DEBUG
-    if (parentTask < _tasks) {
-        PRINT_ERROR("Found a child task of a FPGA created task. Path not supported yet");
-        return XTASKS_ERROR;
-    }
-#endif /* XTASKS_DEBUG */
-    (*task)->parentId = parentTask->id; //< The external parent identifier must be returned (not the xtasks internal one)
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 3rd word
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 3th word
+    (*task)->parentId = _newQueue[idx]; //< NOTE: We don't know what is that ID (SW or HW)
+    _newQueue[idx] = 0; //< Cleanup the memory position
+
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 4th word
     (*task)->typeInfo = _newQueue[idx];
     _newQueue[idx] = 0; //< Cleanup the memory position
 
@@ -1053,7 +1055,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 
          //NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
         idx = (idx+1)%NEW_QUEUE_LEN;
-tmp = _newQueue[idx];
+        tmp = _newQueue[idx];
         uint32_t copyOffset = tmp >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
         (*task)->copies[i].offset = copyOffset;
         uint32_t copyAccessedLen = tmp >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
@@ -1090,29 +1092,30 @@ tmp = _newQueue[idx];
     return XDMA_SUCCESS;
 }
 
-xtasks_stat xtasksNotifyFinishedTask(xtasks_task_handle const parent, size_t count)
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
 {
-    task_t * task = (task_t *)(parent);
-
-    if (task == NULL) {
-        return XTASKS_EINVAL;
-    }
-
     // Get an empty slot into the TM remote finished queue
     size_t idx, next;
+    rem_fini_task_t * entryHeader;
     do {
         idx = _remFiniQueueIdx;
-        if (_remFiniQueue[idx].valid == QUEUE_VALID) {
+        entryHeader = (rem_fini_task_t *)(&_remFiniQueue[idx]);
+        if (entryHeader->valid == QUEUE_VALID) {
             return XTASKS_ENOENTRY;
         }
-        next = (idx+1)%REMFINI_QUEUE_LEN;
+        next = (idx+sizeof(rem_fini_task_t)/sizeof(uint64_t))%REMFINI_QUEUE_LEN;
     } while ( !__sync_bool_compare_and_swap(&_remFiniQueueIdx, idx, next) );
 
-    // Copy the information into the queue
-    _remFiniQueue[idx].taskID = (uintptr_t)(task);
-    _remFiniQueue[idx].components = count;
+    //NOTE: rem_fini_task_t->taskId is the 1st word
+    idx = (idx+1)%REMFINI_QUEUE_LEN;
+    _remFiniQueue[idx] = id;
+
+    //NOTE: rem_fini_task_t->parentId is the 2nd word
+    idx = (idx+1)%REMFINI_QUEUE_LEN;
+    _remFiniQueue[idx] = parent;
+
     __sync_synchronize();
-    _remFiniQueue[idx].valid = QUEUE_VALID;
+    entryHeader->valid = QUEUE_VALID;
 
     return XTASKS_SUCCESS;
 }
@@ -1199,7 +1202,7 @@ uint64_t newQueue(size_t const idx)
     return _newQueue[idx];
 }
 
-rem_fini_task_t remFiniQueue(size_t const idx)
+uint64_t remFiniQueue(size_t const idx)
 {
     return _remFiniQueue[idx];
 }
