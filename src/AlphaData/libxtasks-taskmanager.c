@@ -155,7 +155,7 @@ static uint64_t            *_cmdInQueue;        ///< Command IN queue
 static uint64_t            *_cmdOutQueue;       ///< Command OUT queue
 static uint64_t            *_newQueue;          ///< Buffer for the new tasks created in the HW
 static size_t               _newQueueIdx;       ///< Reading index of the _newQueue
-static rem_fini_task_t     *_remFiniQueue;      ///< Buffer for the remote finished tasks
+static uint64_t            *_remFiniQueue;      ///< Buffer for the remote finished tasks
 static size_t               _remFiniQueueIdx;   ///< Writing index of the _remFiniQueue
 static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Manager
 #ifdef PICOS
@@ -661,7 +661,7 @@ static int getFreeTaskEntry()
 }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_task_handle const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
+    xtasks_task_id const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
     acc_t * accel = (acc_t *)accId;
     int idx = getFreeTaskEntry();
@@ -681,6 +681,8 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
 }
+
+
 
 xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
 {
@@ -980,30 +982,34 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksNotifyFinishedTask(xtasks_task_handle const parent, size_t count)
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
 {
-    task_t * task = (task_t *)(parent);
-
-    if (task == NULL) {
-        return XTASKS_EINVAL;
-    }
+    rem_fini_task_t * entryHeader;
 
     ticketLockAcquire(&_bufferTicket);
 
     // Get an empty slot into the TM remote finished queue
     size_t idx;
     idx = _remFiniQueueIdx;
-    if (_remFiniQueue[idx].valid == QUEUE_VALID) {
+    entryHeader = (rem_fini_task_t *)(&_remFiniQueue[idx]);
+    if (entryHeader->valid == QUEUE_VALID) {
         ticketLockRelease(&_bufferTicket);
         return XTASKS_ENOENTRY;
     }
+
+    //NOTE: rem_fini_task_t->taskId is the 1st word
+    idx = (idx+1)%REMFINI_QUEUE_LEN;
+    _remFiniQueue[idx] = id;
+
+    //NOTE: rem_fini_task_t->parentId is the 2nd word
+    idx = (idx+1)%REMFINI_QUEUE_LEN;
+    _remFiniQueue[idx] = parent;
+
+    __sync_synchronize();
+    entryHeader->valid = QUEUE_VALID;
+
     _remFiniQueueIdx = (idx+1)%REMFINI_QUEUE_LEN;
 
-    // Copy the information into the queue
-    _remFiniQueue[idx].taskID = (uintptr_t)(task);
-    _remFiniQueue[idx].components = count;
-    __sync_synchronize();
-    _remFiniQueue[idx].valid = QUEUE_VALID;
     ticketLockRelease(&_bufferTicket);
 
     return XTASKS_SUCCESS;
