@@ -35,8 +35,12 @@
 #define NUM_RUN_TASKS           (8192/256)      //NOTE: 2 pages (8192 bytes) considering that each task is 256 bytes
 
 //! Check that libxdma version is compatible
-#if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
-# error Installed libxdma is not supported (use >= 3.0)
+#define LIBXTASKS_MIN_MAJOR 3
+#define LIBXTASKS_MIN_MINOR 1
+#if !defined(LIBXDMA_VERSION_MAJOR) || !defined(LIBXDMA_VERSION_MINOR) || \
+    LIBXDMA_VERSION_MAJOR < LIBXTASKS_MIN_MAJOR || \
+    (LIBXDMA_VERSION_MAJOR == LIBXTASKS_MIN_MAJOR && LIBXDMA_VERSION_MINOR < LIBXTASKS_MIN_MINOR)
+# error Installed libxdma is not supported (use >= 3.1)
 #endif
 
 //! \brief Platform and Backend strings
@@ -478,7 +482,7 @@ static int getFreeTaskEntry(acc_t * accel)
 }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_task_handle const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
+    xtasks_task_id const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
 {
     acc_t * accel = (acc_t *)accId;
     int idx = getFreeTaskEntry(accel);
@@ -685,7 +689,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksNotifyFinishedTask(xtasks_task_handle const parent, size_t count)
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
 {
     return XTASKS_ENOSYS;
 }
