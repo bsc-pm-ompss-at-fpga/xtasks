@@ -43,7 +43,7 @@
 
 #include <admxrc3.h>
 
-//#define PICOS
+#define PICOS
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
@@ -201,14 +201,6 @@ static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t c
     uint64_t cmdHeader;
     size_t const offset = acc->info.id*CMD_IN_SUBQUEUE_LEN;
     cmd_header_t * const cmdHeaderPtr = (cmd_header_t * const)&cmdHeader;
-
-    //eturn XTASKS_SUCCESS;
-
-    /*printf("Submitting task\n");
-
-    for (int i = 0; i < 3; ++i) {
-        printf("0x%lX\n", command[i*2 + 3]);
-    }*/
 
     // While there is not enough space in the queue, look for already read commands
     while (acc->cmdInAvSlots < length) {
@@ -825,14 +817,14 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
 
     ticketLockAcquire(&_bufferTicket);
 
-    //printf("Hi\n");
-
     size_t idx = acc->cmdOutIdx;
     uint64_t cmdBuffer = subqueue[idx];
     cmd_header_t * cmd = (cmd_header_t *)&cmdBuffer;
 
     if (cmd->valid == QUEUE_VALID) {
-        //printf("Found finished task\n");
+
+        //printf("Found finished task, values are %lX %lX\n", subqueue[idx], subqueue[idx+1]);
+
         //Read the command header
         idx = acc->cmdOutIdx;
         cmdBuffer = subqueue[idx];
