@@ -43,7 +43,7 @@
 
 #include <admxrc3.h>
 
-#define PICOS
+//#define PICOS
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
