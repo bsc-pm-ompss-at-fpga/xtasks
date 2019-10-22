@@ -412,30 +412,40 @@ xtasks_stat xtasksInit()
         _cmdOutQueue[i] = 0;
     }
 
-    _newQueue = NULL;
-    /*admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, NEW_QUEUE_ADDRESS, sizeof(uint64_t)*NEW_QUEUE_LEN, (void**)&_newQueue);
-    if (admxrc3_status != ADMXRC3_SUCCESS) {
-        ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map new queue of Task Manager");
-        goto INIT_ERR_MAP_NEW;
-    }*/
+    bool ext = (getenv("EXT_TASK_MANAGER") != NULL);
+    if (!ext)
+        _newQueue = NULL;
+    else {
+        admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, NEW_QUEUE_ADDRESS, sizeof(uint64_t)*NEW_QUEUE_LEN, (void**)&_newQueue);
+        if (admxrc3_status != ADMXRC3_SUCCESS) {
+            ret = XTASKS_EFILE;
+            PRINT_ERROR("Cannot map new queue of Task Manager");
+            goto INIT_ERR_MAP_NEW;
+        }
 
-    //If any, invalidate tasks in newQueue
-    //_memset(_newQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
-    //for (int i = 0; i < NEW_QUEUE_LEN; ++i) {
-    //    _newQueue[i] = 0;
-    //}
+        //If any, invalidate tasks in newQueue
+        //_memset(_newQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
+        for (int i = 0; i < NEW_QUEUE_LEN; ++i) {
+            _newQueue[i] = 0;
+        }
+    }
     
-    _remFiniQueue = NULL;
-    /*admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, REMFINI_QUEUE_ADDRESS, sizeof(uint64_t)*REMFINI_QUEUE_LEN, (void**)&_remFiniQueue);
-    if (admxrc3_status != ADMXRC3_SUCCESS) {
-        ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map remote finished queue of Task Manager");
-        goto INIT_ERR_MAP_REMFINI;
-    }*/
+    if (!ext)
+        _remFiniQueue = NULL;
+    else {
+        admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, REMFINI_QUEUE_ADDRESS, sizeof(uint64_t)*REMFINI_QUEUE_LEN, (void**)&_remFiniQueue);
+        if (admxrc3_status != ADMXRC3_SUCCESS) {
+            ret = XTASKS_EFILE;
+            PRINT_ERROR("Cannot map remote finished queue of Task Manager");
+            goto INIT_ERR_MAP_REMFINI;
+        }
 
-    //If any, invalidate tasks in remFiniQueue
-    //_memset(_remFiniQueue, 0, REMFINI_QUEUE_LEN*sizeof(uint64_t));
+        //If any, invalidate tasks in remFiniQueue
+        //_memset(_remFiniQueue, 0, REMFINI_QUEUE_LEN*sizeof(uint64_t));
+        for (int i = 0; i < REMFINI_QUEUE_LEN; ++i) {
+            _remFiniQueue[i] = 0;
+        }
+    }
 
     admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, TASKMANAGER_RESET_ADDRESS, sizeof(uint32_t), (void**)&_taskmanagerRst);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
@@ -582,8 +592,10 @@ xtasks_stat xtasksFini()
     statusCtrl = ADMXRC3_UnmapWindow(_hDevice, (void*)_taskmanagerRst);
     statusFi = ADMXRC3_UnmapWindow(_hDevice, _cmdOutQueue);
     statusNw = statusRFi = ADMXRC3_SUCCESS;
-    //statusNw = ADMXRC3_UnmapWindow(_hDevice, _newQueue);
-    //statusRFi = ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
+    if (_newQueue != NULL)
+        statusNw = ADMXRC3_UnmapWindow(_hDevice, _newQueue);
+    if (_remFiniQueue != NULL)
+        statusRFi = ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
     statusRd = ADMXRC3_UnmapWindow(_hDevice, _cmdInQueue);
     ADMXRC3_STATUS statusDbg = ADMXRC3_SUCCESS;
     ADMXRC3_STATUS statusRst0 = ADMXRC3_SUCCESS;
@@ -681,8 +693,6 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
 }
-
-
 
 xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
 {
@@ -815,8 +825,6 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
         return XTASKS_EINVAL;
     }
 
-    //return XTASKS_PENDING;
-
     ticketLockAcquire(&_bufferTicket);
 
     size_t idx = acc->cmdOutIdx;
@@ -905,10 +913,10 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 
     //Extract the information from the new buffer
     *task = realloc(*task,
-        sizeof(xtasks_newtask) +
-        sizeof(xtasks_newtask_arg)*hwTaskHeader->numArgs +
-        sizeof(xtasks_newtask_dep)*hwTaskHeader->numDeps +
-        sizeof(xtasks_newtask_copy)*hwTaskHeader->numCopies);
+                    sizeof(xtasks_newtask) +
+                    sizeof(xtasks_newtask_arg)*hwTaskHeader->numArgs +
+                    sizeof(xtasks_newtask_dep)*hwTaskHeader->numDeps +
+                    sizeof(xtasks_newtask_copy)*hwTaskHeader->numCopies);
     (*task)->args = (xtasks_newtask_arg *)(*task + 1);
     (*task)->numArgs = hwTaskHeader->numArgs;
     (*task)->deps = (xtasks_newtask_dep *)((*task)->args + (*task)->numArgs);
@@ -917,37 +925,43 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     (*task)->numCopies = hwTaskHeader->numCopies;
     (*task)->architecture = hwTaskHeader->archMask;
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 2nd word
-    task_t * parentTask = (task_t *)((uintptr_t)(_newQueue[idx]));
-    (*task)->parentId = parentTask->id; //< The external parent identifier must be returned (not the xtasks internal one)
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->taskID field is the 2nd word
+    (*task)->taskId = _newQueue[idx];
     _newQueue[idx] = 0; //< Cleanup the memory position
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 3rd word
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 3th word
+    (*task)->parentId = _newQueue[idx]; //< NOTE: We don't know what is that ID (SW or HW)
+    _newQueue[idx] = 0; //< Cleanup the memory position
+
+    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 4th word
     (*task)->typeInfo = _newQueue[idx];
     _newQueue[idx] = 0; //< Cleanup the memory position
 
     for (size_t i = 0; i < (*task)->numCopies; ++i) {
         //NOTE: Each copy uses 3 uint64_t elements in the newQueue
         //      After using each memory position, we have to clean it
+        uint64_t tmp;
 
         //NOTE: new_task_copy_t->address field is the 1st word
         idx = (idx+1)%NEW_QUEUE_LEN;
         (*task)->copies[i].address = (void *)((uintptr_t)_newQueue[idx]);
         _newQueue[idx] = 0;
 
-         //NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
+        //NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
         idx = (idx+1)%NEW_QUEUE_LEN;
-        uint32_t copyFlags = _newQueue[idx] >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
+        tmp = _newQueue[idx];
+        uint8_t copyFlags = tmp >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
         (*task)->copies[i].flags = copyFlags;
-        uint32_t copySize = _newQueue[idx] >> NEW_TASK_COPY_SIZE_WORDOFFSET;
+        uint32_t copySize = tmp >> NEW_TASK_COPY_SIZE_WORDOFFSET;
         (*task)->copies[i].size = copySize;
         _newQueue[idx] = 0;
 
-         //NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
+        //NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
         idx = (idx+1)%NEW_QUEUE_LEN;
-        uint32_t copyOffset = _newQueue[idx] >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
+        tmp = _newQueue[idx];
+        uint32_t copyOffset = tmp >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
         (*task)->copies[i].offset = copyOffset;
-        uint32_t copyAccessedLen = _newQueue[idx] >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
+        uint32_t copyAccessedLen = tmp >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
         (*task)->copies[i].accessedLen = copyAccessedLen;
         _newQueue[idx] = 0;
     }
