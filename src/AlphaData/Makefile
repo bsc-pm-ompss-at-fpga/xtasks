@@ -1,8 +1,8 @@
 CC    = gcc
 CC_   = $(CC)
 
-CFLAGS_      = $(CFLAGS) -I../ -I$(ALPHADATA_API)/include -O3 -std=c99 -Wall -fpic
-LDFLAGS_     = $(LDFLAGS) -ladmxrc3
+CFLAGS_      = $(CFLAGS) -I../ -I$(ALPHADATA_SDK)/include -std=c99 -Wall -g -fpic
+LDFLAGS_     = $(LDFLAGS) -L$(ALPHADATA_SDK)/lib -ladmxrc3
 TARGETS_     =
 
 ## Check libxdma installation
