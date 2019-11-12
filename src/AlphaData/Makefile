@@ -1,7 +1,7 @@
 CC    = gcc
 CC_   = $(CC)
 
-CFLAGS_      = $(CFLAGS) -I../ -I$(ALPHADATA_API)/include -std=c99 -Wall -g -fpic
+CFLAGS_      = $(CFLAGS) -I../ -I$(ALPHADATA_API)/include -O3 -std=c99 -Wall -fpic
 LDFLAGS_     = $(LDFLAGS) -ladmxrc3
 TARGETS_     =
 
