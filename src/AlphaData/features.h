@@ -1,4 +1,4 @@
-/*--------------------------------------------------------------------
+﻿/*--------------------------------------------------------------------
   (C) Copyright 2017-2019 Barcelona Supercomputing Center
                           Centro Nacional de Supercomputacion
 
@@ -18,8 +18,8 @@
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
-#ifndef __LIBXTASKS_COMMON_H__
-#define __LIBXTASKS_COMMON_H__
+#ifndef __LIBXTASKS_FEATURES_H__
+#define __LIBXTASKS_FEATURES_H__
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -48,6 +48,8 @@ typedef enum {
     BIT_COMPAT_SKIP = 3
 } bit_compatibility_t;
 
+static uint32_t _bitinfo[BITINFO_MAX_WORDS];
+
 /*!
  * \brief Checks whether a bitstream feature is present in the current fpga configuration or not
  * \return  BIT_FEATURE_NO_AVAIL if the feature is not available
@@ -63,16 +65,13 @@ bit_feature_t checkbitstreamFeature(const char * featureName, ADMXRC3_HANDLE hDe
         PRINT_ERROR("Invalid value in XTASKS_FEATURES_CHECK, must be 0 or 1. Ignoring it");
     }
 
-    uint32_t bitinfo[BITINFO_MAX_WORDS];
-    ADMXRC3_STATUS stat = ADMXRC3_Read(hDevice, 1, 0, BISTREAM_INFO_ADDRESS, sizeof(uint32_t)*BITINFO_MAX_WORDS, &bitinfo);
-    if (stat != ADMXRC3_SUCCESS) {
-        return BIT_FEATURE_NO_AVAIL;
-    }
-
     int i = 4;
-    while (bitinfo[i] != BITINFO_FIELD_SEP)
+    while (_bitinfo[i] != BITINFO_FIELD_SEP)
         ++i;
-    uint32_t features = bitinfo[i+1];
+    if (i >= BITINFO_MAX_WORDS)
+        return BIT_FEATURE_UNKNOWN;
+
+    uint32_t features = _bitinfo[i+1];
     bit_feature_t available = BIT_FEATURE_UNKNOWN;
     if (strcmp(featureName, "hw_instrumentation") == 0) {
         available = features & 0x1 ? BIT_FEATURE_AVAIL:BIT_FEATURE_NO_AVAIL;
@@ -94,7 +93,7 @@ bit_feature_t checkbitstreamFeature(const char * featureName, ADMXRC3_HANDLE hDe
  *          BIT_COMPAT_SKIP if the check was skipped due to user requirements
  *          BIT_COMPAT_UNKNOWN if the compatibility cannot be determined or failed
  */
-bit_compatibility_t checkbitstreamCompatibility() {
+bit_compatibility_t checkbitstreamCompatibility(ADMXRC3_HANDLE hDevice) {
     const char * compatCheck = getenv("XTASKS_COMPATIBILITY_CHECK");
     if (compatCheck != NULL && compatCheck[0] == '0') {
         return BIT_COMPAT_SKIP;
@@ -102,17 +101,33 @@ bit_compatibility_t checkbitstreamCompatibility() {
         PRINT_ERROR("Invalid value in XTASKS_COMPATIBILITY_CHECK, must be 0 or 1. Ignoring it");
     }
 
-    bit_compatibility_t compatible = BIT_COMPAT_UNKNOWN;
-    FILE * infoFile = fopen(BIT_INFO_WRAPPER_PATH, "r");
-    if (infoFile != NULL) {
-        int wrapperVersion;
-        if (fscanf(infoFile, "%d", &wrapperVersion) != 1 || wrapperVersion != COMPATIBLE_WRAPPER_VER) {
-            //NOTE: If read value is not an integer, probably it is "?" which means that the
-            //      bitstream is too old
-            compatible = BIT_NO_COMPAT;
-        }
+    ADMXRC3_STATUS stat = ADMXRC3_Read(hDevice, 1, 0, BISTREAM_INFO_ADDRESS, sizeof(uint32_t)*BITINFO_MAX_WORDS, _bitinfo);
+    if (stat != ADMXRC3_SUCCESS) {
+        return BIT_COMPAT_UNKNOWN;
     }
-    return compatible;
+
+    //The bitstream info BRAM version is old
+    if (_bitinfo[0] != 3) {
+        return BIT_NO_COMPAT;
+    }
+
+    int i = 4;
+    for (int j = 0; j < 3; ++j) {
+        while (_bitinfo[i] != BITINFO_FIELD_SEP)
+            ++i;
+        ++i;
+    }
+    int len = 0;
+    while (_bitinfo[i+len] != BITINFO_FIELD_SEP)
+        ++len;
+    //Make sure the ASCII string ends with '\0'
+    _bitinfo[i+len] = 0;
+    int version;
+    sscanf((const char*)&_bitinfo[i], "%d", &version);
+    //Restore the contents of the original BRAM
+    _bitinfo[i+len] = BITINFO_FIELD_SEP;
+
+    return version == COMPATIBLE_WRAPPER_VER ? BIT_COMPAT:BIT_NO_COMPAT;
 }
 
-#endif /* __LIBXTASKS_COMMON_H__ */
+#endif /* __LIBXTASKS_FEATURES_H__ */

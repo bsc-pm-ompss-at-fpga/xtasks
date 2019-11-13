@@ -28,6 +28,7 @@
 #include "libxtasks.h"
 #include "util/common.h"
 #include "util/ticket-lock.h"
+#include "features.h"
 
 #include <libxdma.h>
 #include <libxdma_version.h>
@@ -274,6 +275,12 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
 {
     size_t insBufferSize;
     if (nEvents <= 1) return XTASKS_EINVAL;
+    //Check if bitstream has the HW instrumentation feature
+    bit_feature_t feature = checkbitstreamFeature("hw_instrumentation", _hDevice);
+    if (feature == BIT_FEATURE_NO_AVAIL || feature == BIT_FEATURE_UNKNOWN) {
+        return XTASKS_ENOAV;
+    }
+
     _numInstrEvents = nEvents;
     insBufferSize = _numInstrEvents*_numAccs*sizeof(xtasks_ins_event);
 
@@ -357,6 +364,27 @@ xtasks_stat xtasksInit()
     _copyTime = 0;
 #endif
 
+    ADMXRC3_STATUS admxrc3_status = ADMXRC3_Open(0, &_hDevice);
+    if (admxrc3_status != ADMXRC3_SUCCESS) {
+        ret = XTASKS_ERROR;
+        perror("Error opening alphadata device");
+        goto INIT_ERR_0;
+    }
+
+    //Check if bitstream is compatible
+    bit_compatibility_t compat = checkbitstreamCompatibility(_hDevice);
+    if (compat == BIT_NO_COMPAT || compat == BIT_COMPAT_UNKNOWN) {
+        printErrorBitstreamCompatibility();
+        goto INIT_ERR_1;
+    }
+
+    //Check if bitstream has the task manager feature
+    bit_feature_t feature = checkbitstreamFeature("task_manager", _hDevice);
+    if (feature == BIT_FEATURE_NO_AVAIL) {
+        PRINT_ERROR("OmpSs@FPGA Task Manager not available in the loaded FPGA bitstream");
+        return XTASKS_ENOAV;
+    }
+
     //Initialize xdma memory subsystem
     s = xdmaInitMem();
     if (s != XDMA_SUCCESS) {
@@ -368,7 +396,7 @@ xtasks_stat xtasksInit()
         } else {
             PRINT_ERROR("xdmaInitMem failed");
         }
-        goto INIT_ERR_0;
+        goto INIT_ERR_1;
     }
 
     //Preallocate accelerators array
@@ -377,7 +405,7 @@ xtasks_stat xtasksInit()
     if (_accs == NULL) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate memory for accelerators info");
-        goto INIT_ERR_0;
+        goto INIT_ERR_2;
     }
 
     //Generate the configuration file path
@@ -385,7 +413,7 @@ xtasks_stat xtasksInit()
     if (buffer == NULL) {
         ret = XTASKS_EFILE;
         printErrorMsgCfgFile();
-        goto INIT_ERR_1;
+        goto INIT_ERR_3;
     }
 
     //Open the configuration file and parse it
@@ -394,7 +422,7 @@ xtasks_stat xtasksInit()
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot open FPGA configuration file");
         free(buffer);
-        goto INIT_ERR_1;
+        goto INIT_ERR_3;
     }
     //NOTE: Assuming that the lines contain <128 characters
     buffer = fgets(buffer, STR_BUFFER_SIZE, accMapFile); //< Ignore 1st line, headers
@@ -403,7 +431,7 @@ xtasks_stat xtasksInit()
         PRINT_ERROR("First line of FPGA configuration file is not valid");
         free(buffer);
         fclose(accMapFile);
-        goto INIT_ERR_1;
+        goto INIT_ERR_3;
     }
     xtasks_acc_type t;
     int retFscanf;
@@ -444,14 +472,7 @@ xtasks_stat xtasksInit()
     } else if (_numAccs > CMD_IN_QUEUE_LEN/CMD_IN_SUBQUEUE_LEN) {
         ret = XTASKS_ERROR;
         PRINT_ERROR("The maximum number of accelerators supported by the library was reached");
-        goto INIT_ERR_1;
-    }
-
-    ADMXRC3_STATUS admxrc3_status = ADMXRC3_Open(0, &_hDevice);
-    if (admxrc3_status != ADMXRC3_SUCCESS) {
-        ret = XTASKS_ERROR;
-        perror("Error opening alphadata device");
-        goto INIT_ERR_1;
+        goto INIT_ERR_3;
     }
 
     ticketLockInit(&_bufferTicket);
@@ -482,9 +503,9 @@ xtasks_stat xtasksInit()
         _cmdOutQueue[i] = 0;
     }
 
-    bool ext = (getenv("EXT_TASK_MANAGER") != NULL);
+    feature = checkbitstreamFeature("ext_task_manager", _hDevice);
 
-    if (!ext)
+    if (feature == BIT_FEATURE_NO_AVAIL)
         _newQueue = NULL;
     else {
         admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, NEW_QUEUE_ADDRESS, sizeof(uint64_t)*NEW_QUEUE_LEN, (void**)&_newQueue);
@@ -501,7 +522,7 @@ xtasks_stat xtasksInit()
         }
     }
     
-    if (!ext)
+    if (feature == BIT_FEATURE_NO_AVAIL)
         _remFiniQueue = NULL;
     else {
         admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, REMFINI_QUEUE_ADDRESS, sizeof(uint64_t)*REMFINI_QUEUE_LEN, (void**)&_remFiniQueue);
@@ -588,19 +609,24 @@ xtasks_stat xtasksInit()
 #endif
         ADMXRC3_UnmapWindow(_hDevice, (void*)_taskmanagerRst);
     INIT_ERR_MMAP_RST:
-        //ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
+        if (_remFiniQueue != NULL)
+            ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
     INIT_ERR_MAP_REMFINI:
-        //ADMXRC3_UnmapWindow(_hDevice, _newQueue);
+        if (_newQueue != NULL)
+            ADMXRC3_UnmapWindow(_hDevice, _newQueue);
     INIT_ERR_MAP_NEW:
         ADMXRC3_UnmapWindow(_hDevice, _cmdOutQueue);
     INIT_ERR_MMAP_FINI:
         ADMXRC3_UnmapWindow(_hDevice, _cmdInQueue);
     INIT_ERR_MMAP_READY:
-        ADMXRC3_Close(_hDevice);
         ticketLockFini(&_bufferTicket);
-    INIT_ERR_1:
+    INIT_ERR_3:
         free(_accs);
         _numAccs = 0;
+    INIT_ERR_2:
+        xdmaFiniMem();
+    INIT_ERR_1:
+        ADMXRC3_Close(_hDevice);
     INIT_ERR_0:
         __sync_sub_and_fetch(&_init_cnt, 1);
     return ret;
