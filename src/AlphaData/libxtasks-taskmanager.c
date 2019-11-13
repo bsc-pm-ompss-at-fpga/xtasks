@@ -1249,7 +1249,7 @@ xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle * handle)
     return toXtasksStat(status);
 }
 
-//#ifdef XTASKS_DEBUG
+#ifdef XTASKS_DEBUG
 uint64_t cmdInQueue(size_t const accID, size_t const idx)
 {
     return _cmdInQueue[accID*CMD_IN_SUBQUEUE_LEN + idx];
@@ -1287,4 +1287,4 @@ void accelPrintInstrBuffer(size_t const aIdx) {
     }
 }
 
-//#endif
+#endif
