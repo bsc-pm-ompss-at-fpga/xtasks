@@ -934,14 +934,6 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
         idx = acc->cmdOutIdx;
         cmdBuffer = subqueue[idx];
 
-#ifdef XTASKS_DEBUG
-        if (cmd->commandCode != CMD_FINI_EXEC_CODE || cmd->commandArgs[CMD_FINI_EXEC_ARGS_ACCID_OFFSET] != acc->info.id) {
-            PRINT_ERROR("Found unexpected data when executing xtasksTryGetFinishedTaskAccel");
-            __sync_lock_release(&acc->cmdOutLock);
-            return XTASKS_ERROR;
-        }
-#endif /* XTASKS_DEBUG */
-
         //Read the command payload (task identifier)
         size_t const dataIdx = (idx+1)%CMD_OUT_SUBQUEUE_LEN;
         uint64_t const taskID = subqueue[dataIdx];
