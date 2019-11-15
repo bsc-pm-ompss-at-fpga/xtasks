@@ -29,7 +29,7 @@
 
 #define PRINT_ERROR(_str_)      fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
 
-#define BISTREAM_INFO_ADDRESS 0x0
+#define BISTREAM_INFO_ADDRESS 0x00020000
 #define BITINFO_FIELD_SEP 0xFFFFFFFF
 #define BITINFO_MAX_WORDS 512
 #define COMPATIBLE_WRAPPER_VER  1

@@ -74,13 +74,13 @@
 #define PICOS_DEBUG_ADDRESS 0x50000
 #endif
 
-#define READY_QUEUE_ADDRESS 0x00000000
-#define FINI_QUEUE_ADDRESS 0x00004000
-#define TASKMANAGER_RESET_ADDRESS 0x00010000
-#define NEW_QUEUE_ADDRESS 0x00008000
-#define REMFINI_QUEUE_ADDRESS 0x0000C000
+#define CMD_IN_QUEUE_ADDR 0x00004000
+#define CMD_OUT_QUEUE_ADDR 0x00008000
+#define TASKMANAGER_RESET_ADDRESS 0x0000C000
+#define NEW_QUEUE_ADDRESS 0x00014000
+#define REMFINI_QUEUE_ADDRESS 0x000018000
 
-#define INSTR_COUNTER_ADDRESS 0x00014000
+#define INSTR_COUNTER_ADDRESS 0x00010000
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
@@ -245,12 +245,12 @@ SUB_CMD_UPDATE_IDX:
         // Check if 2 writes have to be done because there is not enough space at the end of subqueue
         const size_t count = min(CMD_IN_SUBQUEUE_LEN - idx - 1, length - 1);
         //memcpy(&_cmdInQueue[offset + idx + 1], command + 1, count*sizeof(uint64_t));
-        if (ADMXRC3_Write(_hDevice, 1, 0, READY_QUEUE_ADDRESS + (offset + idx + 1)*sizeof(uint64_t), count*sizeof(uint64_t), command + 1) != ADMXRC3_SUCCESS) {
+        if (ADMXRC3_Write(_hDevice, 1, 0, CMD_IN_QUEUE_ADDR + (offset + idx + 1)*sizeof(uint64_t), count*sizeof(uint64_t), command + 1) != ADMXRC3_SUCCESS) {
             perror("Error submitting command\n");
         }
         if ((length - 1) > count) {
             //memcpy(&_cmdInQueue[offset], command + 1 + count, (length - count)*sizeof(uint64_t));
-            if (ADMXRC3_Write(_hDevice, 1, 0, READY_QUEUE_ADDRESS + offset*sizeof(uint64_t), (length - count)*sizeof(uint64_t), command + 1 + count) != ADMXRC3_SUCCESS) {
+            if (ADMXRC3_Write(_hDevice, 1, 0, CMD_IN_QUEUE_ADDR + offset*sizeof(uint64_t), (length - count)*sizeof(uint64_t), command + 1 + count) != ADMXRC3_SUCCESS) {
                 perror("Error submitting command\n");
             }
         }
@@ -477,7 +477,7 @@ xtasks_stat xtasksInit()
 
     ticketLockInit(&_bufferTicket);
 
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, READY_QUEUE_ADDRESS, sizeof(uint64_t)*CMD_IN_QUEUE_LEN, (void**)&_cmdInQueue);
+    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, CMD_IN_QUEUE_ADDR, sizeof(uint64_t)*CMD_IN_QUEUE_LEN, (void**)&_cmdInQueue);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map ready queue of Task Manager");
@@ -490,7 +490,7 @@ xtasks_stat xtasksInit()
         _cmdInQueue[i] = 0;
     }
 
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, FINI_QUEUE_ADDRESS, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN, (void**)&_cmdOutQueue);
+    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, CMD_OUT_QUEUE_ADDR, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN, (void**)&_cmdOutQueue);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map finish queue of Task Manager");
