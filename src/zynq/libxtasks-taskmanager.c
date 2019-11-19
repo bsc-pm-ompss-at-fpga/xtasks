@@ -20,7 +20,7 @@
 
 #include "../libxtasks.h"
 #include "../util/common.h"
-#include "features.h"
+#include "platform.h"
 #include "../util/ticket-lock.h"
 
 #include <libxdma.h>

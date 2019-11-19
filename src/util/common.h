@@ -27,9 +27,7 @@
 #include <string.h>
 #include <libxdma.h>
 
-#define STR_BUFFER_SIZE         128
 #define PRINT_ERROR(_str_)      fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
-#define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
 #define MIN_WRAPPER_VER         1
 #define MAX_WRAPPER_VER         2
 
@@ -52,6 +50,20 @@
     ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
        _a < _b ? _a : _b; })
+
+typedef enum {
+    BIT_FEATURE_NO_AVAIL = 0,
+    BIT_FEATURE_AVAIL = 1,
+    BIT_FEATURE_UNKNOWN = 2,
+    BIT_FEATURE_SKIP = 3
+} bit_feature_t;
+
+typedef enum {
+    BIT_NO_COMPAT = 0,
+    BIT_COMPAT = 1,
+    BIT_COMPAT_UNKNOWN = 2,
+    BIT_COMPAT_SKIP = 3
+} bit_compatibility_t;
 
 //! \brief Command header type
 typedef struct __attribute__ ((__packed__)) {
@@ -80,43 +92,6 @@ typedef struct __attribute__ ((__packed__)) {
     cmd_header_t header;     //[0  :63 ] Command header
     uint64_t     bufferAddr; //[64 :127] Instrumentation buffer address
 } cmd_setup_hw_ins_t;
-
-/*!
- * \brief Get the path of the configuration file
- *        The function allocates a buffer that caller must delete using free()
- * \return  Configuration file path, NULL on error
- */
-char * getConfigFilePath()
-{
-    char * buffer = NULL;
-
-    //1st -> environment var
-    const char * accMapPath = getenv("XTASKS_CONFIG_FILE");
-    if (accMapPath != NULL) {
-        buffer = malloc(sizeof(char)*max(STR_BUFFER_SIZE, strlen(accMapPath)));
-        strcpy(buffer, accMapPath);
-    }
-
-    //2nd -> /dev/ompss_fpga/bit_info/xtasks
-    if (buffer == NULL) {
-        buffer = malloc(sizeof(char)*STR_BUFFER_SIZE);
-        strcpy(buffer, XTASKS_CONFIG_FILE_PATH);
-    }
-
-    return buffer;
-}
-
-/*!
- * \brief Prints an error message in STDERR about configuration file not found
- */
-void printErrorMsgCfgFile()
-{
-    fprintf(stderr, "ERROR: xTasks Library cannot access the fpga configuration device file.\n");
-    fprintf(stderr, "       Ensure that file '%s' exists and it has read permissions.\n",
-        XTASKS_CONFIG_FILE_PATH);
-    fprintf(stderr, "       Alternatively, you may force the configuration file path with");
-    fprintf(stderr, " XTASKS_CONFIG_FILE environment variable.\n");
-}
 
 /*!
  * \brief Returns a xtasks_stat based on a xdma_status

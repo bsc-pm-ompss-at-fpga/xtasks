@@ -18,8 +18,8 @@
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
-#ifndef __LIBXTASKS_FEATURES_H__
-#define __LIBXTASKS_FEATURES_H__
+#ifndef __LIBXTASKS_PLATFORM_H__
+#define __LIBXTASKS_PLATFORM_H__
 
 #include "../util/common.h"
 
@@ -27,22 +27,47 @@
 #include <stdio.h>
 #include <string.h>
 
+#define STR_BUFFER_SIZE         128
+#define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
 #define BIT_INFO_FEATURES_PATH  "/dev/ompss_fpga/bit_info/features"
 #define BIT_INFO_WRAPPER_PATH   "/dev/ompss_fpga/bit_info/wrapper_version"
 
-typedef enum {
-    BIT_FEATURE_NO_AVAIL = 0,
-    BIT_FEATURE_AVAIL = 1,
-    BIT_FEATURE_UNKNOWN = 2,
-    BIT_FEATURE_SKIP = 3
-} bit_feature_t;
+/*!
+ * \brief Get the path of the configuration file
+ *        The function allocates a buffer that caller must delete using free()
+ * \return  Configuration file path, NULL on error
+ */
+char * getConfigFilePath()
+{
+    char * buffer = NULL;
 
-typedef enum {
-    BIT_NO_COMPAT = 0,
-    BIT_COMPAT = 1,
-    BIT_COMPAT_UNKNOWN = 2,
-    BIT_COMPAT_SKIP = 3
-} bit_compatibility_t;
+    //1st -> environment var
+    const char * accMapPath = getenv("XTASKS_CONFIG_FILE");
+    if (accMapPath != NULL) {
+        buffer = malloc(sizeof(char)*max(STR_BUFFER_SIZE, strlen(accMapPath)));
+        strcpy(buffer, accMapPath);
+    }
+
+    //2nd -> /dev/ompss_fpga/bit_info/xtasks
+    if (buffer == NULL) {
+        buffer = malloc(sizeof(char)*STR_BUFFER_SIZE);
+        strcpy(buffer, XTASKS_CONFIG_FILE_PATH);
+    }
+
+    return buffer;
+}
+
+/*!
+ * \brief Prints an error message in STDERR about configuration file not found
+ */
+void printErrorMsgCfgFile()
+{
+    fprintf(stderr, "ERROR: xTasks Library cannot access the fpga configuration device file.\n");
+    fprintf(stderr, "       Ensure that file '%s' exists and it has read permissions.\n",
+        XTASKS_CONFIG_FILE_PATH);
+    fprintf(stderr, "       Alternatively, you may force the configuration file path with");
+    fprintf(stderr, " XTASKS_CONFIG_FILE environment variable.\n");
+}
 
 /*!
  * \brief Prints an error message in STDERR about bitstream compatibility
@@ -121,4 +146,4 @@ bit_compatibility_t checkbitstreamCompatibility() {
     return compatible;
 }
 
-#endif /* __LIBXTASKS_FEATURES_H__ */
+#endif /* __LIBXTASKS_PLATFORM_H__ */
