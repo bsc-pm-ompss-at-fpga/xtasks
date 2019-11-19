@@ -20,6 +20,7 @@
 
 #include "../libxtasks.h"
 #include "../util/common.h"
+#include "platform.h"
 #include "../util/ticket-lock.h"
 
 #include <libxdma.h>
@@ -30,6 +31,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include <assert.h>
 
