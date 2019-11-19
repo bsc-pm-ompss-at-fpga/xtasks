@@ -31,6 +31,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include <assert.h>
 
