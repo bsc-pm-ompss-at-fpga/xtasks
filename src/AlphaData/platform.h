@@ -32,7 +32,6 @@
 #define BISTREAM_INFO_ADDRESS 0x00020000
 #define BITINFO_FIELD_SEP 0xFFFFFFFF
 #define BITINFO_MAX_WORDS 512
-#define COMPATIBLE_WRAPPER_VER  1
 
 static uint32_t _bitinfo[BITINFO_MAX_WORDS];
 
@@ -77,13 +76,14 @@ void printErrorBitstreamCompatibility()
 }
 
 /*!
- * \brief Checks whether a bitstream feature is present in the current fpga configuration or not
+ * \brief Checks whether a bitstream feature is present in the current fpga configuration or not.
+ *          checkbitstreamCompatibility must be called before calling this function.
  * \return  BIT_FEATURE_NO_AVAIL if the feature is not available
  *          BIT_FEATURE_AVAIL if the feature is available
  *          BIT_FEATURE_SKIP if the check was skipped due to user requirements
  *          BIT_FEATURE_UNKNOWN if the check cannot be done or failed
  */
-bit_feature_t checkbitstreamFeature(const char * featureName, ADMXRC3_HANDLE hDevice) {
+bit_feature_t checkbitstreamFeature(const char * featureName) {
     const char * featuresCheck = getenv("XTASKS_FEATURES_CHECK");
     if (featuresCheck != NULL && featuresCheck[0] == '0') {
         return BIT_FEATURE_SKIP;
@@ -113,7 +113,7 @@ bit_feature_t checkbitstreamFeature(const char * featureName, ADMXRC3_HANDLE hDe
 }
 
 /*!
- * \brief Checks whether the current fpga bitstream is compatible with the libxtasks version or not
+ * \brief Checks whether the current fpga bitstream is compatible with the libxtasks version or not.
  * \return  BIT_NO_COMPAT if the bitstream is not compatible
  *          BIT_COMPAT if the bitstream is compatible
  *          BIT_COMPAT_SKIP if the check was skipped due to user requirements
@@ -153,7 +153,7 @@ bit_compatibility_t checkbitstreamCompatibility(ADMXRC3_HANDLE hDevice) {
     //Restore the contents of the original BRAM
     _bitinfo[i+len] = BITINFO_FIELD_SEP;
 
-    return version == COMPATIBLE_WRAPPER_VER ? BIT_COMPAT:BIT_NO_COMPAT;
+    return MIN_WRAPPER_VER <= version && version <= MAX_WRAPPER_VER ? BIT_COMPAT:BIT_NO_COMPAT;
 }
 
 #endif /* __LIBXTASKS_PLATFORM_H__ */
