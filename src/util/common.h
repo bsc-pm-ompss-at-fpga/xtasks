@@ -30,8 +30,6 @@
 #define STR_BUFFER_SIZE         128
 #define PRINT_ERROR(_str_)      fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
 #define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
-#define BIT_INFO_FEATURES_PATH  "/dev/ompss_fpga/bit_info/features"
-#define BIT_INFO_WRAPPER_PATH   "/dev/ompss_fpga/bit_info/wrapper_version"
 #define MIN_WRAPPER_VER         1
 #define MAX_WRAPPER_VER         2
 
@@ -118,18 +116,6 @@ void printErrorMsgCfgFile()
         XTASKS_CONFIG_FILE_PATH);
     fprintf(stderr, "       Alternatively, you may force the configuration file path with");
     fprintf(stderr, " XTASKS_CONFIG_FILE environment variable.\n");
-}
-
-/*!
- * \brief Prints an error message in STDERR about bitstream compatibility
- */
-void printErrorBitstreamCompatibility()
-{
-    fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
-    fprintf(stderr, "       Check the wrapper version of loaded bitstream at '%s'.\n", BIT_INFO_WRAPPER_PATH);
-    fprintf(stderr, "       The compatible versions are: [%d,%d]\n", MIN_WRAPPER_VER, MAX_WRAPPER_VER);
-    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting");
-    fprintf(stderr, " XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
 }
 
 /*!

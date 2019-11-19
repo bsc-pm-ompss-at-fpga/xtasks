@@ -27,6 +27,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#define BIT_INFO_FEATURES_PATH  "/dev/ompss_fpga/bit_info/features"
+#define BIT_INFO_WRAPPER_PATH   "/dev/ompss_fpga/bit_info/wrapper_version"
+
 typedef enum {
     BIT_FEATURE_NO_AVAIL = 0,
     BIT_FEATURE_AVAIL = 1,
@@ -40,6 +43,18 @@ typedef enum {
     BIT_COMPAT_UNKNOWN = 2,
     BIT_COMPAT_SKIP = 3
 } bit_compatibility_t;
+
+/*!
+ * \brief Prints an error message in STDERR about bitstream compatibility
+ */
+void printErrorBitstreamCompatibility()
+{
+    fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
+    fprintf(stderr, "       Check the wrapper version of loaded bitstream at '%s'.\n", BIT_INFO_WRAPPER_PATH);
+    fprintf(stderr, "       The compatible versions are: [%d,%d]\n", MIN_WRAPPER_VER, MAX_WRAPPER_VER);
+    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting");
+    fprintf(stderr, " XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
+}
 
 /*!
  * \brief Checks whether a bitstream feature is present in the current fpga configuration or not
