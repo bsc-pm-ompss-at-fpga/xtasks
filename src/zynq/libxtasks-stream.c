@@ -20,6 +20,7 @@
 
 #include "../libxtasks.h"
 #include "../util/common.h"
+#include "platform.h"
 #include "../util/queue.h"
 
 #include <libxdma.h>
