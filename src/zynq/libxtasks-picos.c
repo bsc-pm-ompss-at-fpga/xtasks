@@ -20,6 +20,7 @@
 
 #include "../libxtasks.h"
 #include "../util/common.h"
+#include "features.h"
 #include "../util/queue.h"
 
 #include <libpicos.h>
