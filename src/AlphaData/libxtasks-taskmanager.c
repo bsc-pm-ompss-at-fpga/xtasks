@@ -28,7 +28,7 @@
 #include "libxtasks.h"
 #include "util/common.h"
 #include "util/ticket-lock.h"
-#include "features.h"
+#include "platform.h"
 
 #include <libxdma.h>
 #include <libxdma_version.h>

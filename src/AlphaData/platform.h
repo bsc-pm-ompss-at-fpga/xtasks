@@ -18,37 +18,63 @@
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
-#ifndef __LIBXTASKS_FEATURES_H__
-#define __LIBXTASKS_FEATURES_H__
+#ifndef __LIBXTASKS_PLATFORM_H__
+#define __LIBXTASKS_PLATFORM_H__
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 #include <admxrc3.h>
 
-#define PRINT_ERROR(_str_)      fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
+#include "../util/common.h"
 
+#define STR_BUFFER_SIZE 128
 #define BISTREAM_INFO_ADDRESS 0x00020000
 #define BITINFO_FIELD_SEP 0xFFFFFFFF
 #define BITINFO_MAX_WORDS 512
 #define COMPATIBLE_WRAPPER_VER  1
 
-typedef enum {
-    BIT_FEATURE_NO_AVAIL = 0,
-    BIT_FEATURE_AVAIL = 1,
-    BIT_FEATURE_UNKNOWN = 2,
-    BIT_FEATURE_SKIP = 3
-} bit_feature_t;
-
-typedef enum {
-    BIT_NO_COMPAT = 0,
-    BIT_COMPAT = 1,
-    BIT_COMPAT_UNKNOWN = 2,
-    BIT_COMPAT_SKIP = 3
-} bit_compatibility_t;
-
 static uint32_t _bitinfo[BITINFO_MAX_WORDS];
+
+/*!
+ * \brief Get the path of the configuration file
+ *        The function allocates a buffer that caller must delete using free()
+ * \return  Configuration file path, NULL on error
+ */
+char * getConfigFilePath()
+{
+    char * buffer = NULL;
+
+    //1st -> environment var
+    const char * accMapPath = getenv("XTASKS_CONFIG_FILE");
+    if (accMapPath != NULL) {
+        buffer = malloc(sizeof(char)*max(STR_BUFFER_SIZE, strlen(accMapPath)));
+        strcpy(buffer, accMapPath);
+    }
+
+    return buffer;
+}
+
+/*!
+ * \brief Prints an error message in STDERR about configuration file not found
+ */
+void printErrorMsgCfgFile()
+{
+    fprintf(stderr, "ERROR: xTasks Library cannot access the fpga configuration device file.\n");
+    fprintf(stderr, "       You may set the configuration file path with");
+    fprintf(stderr, " XTASKS_CONFIG_FILE environment variable.\n");
+}
+
+/*!
+ * \brief Prints an error message in STDERR about bitstream compatibility
+ */
+void printErrorBitstreamCompatibility()
+{
+    fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
+    fprintf(stderr, "       The compatible versions are: [%d,%d]\n", MIN_WRAPPER_VER, MAX_WRAPPER_VER);
+    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting");
+    fprintf(stderr, " XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
+}
 
 /*!
  * \brief Checks whether a bitstream feature is present in the current fpga configuration or not
@@ -130,4 +156,4 @@ bit_compatibility_t checkbitstreamCompatibility(ADMXRC3_HANDLE hDevice) {
     return version == COMPATIBLE_WRAPPER_VER ? BIT_COMPAT:BIT_NO_COMPAT;
 }
 
-#endif /* __LIBXTASKS_FEATURES_H__ */
+#endif /* __LIBXTASKS_PLATFORM_H__ */
