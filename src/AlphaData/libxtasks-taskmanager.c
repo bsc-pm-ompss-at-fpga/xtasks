@@ -276,7 +276,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     size_t insBufferSize;
     if (nEvents <= 1) return XTASKS_EINVAL;
     //Check if bitstream has the HW instrumentation feature
-    bit_feature_t feature = checkbitstreamFeature("hw_instrumentation", _hDevice);
+    bit_feature_t feature = checkbitstreamFeature("hw_instrumentation");
     if (feature == BIT_FEATURE_NO_AVAIL || feature == BIT_FEATURE_UNKNOWN) {
         return XTASKS_ENOAV;
     }
@@ -379,7 +379,7 @@ xtasks_stat xtasksInit()
     }
 
     //Check if bitstream has the task manager feature
-    bit_feature_t feature = checkbitstreamFeature("task_manager", _hDevice);
+    bit_feature_t feature = checkbitstreamFeature("task_manager");
     if (feature == BIT_FEATURE_NO_AVAIL) {
         PRINT_ERROR("OmpSs@FPGA Task Manager not available in the loaded FPGA bitstream");
         return XTASKS_ENOAV;
@@ -503,7 +503,7 @@ xtasks_stat xtasksInit()
         _cmdOutQueue[i] = 0;
     }
 
-    feature = checkbitstreamFeature("ext_task_manager", _hDevice);
+    feature = checkbitstreamFeature("ext_task_manager");
 
     if (feature == BIT_FEATURE_NO_AVAIL)
         _newQueue = NULL;
