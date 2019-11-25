@@ -162,12 +162,6 @@ static size_t               _newQueueIdx;       ///< Reading index of the _newQu
 static uint64_t            *_remFiniQueue;      ///< Buffer for the remote finished tasks
 static size_t               _remFiniQueueIdx;   ///< Writing index of the _remFiniQueue
 static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Manager
-#ifdef PICOS
-static uint32_t            *_picosRst0;         ///< Register to reset Picos (Picos clock domain)
-static uint32_t            *_picosRst1;         ///< Register to reset Picos (hwacc clock domain)
-static uint32_t            *_picosDebug;        ///< Picos debug registers
-static uint64_t             _copyTime;
-#endif
 
 static ticketLock_t         _bufferTicket;      ///< Lock to atomically access PCI direct slave
 static ADMXRC3_HANDLE       _hDevice;           ///< Alphadata device handle
@@ -180,29 +174,10 @@ static uint64_t*            _instrCounter;      ///< Hardware counter
 
 static inline __attribute__((always_inline)) void resetTaskManager()
 {
-#ifdef PICOS
-    //Nudge one register
-    *_taskmanagerRst = 0x00;
-    for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
-    *_taskmanagerRst = 0x01;
-#else
     //Nudge one register
     *_taskmanagerRst = 0x01;
     for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
     *_taskmanagerRst = 0x00;
-#endif
-
-#ifdef PICOS
-    //Nudge one register
-    *_picosRst0 = 1;
-    __sync_synchronize();
-    *_picosRst0 = 0;
-
-    //Nudge one register
-    *_picosRst1 = 1;
-    __sync_synchronize();
-    *_picosRst1 = 0;
-#endif
 }
 
 static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t const length)
@@ -293,7 +268,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     //Invalidate all entries
     _instrBuff = (xtasks_ins_event*)malloc(insBufferSize);
     for (int i = 0; i < _numInstrEvents*_numAccs; ++i) {
-        _instrBuff->eventType = XTASKS_EVENT_TYPE_INVALID;
+        _instrBuff[i].eventType = XTASKS_EVENT_TYPE_INVALID;
     }
 
     s = xdmaMemcpy(_instrBuff, _instrBuffHandle, insBufferSize, 0, XDMA_TO_DEVICE);
@@ -375,6 +350,7 @@ xtasks_stat xtasksInit()
     bit_compatibility_t compat = checkbitstreamCompatibility(_hDevice);
     if (compat == BIT_NO_COMPAT || compat == BIT_COMPAT_UNKNOWN) {
         printErrorBitstreamCompatibility();
+	ret = XTASKS_ENOAV;
         goto INIT_ERR_1;
     }
 
@@ -382,20 +358,14 @@ xtasks_stat xtasksInit()
     bit_feature_t feature = checkbitstreamFeature("task_manager");
     if (feature == BIT_FEATURE_NO_AVAIL) {
         PRINT_ERROR("OmpSs@FPGA Task Manager not available in the loaded FPGA bitstream");
-        return XTASKS_ENOAV;
+        ret = XTASKS_ENOAV;
+	goto INIT_ERR_1;
     }
 
     //Initialize xdma memory subsystem
     s = xdmaInitMem();
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
-        if (s == XDMA_ENOENT) {
-            PRINT_ERROR("xdmaInitMem failed. Check if xdma device exist in the system");
-        } else if (s == XDMA_EACCES) {
-            PRINT_ERROR("xdmaInitMem failed. Current user cannot access xdma device");
-        } else {
-            PRINT_ERROR("xdmaInitMem failed");
-        }
         goto INIT_ERR_1;
     }
 
@@ -929,7 +899,6 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
     cmd_header_t * cmd = (cmd_header_t *)&cmdBuffer;
 
     if (cmd->valid == QUEUE_VALID) {
-
         //Read the command header
         idx = acc->cmdOutIdx;
         cmdBuffer = subqueue[idx];
@@ -997,10 +966,12 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
             accBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
             i++;
         }
-        stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i*sizeof(xtasks_ins_event), (accBuffer - _instrBuff)*sizeof(xtasks_ins_event), XDMA_TO_DEVICE);
-        if (stat != XDMA_SUCCESS) {
-            __sync_lock_release(&acc->instrLock);
-            return XTASKS_ERROR;
+        if (i > 0) {
+            stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i*sizeof(xtasks_ins_event), (accBuffer - _instrBuff)*sizeof(xtasks_ins_event), XDMA_TO_DEVICE);
+            if (stat != XDMA_SUCCESS) {
+                __sync_lock_release(&acc->instrLock);
+                return XTASKS_ERROR;
+            }
         }
         acc->instrIdx = (acc->instrIdx + i)%_numInstrEvents;
         __sync_lock_release(&acc->instrLock);
@@ -1029,7 +1000,6 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     uint8_t numCopies = (header >> 24) & 0x00000000000000FF;
     uint32_t archMask = (header >> 32) & 0x0000000000FFFFFF;
     //new_task_header_t headerCopy = *hwTaskHeader;
-    //printf("Header at idx %lu is %lX, valid is %d numArgs %d and numCopies %d\n", idx, header, (int)valid, (int)numArgs, (int)numCopies);
     if (valid != QUEUE_VALID) {
         ticketLockRelease(&_bufferTicket);
         return XTASKS_PENDING;
@@ -1042,12 +1012,6 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
                 sizeof(new_task_copy_t)*numCopies)/
             sizeof(uint64_t);
     _newQueueIdx = (idx+taskSize)%NEW_QUEUE_LEN;
-
-    //int a = 0;
-    //if (newCount == 64) {
-    //scanf("%d",&a);
-    //}
-    //printf("Found ready task %d, taskSize is %lu _newQueueIdx is %lu %d\n", newCount++, taskSize, _newQueueIdx, a);
 
     //Extract the information from the new buffer
     *task = realloc(*task,
@@ -1129,7 +1093,6 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     //NOTE: This word cannot be set to 0 as the task size information must be keept
     __sync_synchronize();
     //hwTaskHeader->valid = QUEUE_INVALID;
-    //printf("Writing %lX\n", header & 0x00FFFFFFFFFFFFFF);
     *headerP = header & 0x00FFFFFFFFFFFFFF;
     ticketLockRelease(&_bufferTicket);
 
@@ -1150,8 +1113,6 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id
         ticketLockRelease(&_bufferTicket);
         return XTASKS_ENOENTRY;
     }
-
-    //printf("Task %d finished\n", finishCount++);
 
     //NOTE: rem_fini_task_t->taskId is the 1st word
     idx = (idx+1)%REMFINI_QUEUE_LEN;
