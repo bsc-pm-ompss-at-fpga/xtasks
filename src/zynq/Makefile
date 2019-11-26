@@ -1,7 +1,7 @@
 CC    = gcc
 CC_   = $(CROSS_COMPILE)$(CC)
 
-CFLAGS_      = $(CFLAGS) -O3 -std=c99 -Wall -g -fpic
+CFLAGS_      = $(CFLAGS) -O3 -std=c99 -Wall -g -fpic -Werror
 LDFLAGS_     = $(LDFLAGS)
 TARGETS_     =
 
