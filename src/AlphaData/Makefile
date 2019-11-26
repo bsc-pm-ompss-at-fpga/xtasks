@@ -1,8 +1,8 @@
 CC    = gcc
-CC_   = $(CROSS_COMPILE)$(CC)
+CC_   = $(CC)
 
-CFLAGS_      = $(CFLAGS) -O3 -std=c99 -Wall -g -fpic -Werror
-LDFLAGS_     = $(LDFLAGS)
+CFLAGS_      = $(CFLAGS) -I../ -I$(ALPHADATA_SDK)/include -std=c99 -Wall -g -fpic
+LDFLAGS_     = $(LDFLAGS) -L$(ALPHADATA_SDK)/lib -ladmxrc3
 TARGETS_     =
 
 ## Check libxdma installation
@@ -27,12 +27,12 @@ LIBPICOS_SUPPORT_ = $(if $(and $(wildcard $(LIBPICOS_INC_DIR)/libpicos.h ), \
 ifeq ($(LIBXDMA_SUPPORT_),YES)
 	CFLAGS_  += $(LIBXDMA_INCS_)
 	LDFLAGS_ += $(LIBXDMA_LIBS_)
-	TARGETS_ += libxtasks-stream.so libxtasks-taskmanager.so
+	TARGETS_ += libxtasks-taskmanager.so
 
 	ifeq ($(LIBPICOS_SUPPORT_),YES)
 		CFLAGS_  +=
 		LDFLAGS_ +=
-		TARGETS_ += libxtasks-picos.so
+		TARGETS_ +=
 	endif
 endif
 
@@ -44,19 +44,6 @@ libxtasks-taskmanager.o: libxtasks-taskmanager.c
 
 libxtasks-taskmanager.so: libxtasks-taskmanager.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
-
-libxtasks-stream.o: libxtasks-stream.c
-	$(CC_) $(CFLAGS_) -c $^
-
-libxtasks-stream.so: libxtasks-stream.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
-
-libxtasks-picos.o: libxtasks-picos.c
-	$(CC_) $(CFLAGS_) $(LIBPICOS_INCS_) -c $^
-
-libxtasks-picos.so: libxtasks-picos.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-rpath=$(LIBPICOS_LIB_DIR),-soname,libxtasks.so \
-	-o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
 
 .PHONY: libxtasks_version.h
 libxtasks_version.h: ../libxtasks_version_template.h
