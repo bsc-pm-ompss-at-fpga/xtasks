@@ -185,11 +185,11 @@ static inline __attribute__((always_inline)) void resetTaskManager()
     const int polarity = getResetPolarity();
     if (polarity == 0) {
         *_taskmanagerRst = 0x00;
-        for ( volatile int i = 0; i < 10; i++ ) i = i; // Lose some time
+        usleep(1);
         *_taskmanagerRst = 0x01;
     } else {
         *_taskmanagerRst = 0x01;
-        for ( volatile int i = 0; i < 10; i++ ) i = i; // Lose some time
+        usleep(1);
         *_taskmanagerRst = 0x00;
     }
 }
