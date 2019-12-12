@@ -133,7 +133,7 @@ bit_compatibility_t checkbitstreamCompatibility(ADMXRC3_HANDLE hDevice) {
     }
 
     //The bitstream info BRAM version is old
-    if (_bitinfo[0] != 3) {
+    if (_bitinfo[0] < 3 || _bitinfo[0] > 4) {
         return BIT_NO_COMPAT;
     }
 
