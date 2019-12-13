@@ -975,6 +975,11 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
         }
         acc->instrIdx = (acc->instrIdx + i)%_numInstrEvents;
         __sync_lock_release(&acc->instrLock);
+
+        if (i < maxCount) {
+            //Ensure invalid type of first non-wrote event slot in the caller buffer
+            events[i].eventType = XTASKS_EVENT_TYPE_INVALID;
+        }
     }
 
     return XTASKS_SUCCESS;
