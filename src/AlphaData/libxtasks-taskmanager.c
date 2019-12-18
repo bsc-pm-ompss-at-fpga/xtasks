@@ -47,10 +47,10 @@
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
-#define CMD_IN_QUEUE_LEN        2048            ///< Total number of entries in the cmd_in queue
+#define CMD_IN_QUEUE_LEN        1024            ///< Total number of entries in the cmd_in queue
 #define CMD_IN_SUBQUEUE_LEN     64              ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
 #define CMD_OUT_QUEUE_LEN       1024            ///< Total number of entries in the cmd_out queue
-#define CMD_OUT_SUBQUEUE_LEN    32              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
+#define CMD_OUT_SUBQUEUE_LEN    64              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
 #define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
 #define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
 #define QUEUE_VALID             0x80
