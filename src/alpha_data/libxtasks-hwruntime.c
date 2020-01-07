@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------
-  (C) Copyright 2017-2019 Barcelona Supercomputing Center
+  (C) Copyright 2017-2020 Barcelona Supercomputing Center
                           Centro Nacional de Supercomputacion
 
   This file is part of OmpSs@FPGA toolchain.
@@ -17,7 +17,6 @@
   You should have received a copy of the GNU Lesser General Public
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
-
 
 #include "libxtasks.h"
 #include "util/common.h"
