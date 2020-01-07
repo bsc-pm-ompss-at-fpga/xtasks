@@ -27,7 +27,7 @@ LIBPICOS_SUPPORT_ = $(if $(and $(wildcard $(LIBPICOS_INC_DIR)/libpicos.h ), \
 ifeq ($(LIBXDMA_SUPPORT_),YES)
 	CFLAGS_  += $(LIBXDMA_INCS_)
 	LDFLAGS_ += $(LIBXDMA_LIBS_)
-	TARGETS_ += libxtasks-stream.so libxtasks-taskmanager.so
+	TARGETS_ += libxtasks-stream.so libxtasks-hwruntime.so
 
 	ifeq ($(LIBPICOS_SUPPORT_),YES)
 		CFLAGS_  +=
@@ -39,10 +39,10 @@ endif
 .PHONY: all
 all: $(TARGETS_)
 
-libxtasks-taskmanager.o: libxtasks-taskmanager.c
+libxtasks-hwruntime.o: libxtasks-hwruntime.c
 	$(CC_) $(CFLAGS_) -c $^
 
-libxtasks-taskmanager.so: libxtasks-taskmanager.o
+libxtasks-hwruntime.so: libxtasks-hwruntime.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
 
 libxtasks-stream.o: libxtasks-stream.c
@@ -86,7 +86,7 @@ install: $(TARGETS_) ../libxtasks.h libxtasks_version.h
 	@echo "========================= NOTE ========================="
 	@echo "== Remember to create the symlink $(PREFIX)/lib/libxtasks.so to your desired backend!"
 	@echo "== For example:"
-	@echo "==   pushd $(PREFIX)/lib; ln -s libxtasks-taskmanager.so libxtasks.so; popd;"
+	@echo "==   pushd $(PREFIX)/lib; ln -s libxtasks-hwruntime.so libxtasks.so; popd;"
 	@echo "========================================================"
 
 .PHONY: clean
