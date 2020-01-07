@@ -99,14 +99,14 @@ bit_feature_t checkbitstreamFeature(const char * featureName) {
 
     uint32_t features = _bitinfo[i+1];
     bit_feature_t available = BIT_FEATURE_UNKNOWN;
-    if (strcmp(featureName, "hw_instrumentation") == 0) {
+    if (strcmp(featureName, "hwcounter") == 0) {
         available = features & 0x1 ? BIT_FEATURE_AVAIL:BIT_FEATURE_NO_AVAIL;
     }
-    else if (strcmp(featureName, "task_manager") == 0) {
-        available = (features >> 1) & 0x1 ? BIT_FEATURE_AVAIL:BIT_FEATURE_NO_AVAIL;
+    else if (strcmp(featureName, "hwruntime") == 0) {
+        available = (features >> 6) & 0x1 ? BIT_FEATURE_AVAIL:BIT_FEATURE_NO_AVAIL;
     }
-    else if (strcmp(featureName, "ext_task_manager") == 0) {
-        available = (features >> 2) & 0x1 ? BIT_FEATURE_AVAIL:BIT_FEATURE_NO_AVAIL;
+    else if (strcmp(featureName, "hwruntime_ext") == 0) {
+        available = (features >> 7) & 0x1 ? BIT_FEATURE_AVAIL:BIT_FEATURE_NO_AVAIL;
     }
 
     return available;

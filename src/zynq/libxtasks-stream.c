@@ -103,7 +103,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     if (nEvents <= 1) return XTASKS_EINVAL;
 
     //Check if bitstream has the HW instrumentation feature
-    if (checkbitstreamFeature("hw_instrumentation") == BIT_FEATURE_NO_AVAIL) {
+    if (checkbitstreamFeature("hwcounter") == BIT_FEATURE_NO_AVAIL) {
         return XTASKS_ENOAV;
     }
 
@@ -205,7 +205,7 @@ xtasks_stat xtasksInit()
         return XTASKS_ERROR;
     }
 
-    //Check if bitstream has the task manager feature
+    //Check if bitstream has the dma feature
     if (checkbitstreamFeature("dma") == BIT_FEATURE_NO_AVAIL) {
         ret = XTASKS_ENOAV;
         PRINT_ERROR("OmpSs@FPGA DMA feature not available in the loaded FPGA bitstream");
