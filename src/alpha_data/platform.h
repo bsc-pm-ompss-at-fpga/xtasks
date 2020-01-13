@@ -30,6 +30,10 @@
 
 #define STR_BUFFER_SIZE 128
 #define BISTREAM_INFO_ADDRESS 0x00020000
+#define BISTREAM_INFO_MIN_REV 4
+#define BISTREAM_INFO_REV_IDX 0
+#define BISTREAM_INFO_FEATURES_IDX 3
+#define BISTREAM_INFO_WRAPPER_IDX 6
 #define BITINFO_FIELD_SEP 0xFFFFFFFF
 #define BITINFO_MAX_WORDS 512
 
@@ -76,6 +80,27 @@ void printErrorBitstreamCompatibility()
 }
 
 /*!
+ * \brief Returns the offset in words where the "idx" information of bitinfo starts
+ */
+int getBitinfoOffset(const int idx)
+{
+    if (idx == 0) {
+        return 0;
+    } else if (idx == 1) {
+        return 2;
+    } else if (idx == 2) {
+        return 4;
+    }
+    int i = 4;
+    for (int j = 2; j < idx && i < BITINFO_MAX_WORDS; ++j) {
+        while (_bitinfo[i] != BITINFO_FIELD_SEP && i < BITINFO_MAX_WORDS)
+            ++i;
+        ++i;
+    }
+    return i;
+}
+
+/*!
  * \brief Checks whether a bitstream feature is present in the current fpga configuration or not.
  *          checkbitstreamCompatibility must be called before calling this function.
  * \return  BIT_FEATURE_NO_AVAIL if the feature is not available
@@ -91,13 +116,11 @@ bit_feature_t checkbitstreamFeature(const char * featureName) {
         PRINT_ERROR("Invalid value in XTASKS_FEATURES_CHECK, must be 0 or 1. Ignoring it");
     }
 
-    int i = 4;
-    while (_bitinfo[i] != BITINFO_FIELD_SEP)
-        ++i;
+    const int i = getBitinfoOffset(BISTREAM_INFO_FEATURES_IDX);
     if (i >= BITINFO_MAX_WORDS)
         return BIT_FEATURE_UNKNOWN;
 
-    uint32_t features = _bitinfo[i+1];
+    const uint32_t features = _bitinfo[i];
     bit_feature_t available = BIT_FEATURE_UNKNOWN;
     if (strcmp(featureName, "hwcounter") == 0) {
         available = features & 0x1 ? BIT_FEATURE_AVAIL:BIT_FEATURE_NO_AVAIL;
@@ -133,26 +156,17 @@ bit_compatibility_t checkbitstreamCompatibility(ADMXRC3_HANDLE hDevice) {
     }
 
     //The bitstream info BRAM version is old
-    if (_bitinfo[0] < 3 || _bitinfo[0] > 4) {
+    const int bitinfoRev = _bitinfo[getBitinfoOffset(BISTREAM_INFO_REV_IDX)];
+    if (bitinfoRev < BISTREAM_INFO_MIN_REV) {
         return BIT_NO_COMPAT;
     }
 
-    int i = 4;
-    for (int j = 0; j < 3; ++j) {
-        while (_bitinfo[i] != BITINFO_FIELD_SEP)
-            ++i;
-        ++i;
+    const int i = getBitinfoOffset(BISTREAM_INFO_WRAPPER_IDX);
+    if (i >= BITINFO_MAX_WORDS) {
+        return BIT_FEATURE_UNKNOWN;
     }
-    int len = 0;
-    while (_bitinfo[i+len] != BITINFO_FIELD_SEP)
-        ++len;
-    //Make sure the ASCII string ends with '\0'
-    _bitinfo[i+len] = 0;
-    int version;
-    sscanf((const char*)&_bitinfo[i], "%d", &version);
-    //Restore the contents of the original BRAM
-    _bitinfo[i+len] = BITINFO_FIELD_SEP;
 
+    const uint32_t version = _bitinfo[i];
     return MIN_WRAPPER_VER <= version && version <= MAX_WRAPPER_VER ? BIT_COMPAT:BIT_NO_COMPAT;
 }
 
