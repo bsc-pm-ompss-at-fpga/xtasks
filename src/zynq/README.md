@@ -3,7 +3,7 @@
 The current supported back-ends for Zynq platforms are:
  - `libxtasks-stream` implements a direct communication to the HW accelerators sending the task arguments by stream.
  - `libxtasks-hwruntime` implements an asynchronous communication where the tasks are pushed into a communication buffer. The HW runtime in the FPGA reads the information and communicates with the accelerators.
- - `libxtasks-picos` implements an asynchronous communication using the [Picos](https://doi.org/10.1109/IPDPS.2017.48) queue for direct ready tasks execution.
+ - `libxtasks-picos` *(deprecated)* implements an asynchronous communication using the [Picos](https://doi.org/10.1109/IPDPS.2017.48) queue for direct ready tasks execution.
 
 ### Build
 
@@ -12,7 +12,7 @@ The current supported back-ends for Zynq platforms are:
 Each back-end library has different requirements that are summarized in the following table.
 Moreover, the installation path of required libraries must be provided during the build stage.
 
-|     | stream | taskmanager | picos |
+|     | stream |  hwruntime  | picos |
 | --- | :----: | :---------: | :---: |
 | [libxdma](https://pm.bsc.es/gitlab/ompss-at-fpga/xdma)          | X | X |   |
 | [libpicos](https://pm.bsc.es/gitlab/picos/libpicos)             |   |   | X |

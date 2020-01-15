@@ -1,29 +1,22 @@
-/*
-* Copyright (c) 2018-2019, BSC (Barcelona Supercomputing Center)
-* All rights reserved.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-*     * Redistributions of source code must retain the above copyright
-*       notice, this list of conditions and the following disclaimer.
-*     * Redistributions in binary form must reproduce the above copyright
-*       notice, this list of conditions and the following disclaimer in the
-*       documentation and/or other materials provided with the distribution.
-*     * Neither the name of the <organization> nor the
-*       names of its contributors may be used to endorse or promote products
-*       derived from this software without specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY BSC ''AS IS'' AND ANY
-* EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-* WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-* DISCLAIMED. IN NO EVENT SHALL <copyright holder> BE LIABLE FOR ANY
-* DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-* (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-* LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-* ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-* (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-* SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+/*--------------------------------------------------------------------
+  (C) Copyright 2017-2020 Barcelona Supercomputing Center
+                          Centro Nacional de Supercomputacion
+
+  This file is part of OmpSs@FPGA toolchain.
+
+  This code is free software; you can redistribute it and/or modify
+  it under the terms of the GNU Lesser General Public License as
+  published by the Free Software Foundation; either version 3 of
+  the License, or (at your option) any later version.
+
+  OmpSs@FPGA toolchain is distributed in the hope that it will be
+  useful, but WITHOUT ANY WARRANTY; without even the implied
+  warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the GNU General Public License for more details.
+
+  You should have received a copy of the GNU Lesser General Public
+  License along with this code. If not, see <www.gnu.org/licenses/>.
+--------------------------------------------------------------------*/
 
 #include "libxtasks.h"
 #include "util/common.h"
@@ -47,12 +40,12 @@
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
-#define CMD_IN_QUEUE_LEN        1024            ///< Total number of entries in the cmd_in queue
-#define CMD_IN_SUBQUEUE_LEN     64              ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
-#define CMD_OUT_QUEUE_LEN       1024            ///< Total number of entries in the cmd_out queue
-#define CMD_OUT_SUBQUEUE_LEN    64              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
-#define NEW_QUEUE_LEN           1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
-#define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
+#define CMD_IN_QUEUE_LEN        1024            ///< Total number of entries in the cmd_in_queue
+#define CMD_IN_SUBQUEUE_LEN     64              ///< Number of entries in the sub-queue of cmd_in_queue for one accelerator
+#define CMD_OUT_QUEUE_LEN       1024            ///< Total number of entries in the cmd_out_queue
+#define CMD_OUT_SUBQUEUE_LEN    64              ///< Number of entries in the sub-queue of cmd_out_queue for one accelerator
+#define SPWN_OUT_QUEUE_LEN      1024            //NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
+#define SPWN_IN_QUEUE_LEN       1024            ///< Total number of entries in the spawn_out_in_queue
 #define QUEUE_VALID             0x80
 #define QUEUE_RESERVED          0x40
 #define QUEUE_INVALID           0x00
@@ -76,11 +69,11 @@
 
 #define CMD_IN_QUEUE_ADDR 0x00004000
 #define CMD_OUT_QUEUE_ADDR 0x00008000
-#define TASKMANAGER_RESET_ADDRESS 0x0000C000
-#define NEW_QUEUE_ADDRESS 0x00014000
-#define REMFINI_QUEUE_ADDRESS 0x000018000
+#define HWRUNTIME_RESET_ADDRESS 0x0000C000
+#define SPAWN_OUT_QUEUE_ADDRESS 0x00014000
+#define SPAWN_IN_QUEUE_ADDRESS 0x000018000
 
-#define INSTR_COUNTER_ADDRESS 0x00010000
+#define HWCOUNTER_ADDRESS 0x00010000
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
@@ -157,11 +150,11 @@ static uint8_t *            _cmdExecTaskBuff;   ///< Buffer to send the HW tasks
 static task_t *             _tasks;             ///< Array with internal task information
 static uint64_t            *_cmdInQueue;        ///< Command IN queue
 static uint64_t            *_cmdOutQueue;       ///< Command OUT queue
-static uint64_t            *_newQueue;          ///< Buffer for the new tasks created in the HW
-static size_t               _newQueueIdx;       ///< Reading index of the _newQueue
-static uint64_t            *_remFiniQueue;      ///< Buffer for the remote finished tasks
-static size_t               _remFiniQueueIdx;   ///< Writing index of the _remFiniQueue
-static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Manager
+static uint64_t            *_spawnOutQueue;     ///< Spawn OUT queue (buffer of FPGA spawned tasks)
+static size_t               _spawnOutQueueIdx;  ///< Reading index of the _spawnOutQueue
+static uint64_t            *_spawnInQueue;      ///< Spawn IN queue (buffer of finished FPGA spawned tasks)
+static size_t               _spawnInQueueIdx;   ///< Writing index of the _spawnInQueue
+static uint32_t volatile   *_hwruntimeRst;      ///< Register to reset HW runtime
 
 static ticketLock_t         _bufferTicket;      ///< Lock to atomically access PCI direct slave
 static ADMXRC3_HANDLE       _hDevice;           ///< Alphadata device handle
@@ -172,12 +165,12 @@ static xtasks_ins_event    *_instrBuff;         ///< Buffer of instrumentation e
 static xdma_buf_handle      _instrBuffHandle;   ///< Handle of _instrBuff in libxdma
 static uint64_t*            _instrCounter;      ///< Hardware counter
 
-static inline __attribute__((always_inline)) void resetTaskManager()
+static inline __attribute__((always_inline)) void resetHWRuntime()
 {
     //Nudge one register
-    *_taskmanagerRst = 0x01;
+    *_hwruntimeRst = 0x01;
     for ( int i = 0; i < 10; i++ ) i = i; // Lose some time
-    *_taskmanagerRst = 0x00;
+    *_hwruntimeRst = 0x00;
 }
 
 static xtasks_stat xtasksSubmitCommand(acc_t * acc, uint64_t * command, size_t const length)
@@ -251,7 +244,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     size_t insBufferSize;
     if (nEvents <= 1) return XTASKS_EINVAL;
     //Check if bitstream has the HW instrumentation feature
-    bit_feature_t feature = checkbitstreamFeature("hw_instrumentation");
+    bit_feature_t feature = checkbitstreamFeature("hwcounter");
     if (feature == BIT_FEATURE_NO_AVAIL || feature == BIT_FEATURE_UNKNOWN) {
         return XTASKS_ENOAV;
     }
@@ -303,7 +296,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
         _accs[i].instrLock = 0;
     }
 
-    ADMXRC3_STATUS stat = ADMXRC3_MapWindow(_hDevice, 1, INSTR_COUNTER_ADDRESS, sizeof(uint64_t), (void**)&_instrCounter);
+    ADMXRC3_STATUS stat = ADMXRC3_MapWindow(_hDevice, 1, HWCOUNTER_ADDRESS, sizeof(uint64_t), (void**)&_instrCounter);
     if (stat != ADMXRC3_SUCCESS) {
         free(_instrBuff);
         xdmaFree(_instrBuffHandle);
@@ -354,10 +347,10 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_1;
     }
 
-    //Check if bitstream has the task manager feature
-    bit_feature_t feature = checkbitstreamFeature("task_manager");
+    //Check if bitstream has the hwruntime feature
+    bit_feature_t feature = checkbitstreamFeature("hwruntime");
     if (feature == BIT_FEATURE_NO_AVAIL) {
-        PRINT_ERROR("OmpSs@FPGA Task Manager not available in the loaded FPGA bitstream");
+        PRINT_ERROR("HW runtime not available in the loaded FPGA bitstream");
         ret = XTASKS_ENOAV;
 	goto INIT_ERR_1;
     }
@@ -450,7 +443,7 @@ xtasks_stat xtasksInit()
     admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, CMD_IN_QUEUE_ADDR, sizeof(uint64_t)*CMD_IN_QUEUE_LEN, (void**)&_cmdInQueue);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map ready queue of Task Manager");
+        PRINT_ERROR("Cannot map hwruntime/cmd_in_queue");
         goto INIT_ERR_MMAP_READY;
     }
 
@@ -463,7 +456,7 @@ xtasks_stat xtasksInit()
     admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, CMD_OUT_QUEUE_ADDR, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN, (void**)&_cmdOutQueue);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map finish queue of Task Manager");
+        PRINT_ERROR("Cannot map hwruntime/cmd_out_queue");
         goto INIT_ERR_MMAP_FINI;
     }
 
@@ -473,43 +466,43 @@ xtasks_stat xtasksInit()
         _cmdOutQueue[i] = 0;
     }
 
-    feature = checkbitstreamFeature("ext_task_manager");
+    feature = checkbitstreamFeature("hwruntime_ext");
 
     if (feature == BIT_FEATURE_NO_AVAIL)
-        _newQueue = NULL;
+        _spawnOutQueue = NULL;
     else {
-        admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, NEW_QUEUE_ADDRESS, sizeof(uint64_t)*NEW_QUEUE_LEN, (void**)&_newQueue);
+        admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, SPAWN_OUT_QUEUE_ADDRESS, sizeof(uint64_t)*SPWN_OUT_QUEUE_LEN, (void**)&_spawnOutQueue);
         if (admxrc3_status != ADMXRC3_SUCCESS) {
             ret = XTASKS_EFILE;
-            PRINT_ERROR("Cannot map new queue of Task Manager");
+            PRINT_ERROR("Cannot map hwruntime/spawn_out_queue");
             goto INIT_ERR_MAP_NEW;
         }
 
         //If any, invalidate tasks in newQueue
-        //_memset(_newQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
-        for (int i = 0; i < NEW_QUEUE_LEN; ++i) {
-            _newQueue[i] = 0;
+        //_memset(_spawnOutQueue, 0, SPWN_OUT_QUEUE_LEN*sizeof(uint64_t));
+        for (int i = 0; i < SPWN_OUT_QUEUE_LEN; ++i) {
+            _spawnOutQueue[i] = 0;
         }
     }
     
     if (feature == BIT_FEATURE_NO_AVAIL)
-        _remFiniQueue = NULL;
+        _spawnInQueue = NULL;
     else {
-        admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, REMFINI_QUEUE_ADDRESS, sizeof(uint64_t)*REMFINI_QUEUE_LEN, (void**)&_remFiniQueue);
+        admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, SPAWN_IN_QUEUE_ADDRESS, sizeof(uint64_t)*SPWN_IN_QUEUE_LEN, (void**)&_spawnInQueue);
         if (admxrc3_status != ADMXRC3_SUCCESS) {
             ret = XTASKS_EFILE;
-            PRINT_ERROR("Cannot map remote finished queue of Task Manager");
+            PRINT_ERROR("Cannot map hwruntime/spawn_in_queue");
             goto INIT_ERR_MAP_REMFINI;
         }
 
         //If any, invalidate tasks in remFiniQueue
-        //_memset(_remFiniQueue, 0, REMFINI_QUEUE_LEN*sizeof(uint64_t));
-        for (int i = 0; i < REMFINI_QUEUE_LEN; ++i) {
-            _remFiniQueue[i] = 0;
+        //_memset(_spawnInQueue, 0, SPWN_IN_QUEUE_LEN*sizeof(uint64_t));
+        for (int i = 0; i < SPWN_IN_QUEUE_LEN; ++i) {
+            _spawnInQueue[i] = 0;
         }
     }
 
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, TASKMANAGER_RESET_ADDRESS, sizeof(uint32_t), (void**)&_taskmanagerRst);
+    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, HWRUNTIME_RESET_ADDRESS, sizeof(uint32_t), (void**)&_hwruntimeRst);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map control registers of Task Manager");
@@ -539,7 +532,7 @@ xtasks_stat xtasksInit()
     }
 #endif
 
-    resetTaskManager();
+    resetHWRuntime();
 
     //Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
@@ -577,13 +570,13 @@ xtasks_stat xtasksInit()
         ADMXRC3_UnmapWindow(_hDevice, (void*)_picosDebug);
     INIT_ERR_MMAP_PICOSDEBUG:
 #endif
-        ADMXRC3_UnmapWindow(_hDevice, (void*)_taskmanagerRst);
+        ADMXRC3_UnmapWindow(_hDevice, (void*)_hwruntimeRst);
     INIT_ERR_MMAP_RST:
-        if (_remFiniQueue != NULL)
-            ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
+        if (_spawnInQueue != NULL)
+            ADMXRC3_UnmapWindow(_hDevice, _spawnInQueue);
     INIT_ERR_MAP_REMFINI:
-        if (_newQueue != NULL)
-            ADMXRC3_UnmapWindow(_hDevice, _newQueue);
+        if (_spawnOutQueue != NULL)
+            ADMXRC3_UnmapWindow(_hDevice, _spawnOutQueue);
     INIT_ERR_MAP_NEW:
         ADMXRC3_UnmapWindow(_hDevice, _cmdOutQueue);
     INIT_ERR_MMAP_FINI:
@@ -651,18 +644,18 @@ xtasks_stat xtasksFini()
     _tasks = NULL;
 
 #ifdef PICOS
-    *_taskmanagerRst = 0;
+    *_hwruntimeRst = 0;
 #endif
 
-    //Unmap the Task Manager queues
+    //Unmap the hwruntime queues
     ADMXRC3_STATUS statusRd, statusFi, statusNw, statusRFi, statusCtrl;
-    statusCtrl = ADMXRC3_UnmapWindow(_hDevice, (void*)_taskmanagerRst);
+    statusCtrl = ADMXRC3_UnmapWindow(_hDevice, (void*)_hwruntimeRst);
     statusFi = ADMXRC3_UnmapWindow(_hDevice, _cmdOutQueue);
     statusNw = statusRFi = ADMXRC3_SUCCESS;
-    if (_newQueue != NULL)
-        statusNw = ADMXRC3_UnmapWindow(_hDevice, _newQueue);
-    if (_remFiniQueue != NULL)
-        statusRFi = ADMXRC3_UnmapWindow(_hDevice, _remFiniQueue);
+    if (_spawnOutQueue != NULL)
+        statusNw = ADMXRC3_UnmapWindow(_hDevice, _spawnOutQueue);
+    if (_spawnInQueue != NULL)
+        statusRFi = ADMXRC3_UnmapWindow(_hDevice, _spawnInQueue);
     statusRd = ADMXRC3_UnmapWindow(_hDevice, _cmdInQueue);
     ADMXRC3_STATUS statusDbg = ADMXRC3_SUCCESS;
     ADMXRC3_STATUS statusRst0 = ADMXRC3_SUCCESS;
@@ -987,17 +980,17 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
 
 xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
-    if (_newQueue == NULL) return XTASKS_PENDING;
+    if (_spawnOutQueue == NULL) return XTASKS_PENDING;
 
-    // Get a non-empty slot into the manager new queue
+    // Get a non-empty slot into the spawn out queue
     size_t idx, taskSize;
     //new_task_header_t * hwTaskHeader;
     ticketLockAcquire(&_bufferTicket);
 
-    idx = _newQueueIdx;
-    //hwTaskHeader = (new_task_header_t *)(&_newQueue[idx]);
-    uint64_t* headerP = &_newQueue[idx];
-    uint64_t header = _newQueue[idx];
+    idx = _spawnOutQueueIdx;
+    //hwTaskHeader = (new_task_header_t *)(&_spawnOutQueue[idx]);
+    uint64_t* headerP = &_spawnOutQueue[idx];
+    uint64_t header = _spawnOutQueue[idx];
 
     uint8_t valid = header >> 56;
     uint8_t numArgs = (header >> 8) & 0x00000000000000FF;
@@ -1016,7 +1009,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
                 sizeof(new_task_dep_t)*numDeps +
                 sizeof(new_task_copy_t)*numCopies)/
             sizeof(uint64_t);
-    _newQueueIdx = (idx+taskSize)%NEW_QUEUE_LEN;
+    _spawnOutQueueIdx = (idx+taskSize)%SPWN_OUT_QUEUE_LEN;
 
     //Extract the information from the new buffer
     *task = realloc(*task,
@@ -1032,17 +1025,17 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     (*task)->numCopies = numCopies;
     (*task)->architecture = archMask;
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->taskID field is the 2nd word
-    (*task)->taskId = _newQueue[idx];
-    _newQueue[idx] = 0; //< Cleanup the memory position
+    idx = (idx+1)%SPWN_OUT_QUEUE_LEN; //NOTE: new_task_header_t->taskID field is the 2nd word
+    (*task)->taskId = _spawnOutQueue[idx];
+    _spawnOutQueue[idx] = 0; //< Cleanup the memory position
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 3th word
-    (*task)->parentId = _newQueue[idx]; //< NOTE: We don't know what is that ID (SW or HW)
-    _newQueue[idx] = 0; //< Cleanup the memory position
+    idx = (idx+1)%SPWN_OUT_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 3th word
+    (*task)->parentId = _spawnOutQueue[idx]; //< NOTE: We don't know what is that ID (SW or HW)
+    _spawnOutQueue[idx] = 0; //< Cleanup the memory position
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 4th word
-    (*task)->typeInfo = _newQueue[idx];
-    _newQueue[idx] = 0; //< Cleanup the memory position
+    idx = (idx+1)%SPWN_OUT_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 4th word
+    (*task)->typeInfo = _spawnOutQueue[idx];
+    _spawnOutQueue[idx] = 0; //< Cleanup the memory position
 
     for (size_t i = 0; i < (*task)->numCopies; ++i) {
         //NOTE: Each copy uses 3 uint64_t elements in the newQueue
@@ -1050,48 +1043,48 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
         uint64_t tmp;
 
         //NOTE: new_task_copy_t->address field is the 1st word
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        (*task)->copies[i].address = (void *)((uintptr_t)_newQueue[idx]);
-        _newQueue[idx] = 0;
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        (*task)->copies[i].address = (void *)((uintptr_t)_spawnOutQueue[idx]);
+        _spawnOutQueue[idx] = 0;
 
         //NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        tmp = _newQueue[idx];
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        tmp = _spawnOutQueue[idx];
         uint8_t copyFlags = tmp >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
         (*task)->copies[i].flags = copyFlags;
         uint32_t copySize = tmp >> NEW_TASK_COPY_SIZE_WORDOFFSET;
         (*task)->copies[i].size = copySize;
-        _newQueue[idx] = 0;
+        _spawnOutQueue[idx] = 0;
 
         //NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        tmp = _newQueue[idx];
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        tmp = _spawnOutQueue[idx];
         uint32_t copyOffset = tmp >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
         (*task)->copies[i].offset = copyOffset;
         uint32_t copyAccessedLen = tmp >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
         (*task)->copies[i].accessedLen = copyAccessedLen;
-        _newQueue[idx] = 0;
+        _spawnOutQueue[idx] = 0;
     }
 
     for (size_t i = 0; i < (*task)->numDeps; ++i) {
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_newQueue[idx]);
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_spawnOutQueue[idx]);
 
         //Parse the dependence information
         (*task)->deps[i].address = hwTaskDep->address;
         (*task)->deps[i].flags = hwTaskDep->flags;
 
         //Cleanup the memory position
-        _newQueue[idx] = 0;
+        _spawnOutQueue[idx] = 0;
     }
 
     for (size_t i = 0; i < (*task)->numArgs; ++i) {
         //Check that arg pointer is not out of bounds
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        (*task)->args[i] = _newQueue[idx];
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        (*task)->args[i] = _spawnOutQueue[idx];
 
         //Cleanup the memory position
-        _newQueue[idx] = 0;
+        _spawnOutQueue[idx] = 0;
     }
 
     //Free the buffer slot
@@ -1112,25 +1105,25 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id
 
     // Get an empty slot into the TM remote finished queue
     size_t idx;
-    idx = _remFiniQueueIdx;
-    entryHeader = (rem_fini_task_t *)(&_remFiniQueue[idx]);
+    idx = _spawnInQueueIdx;
+    entryHeader = (rem_fini_task_t *)(&_spawnInQueue[idx]);
     if (entryHeader->valid == QUEUE_VALID) {
         ticketLockRelease(&_bufferTicket);
         return XTASKS_ENOENTRY;
     }
 
     //NOTE: rem_fini_task_t->taskId is the 1st word
-    idx = (idx+1)%REMFINI_QUEUE_LEN;
-    _remFiniQueue[idx] = id;
+    idx = (idx+1)%SPWN_IN_QUEUE_LEN;
+    _spawnInQueue[idx] = id;
 
     //NOTE: rem_fini_task_t->parentId is the 2nd word
-    idx = (idx+1)%REMFINI_QUEUE_LEN;
-    _remFiniQueue[idx] = parent;
+    idx = (idx+1)%SPWN_IN_QUEUE_LEN;
+    _spawnInQueue[idx] = parent;
 
     __sync_synchronize();
     entryHeader->valid = QUEUE_VALID;
 
-    _remFiniQueueIdx = (idx+1)%REMFINI_QUEUE_LEN;
+    _spawnInQueueIdx = (idx+1)%SPWN_IN_QUEUE_LEN;
 
     ticketLockRelease(&_bufferTicket);
 
@@ -1226,14 +1219,14 @@ uint64_t cmdOutQueue(size_t const accID, size_t const idx)
     return _cmdOutQueue[accID*CMD_OUT_SUBQUEUE_LEN + idx];
 }
 
-uint64_t newQueue(size_t const idx)
+uint64_t spawnOutQueue(size_t const idx)
 {
-    return _newQueue[idx];
+    return _spawnOutQueue[idx];
 }
 
-uint64_t remFiniQueue(size_t const idx)
+uint64_t spawnInQueue(size_t const idx)
 {
-    return _remFiniQueue[idx];
+    return _spawnInQueue[idx];
 }
 
 xtasks_ins_event accelGetEvent(size_t const aIdx, size_t const evIdx) {

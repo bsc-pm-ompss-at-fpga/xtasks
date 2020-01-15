@@ -1,5 +1,5 @@
 ﻿/*--------------------------------------------------------------------
-  (C) Copyright 2017-2019 Barcelona Supercomputing Center
+  (C) Copyright 2017-2020 Barcelona Supercomputing Center
                           Centro Nacional de Supercomputacion
 
   This file is part of OmpSs@FPGA toolchain.
@@ -37,18 +37,18 @@
 
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
-#define CMD_IN_QUEUE_PATH       "/dev/ompss_fpga/task_manager/cmd_in_queue"
-#define CMD_OUT_QUEUE_PATH      "/dev/ompss_fpga/task_manager/cmd_out_queue"
-#define NEW_QUEUE_PATH          "/dev/ompss_fpga/task_manager/new_queue"
-#define REMFINI_QUEUE_PATH      "/dev/ompss_fpga/task_manager/remote_finished_queue"
-#define TASKMANAGER_RST_PATH    "/dev/ompss_fpga/task_manager/ctrl"
+#define CMD_IN_QUEUE_PATH       "/dev/ompss_fpga/hwruntime/cmd_in_queue"
+#define CMD_OUT_QUEUE_PATH      "/dev/ompss_fpga/hwruntime/cmd_out_queue"
+#define NEW_QUEUE_PATH          "/dev/ompss_fpga/hwruntime/spawn_out_queue"
+#define REMFINI_QUEUE_PATH      "/dev/ompss_fpga/hwruntime/spawn_in_queue"
+#define TASKMANAGER_RST_PATH    "/dev/ompss_fpga/hwruntime/ctrl"
 
 #define CMD_IN_QUEUE_LEN        1024            ///< Total number of entries in the cmd_in queue
 #define CMD_IN_SUBQUEUE_LEN     64              ///< Number of entries in the sub-queue of cmd_in queue for one accelerator
 #define CMD_OUT_QUEUE_LEN       1024            ///< Total number of entries in the cmd_out queue
 #define CMD_OUT_SUBQUEUE_LEN    64              ///< Number of entries in the sub-queue of cmd_out queue for one accelerator
-#define NEW_QUEUE_LEN           1024            ///< Total number of entries in the new queue (tasks created inside the FPGA)
-#define REMFINI_QUEUE_LEN       1024            ///< Total number of entries in the remote finished queue
+#define SPWN_OUT_QUEUE_LEN      1024            ///< Total number of entries in the spawn_out queue (tasks created inside the FPGA)
+#define SPWN_IN_QUEUE_LEN       1024            ///< Total number of entries in the spawn_in queue
 #define QUEUE_VALID             0x80
 #define QUEUE_RESERVED          0x40
 #define QUEUE_INVALID           0x00
@@ -75,7 +75,7 @@
 
 //! \brief Platform and Backend strings
 const char _platformName[] = "zynq";
-const char _backendName[] = "taskmanager";
+const char _backendName[] = "hwruntime";
 
 //! \brief Response out command for execute task commands
 typedef struct __attribute__ ((__packed__)) {
@@ -149,16 +149,16 @@ static uint8_t *            _cmdExecTaskBuff;   ///< Buffer to send the HW tasks
 static task_t *             _tasks;             ///< Array with internal task information
 static int                  _cmdInQFd;          ///< File descriptior of command IN queue
 static int                  _cmdOutQFd;         ///< File descriptior of command OUT queue
-static int                  _newQFd;            ///< File descriptior of new queue
-static int                  _remFiniQFd;        ///< File descriptior of remote finished queue
-static int                  _ctrlFd;            ///< File descriptior of gpioctrl device
+static int                  _spawnOutQFd;       ///< File descriptior of spawn OUT queue
+static int                  _spawnInQFd;        ///< File descriptior of spawn IN queue
+static int                  _ctrlFd;            ///< File descriptior of CTRL device
 static uint64_t            *_cmdInQueue;        ///< Command IN queue
 static uint64_t            *_cmdOutQueue;       ///< Command OUT queue
-static uint64_t            *_newQueue;          ///< Buffer for the new tasks created in the HW
-static size_t               _newQueueIdx;       ///< Reading index of the _newQueue
-static uint64_t            *_remFiniQueue;      ///< Buffer for the remote finished tasks
-static size_t               _remFiniQueueIdx;   ///< Writing index of the _remFiniQueue
-static uint32_t volatile   *_taskmanagerRst;    ///< Register to reset Task Manager
+static uint64_t            *_spawnOutQueue;     ///< Spawn OUT queue (buffer of FPGA spawned tasks)
+static size_t               _spawnOutQueueIdx;  ///< Reading index of the _spawnOutQueue
+static uint64_t            *_spawnInQueue;      ///< Spawn IN queue (buffer of finished FPGA spawned tasks)
+static size_t               _spawnInQueueIdx;   ///< Writing index of the _spawnInQueue
+static uint32_t volatile   *_hwruntimeRst;      ///< Register to reset the HW runtime
 
 static size_t               _numInstrEvents;    ///< Number of instrumentation events for each accelerator buffer
 static xtasks_ins_event    *_instrBuff;         ///< Buffer of instrumentation events
@@ -179,18 +179,18 @@ static int getResetPolarity()
     return ret;
 }
 
-static inline __attribute__((always_inline)) void resetTaskManager()
+static inline __attribute__((always_inline)) void resetHWRuntime()
 {
     //Nudge reset register
     const int polarity = getResetPolarity();
     if (polarity == 0) {
-        *_taskmanagerRst = 0x00;
+        *_hwruntimeRst = 0x00;
         usleep(1);
-        *_taskmanagerRst = 0x01;
+        *_hwruntimeRst = 0x01;
     } else {
-        *_taskmanagerRst = 0x01;
+        *_hwruntimeRst = 0x01;
         usleep(1);
-        *_taskmanagerRst = 0x00;
+        *_hwruntimeRst = 0x00;
     }
 }
 
@@ -277,7 +277,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     if (nEvents <= 1) return XTASKS_EINVAL;
 
     //Check if bitstream has the HW instrumentation feature
-    if (checkbitstreamFeature("hw_instrumentation") == BIT_FEATURE_NO_AVAIL) {
+    if (checkbitstreamFeature("hwcounter") == BIT_FEATURE_NO_AVAIL) {
         return XTASKS_ENOAV;
     }
 
@@ -376,9 +376,9 @@ xtasks_stat xtasksInit()
         return XTASKS_ERROR;
     }
 
-    //Check if bitstream has the task manager feature
-    if (checkbitstreamFeature("task_manager") == BIT_FEATURE_NO_AVAIL) {
-        PRINT_ERROR("OmpSs@FPGA Task Manager not available in the loaded FPGA bitstream");
+    //Check if bitstream has the hwruntime feature
+    if (checkbitstreamFeature("hwruntime") == BIT_FEATURE_NO_AVAIL) {
+        PRINT_ERROR("HW runtime not available in the loaded FPGA bitstream");
         return XTASKS_ENOAV;
     }
 
@@ -480,26 +480,26 @@ xtasks_stat xtasksInit()
     _ctrlFd = open(TASKMANAGER_RST_PATH, O_RDWR, (mode_t) 0600);
     if (_cmdInQFd < 0 || _cmdOutQFd < 0 || _ctrlFd < 0) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot open taskmanager device files");
+        PRINT_ERROR("Cannot open basic hwruntime device files");
         goto INIT_ERR_OPEN_COMM;
     }
 
-    if (checkbitstreamFeature("ext_task_manager") == BIT_FEATURE_NO_AVAIL) {
-        //Do not try to open the extended TM queues as we know that are not available
-        _newQFd = -1;
-        _remFiniQFd = -1;
+    if (checkbitstreamFeature("hwruntime_ext") == BIT_FEATURE_NO_AVAIL) {
+        //Do not try to open the extended queues as we know that are not available
+        _spawnOutQFd = -1;
+        _spawnInQFd = -1;
     } else {
-        _newQFd = open(NEW_QUEUE_PATH, O_RDWR, (mode_t) 0600);
-        if (_newQFd < 0 && errno != ENOENT) {
+        _spawnOutQFd = open(NEW_QUEUE_PATH, O_RDWR, (mode_t) 0600);
+        if (_spawnOutQFd < 0 && errno != ENOENT) {
             ret = XTASKS_EFILE;
-            PRINT_ERROR("Cannot open taskmanager new queue device file");
-            goto INIT_ERR_OPEN_NEW;
+            PRINT_ERROR("Cannot open hwruntime/spawn_out_queue device file");
+            goto INIT_ERR_OPEN_SPWN_OUT;
         }
-        _remFiniQFd = open(REMFINI_QUEUE_PATH, O_RDWR, (mode_t) 0600);
-        if (_remFiniQFd < 0 && errno != ENOENT) {
+        _spawnInQFd = open(REMFINI_QUEUE_PATH, O_RDWR, (mode_t) 0600);
+        if (_spawnInQFd < 0 && errno != ENOENT) {
             ret = XTASKS_EFILE;
-            PRINT_ERROR("Cannot open taskmanager remote finished queue device file");
-            goto INIT_ERR_OPEN_REMFINI;
+            PRINT_ERROR("Cannot open hwruntime/spawn_in_queue device file");
+            goto INIT_ERR_OPEN_SPWN_IN;
         }
     }
 
@@ -507,66 +507,65 @@ xtasks_stat xtasksInit()
         PROT_READ | PROT_WRITE, MAP_SHARED, _cmdInQFd, 0);
     if (_cmdInQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map cmd_in queue of Task Manager");
+        PRINT_ERROR("Cannot map hwruntime/cmd_in_queue");
         goto INIT_ERR_MMAP_CMD_IN;
     }
 
-    //If any, invalidate commands in cmd_in queue
+    //If any, invalidate commands in cmd_in_queue
     _memset(_cmdInQueue, 0, CMD_IN_QUEUE_LEN*sizeof(uint64_t));
 
     _cmdOutQueue = (uint64_t *)mmap(NULL, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN,
         PROT_READ | PROT_WRITE, MAP_SHARED, _cmdOutQFd, 0);
     if (_cmdOutQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map cmd_out queue of Task Manager");
+        PRINT_ERROR("Cannot map hwruntime/cmd_out_queue");
         goto INIT_ERR_MMAP_CMD_OUT;
     }
 
-    //If any, invalidate commands in cmd_out queue
+    //If any, invalidate commands in cmd_out_queue
     _memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN*sizeof(uint64_t));
 
-    _newQueueIdx = 0;
-    if (_newQFd == -1) {
-       _newQueue = NULL;
+    _spawnOutQueueIdx = 0;
+    if (_spawnOutQFd == -1) {
+       _spawnOutQueue = NULL;
     } else {
-        _newQueue = (uint64_t *)mmap(NULL, sizeof(uint64_t)*NEW_QUEUE_LEN,
-            PROT_READ | PROT_WRITE, MAP_SHARED, _newQFd, 0);
-        if (_newQueue == MAP_FAILED) {
+        _spawnOutQueue = (uint64_t *)mmap(NULL, sizeof(uint64_t)*SPWN_OUT_QUEUE_LEN,
+            PROT_READ | PROT_WRITE, MAP_SHARED, _spawnOutQFd, 0);
+        if (_spawnOutQueue == MAP_FAILED) {
             ret = XTASKS_EFILE;
-            PRINT_ERROR("Cannot map new queue of Task Manager");
-            goto INIT_ERR_MAP_NEW;
+            PRINT_ERROR("Cannot map hwruntime/spawn_out_queue");
+            goto INIT_ERR_MAP_SPWN_OUT;
         }
 
-        //If any, invalidate tasks in newQueue
-        _memset(_newQueue, 0, NEW_QUEUE_LEN*sizeof(uint64_t));
+        //If any, invalidate tasks in spawn_out_queue
+        _memset(_spawnOutQueue, 0, SPWN_OUT_QUEUE_LEN*sizeof(uint64_t));
     }
 
-    _remFiniQueueIdx = 0;
-    if (_remFiniQFd == -1) {
-       _remFiniQueue = NULL;
+    _spawnInQueueIdx = 0;
+    if (_spawnInQFd == -1) {
+       _spawnInQueue = NULL;
     } else {
-        _remFiniQueue = (uint64_t *)mmap(NULL, sizeof(uint64_t)*REMFINI_QUEUE_LEN,
-            PROT_READ | PROT_WRITE, MAP_SHARED, _remFiniQFd, 0);
-        if (_remFiniQueue == MAP_FAILED) {
+        _spawnInQueue = (uint64_t *)mmap(NULL, sizeof(uint64_t)*SPWN_IN_QUEUE_LEN,
+            PROT_READ | PROT_WRITE, MAP_SHARED, _spawnInQFd, 0);
+        if (_spawnInQueue == MAP_FAILED) {
             ret = XTASKS_EFILE;
-            PRINT_ERROR("Cannot map remote finished queue of Task Manager");
-            goto INIT_ERR_MAP_REMFINI;
+            PRINT_ERROR("Cannot map hwruntime/spawn_in_queue");
+            goto INIT_ERR_MAP_SPWN_IN;
         }
 
-        //If any, invalidate tasks in remFiniQueue
-        _memset(_remFiniQueue, 0, REMFINI_QUEUE_LEN*sizeof(uint64_t));
+        //If any, invalidate tasks in spawn_in_queue
+        _memset(_spawnInQueue, 0, SPWN_IN_QUEUE_LEN*sizeof(uint64_t));
     }
 
-    _taskmanagerRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE,
+    _hwruntimeRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE,
         MAP_SHARED, _ctrlFd, 0);
-    if (_taskmanagerRst == MAP_FAILED) {
+    if (_hwruntimeRst == MAP_FAILED) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot map control registers of Task Manager");
+        PRINT_ERROR("Cannot map hwruntime/ctrl");
         goto INIT_ERR_MMAP_RST;
     }
 
-    //Reset _cmdInQueue and _cmdOutQueue indexes
-    resetTaskManager();
+    resetHWRuntime();
 
     //Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS*sizeof(task_t));
@@ -597,22 +596,22 @@ xtasks_stat xtasksInit()
         free(_tasks);
     INIT_ERR_ALLOC_TASKS:
     INIT_ERR_MMAP_RST:
-        if (_remFiniQueue != NULL)
-            munmap(_remFiniQueue, sizeof(uint64_t)*REMFINI_QUEUE_LEN);
-    INIT_ERR_MAP_REMFINI:
-        if (_newQueue != NULL)
-            munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN);
-    INIT_ERR_MAP_NEW:
+        if (_spawnInQueue != NULL)
+            munmap(_spawnInQueue, sizeof(uint64_t)*SPWN_IN_QUEUE_LEN);
+    INIT_ERR_MAP_SPWN_IN:
+        if (_spawnOutQueue != NULL)
+            munmap(_spawnOutQueue, sizeof(uint64_t)*SPWN_OUT_QUEUE_LEN);
+    INIT_ERR_MAP_SPWN_OUT:
         munmap(_cmdOutQueue, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN);
     INIT_ERR_MMAP_CMD_OUT:
         munmap(_cmdInQueue, sizeof(uint64_t)*CMD_IN_QUEUE_LEN);
     INIT_ERR_MMAP_CMD_IN:
-        if (_remFiniQFd != -1)
-            close(_remFiniQFd);
-    INIT_ERR_OPEN_REMFINI:
-        if (_newQFd != -1)
-            close(_newQFd);
-    INIT_ERR_OPEN_NEW:
+        if (_spawnInQFd != -1)
+            close(_spawnInQFd);
+    INIT_ERR_OPEN_SPWN_IN:
+        if (_spawnOutQFd != -1)
+            close(_spawnOutQFd);
+    INIT_ERR_OPEN_SPWN_OUT:
     INIT_ERR_OPEN_COMM:
         close(_ctrlFd);
         close(_cmdOutQFd);
@@ -649,11 +648,11 @@ xtasks_stat xtasksFini()
         ret = XTASKS_ERROR;
     }
 
-    //Unmap the Task Manager queues
+    //Unmap the HW runtime queues
     int statusRd, statusFi, statusNw, statusRFi, statusCtrl;
-    statusCtrl = munmap((void *)_taskmanagerRst, sizeof(uint32_t));
-    statusRFi = _remFiniQueue != NULL ? munmap(_remFiniQueue, sizeof(uint64_t)*REMFINI_QUEUE_LEN) : 0;
-    statusNw = _newQueue != NULL ? munmap(_newQueue, sizeof(uint64_t)*NEW_QUEUE_LEN) : 0;
+    statusCtrl = munmap((void *)_hwruntimeRst, sizeof(uint32_t));
+    statusRFi = _spawnInQueue != NULL ? munmap(_spawnInQueue, sizeof(uint64_t)*SPWN_IN_QUEUE_LEN) : 0;
+    statusNw = _spawnOutQueue != NULL ? munmap(_spawnOutQueue, sizeof(uint64_t)*SPWN_OUT_QUEUE_LEN) : 0;
     statusFi = munmap(_cmdOutQueue, sizeof(uint64_t)*CMD_OUT_QUEUE_LEN);
     statusRd = munmap(_cmdInQueue, sizeof(uint64_t)*CMD_IN_QUEUE_LEN);
     if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusRFi == -1 || statusCtrl == -1) {
@@ -661,8 +660,8 @@ xtasks_stat xtasksFini()
     }
 
     statusCtrl = close(_ctrlFd);
-    statusRFi = _remFiniQFd != -1 ? close(_remFiniQFd) : 0;
-    statusNw = _newQFd != -1 ? close(_newQFd) : 0;
+    statusRFi = _spawnInQFd != -1 ? close(_spawnOutQFd) : 0;
+    statusNw = _spawnOutQFd != -1 ? close(_spawnInQFd) : 0;
     statusFi = close(_cmdOutQFd);
     statusRd = close(_cmdInQFd);
     if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusRFi == -1 || statusCtrl == -1) {
@@ -995,14 +994,14 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
 
 xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
 {
-    if (_newQueue == NULL) return XTASKS_PENDING;
+    if (_spawnOutQueue == NULL) return XTASKS_PENDING;
 
-    // Get a non-empty slot into the manager new queue
+    // Get a non-empty slot into the spawn out queue
     size_t idx, next, taskSize;
     new_task_header_t * hwTaskHeader;
     do {
-        idx = _newQueueIdx;
-        hwTaskHeader = (new_task_header_t *)(&_newQueue[idx]);
+        idx = _spawnOutQueueIdx;
+        hwTaskHeader = (new_task_header_t *)(&_spawnOutQueue[idx]);
         if (hwTaskHeader->valid != QUEUE_VALID) {
             return XTASKS_PENDING;
         }
@@ -1012,8 +1011,8 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
           sizeof(new_task_dep_t)*hwTaskHeader->numDeps +
           sizeof(new_task_copy_t)*hwTaskHeader->numCopies)/
           sizeof(uint64_t);
-        next = (idx+taskSize)%NEW_QUEUE_LEN;
-    } while ( !__sync_bool_compare_and_swap(&_newQueueIdx, idx, next) );
+        next = (idx+taskSize)%SPWN_OUT_QUEUE_LEN;
+    } while ( !__sync_bool_compare_and_swap(&_spawnOutQueueIdx, idx, next) );
 
     //Extract the information from the new buffer
     *task = realloc(*task,
@@ -1029,17 +1028,17 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     (*task)->numCopies = hwTaskHeader->numCopies;
     (*task)->architecture = hwTaskHeader->archMask;
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->taskID field is the 2nd word
-    (*task)->taskId = _newQueue[idx];
-    _newQueue[idx] = 0; //< Cleanup the memory position
+    idx = (idx+1)%SPWN_OUT_QUEUE_LEN; //NOTE: new_task_header_t->taskID field is the 2nd word
+    (*task)->taskId = _spawnOutQueue[idx];
+    _spawnOutQueue[idx] = 0; //< Cleanup the memory position
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 3th word
-    (*task)->parentId = _newQueue[idx]; //< NOTE: We don't know what is that ID (SW or HW)
-    _newQueue[idx] = 0; //< Cleanup the memory position
+    idx = (idx+1)%SPWN_OUT_QUEUE_LEN; //NOTE: new_task_header_t->parentID field is the 3th word
+    (*task)->parentId = _spawnOutQueue[idx]; //< NOTE: We don't know what is that ID (SW or HW)
+    _spawnOutQueue[idx] = 0; //< Cleanup the memory position
 
-    idx = (idx+1)%NEW_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 4th word
-    (*task)->typeInfo = _newQueue[idx];
-    _newQueue[idx] = 0; //< Cleanup the memory position
+    idx = (idx+1)%SPWN_OUT_QUEUE_LEN; //NOTE: new_task_header_t->typeInfo field is the 4th word
+    (*task)->typeInfo = _spawnOutQueue[idx];
+    _spawnOutQueue[idx] = 0; //< Cleanup the memory position
 
     for (size_t i = 0; i < (*task)->numCopies; ++i) {
         //NOTE: Each copy uses 3 uint64_t elements in the newQueue
@@ -1047,48 +1046,48 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
         uint64_t tmp;
 
         //NOTE: new_task_copy_t->address field is the 1st word
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        (*task)->copies[i].address = (void *)((uintptr_t)_newQueue[idx]);
-        _newQueue[idx] = 0;
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        (*task)->copies[i].address = (void *)((uintptr_t)_spawnOutQueue[idx]);
+        _spawnOutQueue[idx] = 0;
 
          //NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        tmp = _newQueue[idx];
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        tmp = _spawnOutQueue[idx];
         uint8_t copyFlags = tmp >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
         (*task)->copies[i].flags = copyFlags;
         uint32_t copySize = tmp >> NEW_TASK_COPY_SIZE_WORDOFFSET;
         (*task)->copies[i].size = copySize;
-        _newQueue[idx] = 0;
+        _spawnOutQueue[idx] = 0;
 
          //NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        tmp = _newQueue[idx];
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        tmp = _spawnOutQueue[idx];
         uint32_t copyOffset = tmp >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
         (*task)->copies[i].offset = copyOffset;
         uint32_t copyAccessedLen = tmp >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
         (*task)->copies[i].accessedLen = copyAccessedLen;
-        _newQueue[idx] = 0;
+        _spawnOutQueue[idx] = 0;
     }
 
     for (size_t i = 0; i < (*task)->numDeps; ++i) {
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_newQueue[idx]);
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_spawnOutQueue[idx]);
 
         //Parse the dependence information
         (*task)->deps[i].address = hwTaskDep->address;
         (*task)->deps[i].flags = hwTaskDep->flags;
 
         //Cleanup the memory position
-        _newQueue[idx] = 0;
+        _spawnOutQueue[idx] = 0;
     }
 
     for (size_t i = 0; i < (*task)->numArgs; ++i) {
         //Check that arg pointer is not out of bounds
-        idx = (idx+1)%NEW_QUEUE_LEN;
-        (*task)->args[i] = _newQueue[idx];
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        (*task)->args[i] = _spawnOutQueue[idx];
 
         //Cleanup the memory position
-        _newQueue[idx] = 0;
+        _spawnOutQueue[idx] = 0;
     }
 
     //Free the buffer slot
@@ -1105,21 +1104,21 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id
     size_t idx, next;
     rem_fini_task_t * entryHeader;
     do {
-        idx = _remFiniQueueIdx;
-        entryHeader = (rem_fini_task_t *)(&_remFiniQueue[idx]);
+        idx = _spawnInQueueIdx;
+        entryHeader = (rem_fini_task_t *)(&_spawnInQueue[idx]);
         if (entryHeader->valid == QUEUE_VALID) {
             return XTASKS_ENOENTRY;
         }
-        next = (idx+sizeof(rem_fini_task_t)/sizeof(uint64_t))%REMFINI_QUEUE_LEN;
-    } while ( !__sync_bool_compare_and_swap(&_remFiniQueueIdx, idx, next) );
+        next = (idx+sizeof(rem_fini_task_t)/sizeof(uint64_t))%SPWN_IN_QUEUE_LEN;
+    } while ( !__sync_bool_compare_and_swap(&_spawnInQueueIdx, idx, next) );
 
     //NOTE: rem_fini_task_t->taskId is the 1st word
-    idx = (idx+1)%REMFINI_QUEUE_LEN;
-    _remFiniQueue[idx] = id;
+    idx = (idx+1)%SPWN_IN_QUEUE_LEN;
+    _spawnInQueue[idx] = id;
 
     //NOTE: rem_fini_task_t->parentId is the 2nd word
-    idx = (idx+1)%REMFINI_QUEUE_LEN;
-    _remFiniQueue[idx] = parent;
+    idx = (idx+1)%SPWN_IN_QUEUE_LEN;
+    _spawnInQueue[idx] = parent;
 
     __sync_synchronize();
     entryHeader->valid = QUEUE_VALID;
@@ -1204,14 +1203,14 @@ uint64_t cmdOutQueue(size_t const accID, size_t const idx)
     return _cmdOutQueue[accID*CMD_OUT_SUBQUEUE_LEN + idx];
 }
 
-uint64_t newQueue(size_t const idx)
+uint64_t spawnOutQueue(size_t const idx)
 {
-    return _newQueue[idx];
+    return _spawnOutQueue[idx];
 }
 
-uint64_t remFiniQueue(size_t const idx)
+uint64_t spawnInQueue(size_t const idx)
 {
-    return _remFiniQueue[idx];
+    return _spawnInQueue[idx];
 }
 
 xtasks_ins_event accelGetEvent(size_t const aIdx, size_t const evIdx) {
