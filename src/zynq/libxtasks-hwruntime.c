@@ -130,10 +130,11 @@ typedef struct {
 //! \brief Internal library task information
 typedef struct {
     xtasks_task_id          id;            ///< External task identifier
-    cmd_exec_task_header_t *cmdHeader;     ///< Pointer to the cmd_exec_task_header_t struct
+    cmd_header_t *          cmdHeader;     ///< Pointer to the cmd_exec_task_header_t/cmd_peri_task_header_t struct
     cmd_exec_task_arg_t *   cmdExecArgs;   ///< Pointer to the array of cmd_exec_task_arg_t structs
     acc_t *                 accel;         ///< Accelerator where the task will run
-    uint8_t                 extSize;       ///< Whether the space available in args is extended or not
+    uint8_t                 extSize:1;     ///< Whether the space available in args is extended or not
+    uint8_t                 periTask:1;    ///< Whether the tasks is a periodic task or not
 } task_t;
 
 static int _init_cnt = 0;   ///< Counter of calls to init/fini
@@ -575,10 +576,10 @@ xtasks_stat xtasksInit()
     }
     for (size_t idx = 0; idx < NUM_RUN_TASKS; ++idx) {
         _tasks[idx].id = 0;
-        _tasks[idx].cmdHeader = (cmd_exec_task_header_t *)&_cmdExecTaskBuff[idx*DEF_EXEC_TASK_SIZE];
-        _tasks[idx].cmdExecArgs = (cmd_exec_task_arg_t *)
-            &_cmdExecTaskBuff[idx*DEF_EXEC_TASK_SIZE + sizeof(cmd_exec_task_header_t)];
+        _tasks[idx].cmdHeader = (cmd_header_t *)&_cmdExecTaskBuff[idx*DEF_EXEC_TASK_SIZE];
+        _tasks[idx].cmdExecArgs = (cmd_exec_task_arg_t *)0;
         _tasks[idx].extSize = 0;
+        _tasks[idx].periTask = 0;
     }
 
     return ret;
@@ -750,12 +751,43 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
 
     _tasks[idx].id = id;
     _tasks[idx].accel = accel;
-    _tasks[idx].cmdHeader->header.commandCode = CMD_EXEC_TASK_CODE;
-    _tasks[idx].cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = 0;
-    _tasks[idx].cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_COMP_OFFSET] = compute;
-    _tasks[idx].cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_TM;
-    _tasks[idx].cmdHeader->parentID = (uintptr_t)(parent);
-    _tasks[idx].cmdHeader->taskID = (uintptr_t)(&_tasks[idx]);
+    _tasks[idx].periTask = 0;
+    cmd_exec_task_header_t * cmdHeader = (cmd_exec_task_header_t *)_tasks[idx].cmdHeader;
+    _tasks[idx].cmdExecArgs = (cmd_exec_task_arg_t *)(cmdHeader + 1);
+    cmdHeader->header.commandCode = CMD_EXEC_TASK_CODE;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = 0;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_COMP_OFFSET] = compute;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_TM;
+    cmdHeader->parentID = (uintptr_t)(parent);
+    cmdHeader->taskID = (uintptr_t)(&_tasks[idx]);
+
+    *handle = (xtasks_task_handle)&_tasks[idx];
+    return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle const accId,
+    xtasks_task_id const parent, xtasks_comp_flags const compute, unsigned int const numReps,
+    unsigned int const period, xtasks_task_handle * handle)
+{
+    acc_t * accel = (acc_t *)accId;
+    int idx = getFreeTaskEntry();
+    if (idx < 0) {
+        return XTASKS_ENOMEM;
+    }
+
+    _tasks[idx].id = id;
+    _tasks[idx].accel = accel;
+    _tasks[idx].periTask = 1;
+    cmd_peri_task_header_t * cmdHeader = (cmd_peri_task_header_t *)_tasks[idx].cmdHeader;
+    _tasks[idx].cmdExecArgs = (cmd_exec_task_arg_t *)(cmdHeader + 1);
+    cmdHeader->header.commandCode = CMD_PERI_TASK_CODE;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = 0;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_COMP_OFFSET] = compute;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_TM;
+    cmdHeader->parentID = (uintptr_t)(parent);
+    cmdHeader->taskID = (uintptr_t)(&_tasks[idx]);
+    cmdHeader->numReps = numReps;
+    cmdHeader->period = period;
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
@@ -774,24 +806,25 @@ xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
     xtasks_arg_val const value, xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
-    uint8_t argsCnt = task->cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+    uint8_t argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
     if (argsCnt >= EXT_HW_TASK_ARGS_LEN) {
         //Unsupported number of arguments
         return XTASKS_ENOSYS;
     } else if (argsCnt == DEF_EXEC_TASK_ARGS_LEN) {
         //Entering in extended mode
-        cmd_exec_task_header_t * prevHeader = task->cmdHeader;
-        task->cmdHeader = (cmd_exec_task_header_t *)malloc(EXT_HW_TASK_SIZE);
+        cmd_header_t * prevHeader = task->cmdHeader;
+        task->cmdHeader = (cmd_header_t *)malloc(EXT_HW_TASK_SIZE);
         if (task->cmdHeader == NULL) {
             task->cmdHeader = prevHeader;
             return XTASKS_ENOMEM;
         }
         task->extSize = 1;
-        task->cmdExecArgs = (cmd_exec_task_arg_t *)(task->cmdHeader + 1);
+        task->cmdExecArgs = (cmd_exec_task_arg_t *)(((unsigned char *)task->cmdHeader) +
+          (task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t)));
         memcpy(task->cmdHeader, prevHeader, DEF_EXEC_TASK_SIZE); //< Move the hw task header and args
     }
 
-    argsCnt = task->cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET]++;
+    argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET]++;
     task->cmdExecArgs[argsCnt].flags = flags;
     task->cmdExecArgs[argsCnt].id = id;
     task->cmdExecArgs[argsCnt].value = value;
@@ -803,7 +836,7 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
     xtasks_arg_val * const values, xtasks_task_handle const handle)
 {
     task_t * task = (task_t *)(handle);
-    uint8_t argsCnt = task->cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+    uint8_t argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
     if (num > EXT_HW_TASK_ARGS_LEN - argsCnt) {
         //Unsupported number of arguments
         return XTASKS_ENOSYS;
@@ -812,14 +845,15 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
         // 1) The number of args to add does not fit in current allocated space
         // 2) We are not in extended mode
         // 3) The number of args will fit in extended mode
-        cmd_exec_task_header_t * prevHeader = task->cmdHeader;
-        task->cmdHeader = (cmd_exec_task_header_t *)malloc(EXT_HW_TASK_SIZE);
+        cmd_header_t * prevHeader = task->cmdHeader;
+        task->cmdHeader = (cmd_header_t *)malloc(EXT_HW_TASK_SIZE);
         if (task->cmdHeader == NULL) {
             task->cmdHeader = prevHeader;
             return XTASKS_ENOMEM;
         }
         task->extSize = 1;
-        task->cmdExecArgs = (cmd_exec_task_arg_t *)(task->cmdHeader + 1);
+        task->cmdExecArgs = (cmd_exec_task_arg_t *)(((unsigned char *)task->cmdHeader) +
+          (task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t)));
         memcpy(task->cmdHeader, prevHeader, DEF_EXEC_TASK_SIZE); //< Move the hw task header and args
     }
 
@@ -828,7 +862,7 @@ xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
         task->cmdExecArgs[idx].id = idx;
         task->cmdExecArgs[idx].value = values[i];
     }
-    task->cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] += num;
+    task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] += num;
 
     return XTASKS_SUCCESS;
 }
@@ -842,11 +876,12 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
         return XTASKS_EINVAL;
     }
     // Update the task/command information
-    task->cmdHeader->header.valid = QUEUE_VALID;
+    task->cmdHeader->valid = QUEUE_VALID;
 
     //NOTE: cmdExecArgs array is after the header
-    uint8_t const argsCnt = task->cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
-    size_t const numCmdWords = (sizeof(cmd_exec_task_header_t) + sizeof(cmd_exec_task_arg_t)*argsCnt)/sizeof(uint64_t);
+    uint8_t const argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+    size_t const numHeaderBytes = task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t);
+    size_t const numCmdWords = (numHeaderBytes + sizeof(cmd_exec_task_arg_t)*argsCnt)/sizeof(uint64_t);
     return xtasksSubmitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords);
 }
 
@@ -859,7 +894,7 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 
     //NOTE: This implementation loses some tasks if waitTask and tryGetFinishedTask are combined.
     //      Force waiting for the first submited task?
-    while (task->cmdHeader->header.valid == QUEUE_VALID && tries++ < MAX_WAIT_TASKS_TRIES) {
+    while (task->cmdHeader->valid == QUEUE_VALID && tries++ < MAX_WAIT_TASKS_TRIES) {
         xtasks_task_id id;
         xtasks_task_handle h;
         xtasksTryGetFinishedTaskAccel(acc, &h, &id);
@@ -941,7 +976,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
             *id = task->id;
 
             //Mark the task as executed (using the valid field as it is not used in the cached copy)<
-            task->cmdHeader->header.valid = QUEUE_INVALID;
+            task->cmdHeader->valid = QUEUE_INVALID;
 
             return XTASKS_SUCCESS;
         }
