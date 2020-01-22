@@ -28,7 +28,7 @@
 #include <libxdma.h>
 
 #define PRINT_ERROR(_str_)      fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
-#define MIN_WRAPPER_VER         1
+#define MIN_WRAPPER_VER         3
 #define MAX_WRAPPER_VER         3
 
 #define CMD_EXEC_TASK_CODE                0x01 ///< Command code for execute task commands
