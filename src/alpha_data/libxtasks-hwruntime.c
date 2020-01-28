@@ -80,6 +80,10 @@
 # error Installed libxdma is not supported (use >= 3.0)
 #endif
 
+//! \brief Platform and Backend strings
+const char _platformName[] = "alpha_data";
+const char _backendName[] = "hwruntime";
+
 //! \brief Response out command for execute task commands
 typedef struct __attribute__ ((__packed__)) {
     cmd_header_t header;     //[0  :63 ] Command header
@@ -686,6 +690,24 @@ xtasks_stat xtasksFini()
     }
 
     return ret;
+}
+
+xtasks_stat xtasksGetPlatform(const char ** name)
+{
+    if (name == NULL) return XTASKS_EINVAL;
+
+    *name = _platformName;
+
+    return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksGetBackend(const char ** name)
+{
+    if (name == NULL) return XTASKS_EINVAL;
+
+    *name = _backendName;
+
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetNumAccs(size_t * count)
