@@ -84,12 +84,6 @@
 const char _platformName[] = "alpha_data";
 const char _backendName[] = "hwruntime";
 
-//! \brief Response out command for execute task commands
-typedef struct __attribute__ ((__packed__)) {
-    cmd_header_t header;     //[0  :63 ] Command header
-    uint64_t     taskID;     //[64 :127] Executed task identifier
-} cmd_out_exec_task_t;
-
 //! \brief New task buffer representation  (Only the header part, N arguments follow the header)
 typedef struct __attribute__ ((__packed__)) {
     uint8_t   _padding;      //[0  :7  ]
@@ -192,9 +186,7 @@ SUB_CMD_CHECK_RD:
             idx = acc->cmdInRdIdx;
             cmdHeader = _cmdInQueue[offset + idx];
             if (cmdHeaderPtr->valid == QUEUE_INVALID) {
-                uint8_t const cmdNumArgs = cmdHeaderPtr->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
-                size_t const cmdNumWords = (sizeof(cmd_exec_task_header_t) +
-                    sizeof(cmd_exec_task_arg_t)*cmdNumArgs)/sizeof(uint64_t);
+                size_t const cmdNumWords = getCmdLength(cmdHeaderPtr);
                 acc->cmdInRdIdx = (idx + cmdNumWords)%CMD_IN_SUBQUEUE_LEN;
                 acc->cmdInAvSlots += cmdNumWords;
             }
@@ -488,7 +480,7 @@ xtasks_stat xtasksInit()
             _spawnOutQueue[i] = 0;
         }
     }
-    
+
     if (feature == BIT_FEATURE_NO_AVAIL)
         _spawnInQueue = NULL;
     else {
