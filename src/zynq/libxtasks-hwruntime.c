@@ -77,12 +77,6 @@
 const char _platformName[] = "zynq";
 const char _backendName[] = "hwruntime";
 
-//! \brief Response out command for execute task commands
-typedef struct __attribute__ ((__packed__)) {
-    cmd_header_t header;     //[0  :63 ] Command header
-    uint64_t     taskID;     //[64 :127] Executed task identifier
-} cmd_out_exec_task_t;
-
 //! \brief New task buffer representation  (Only the header part, N arguments follow the header)
 typedef struct __attribute__ ((__packed__)) {
     uint8_t   _padding;      //[0  :7  ]
@@ -211,14 +205,13 @@ SUB_CMD_CHECK_RD:
             if (cmdHeaderPtr->valid == QUEUE_INVALID) {
                 uint8_t const cmdNumArgs = cmdHeaderPtr->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
 #ifdef XTASKS_DEBUG
-                if (cmdNumArgs > EXT_HW_TASK_ARGS_LEN) {
+                if (cmdHeaderPtr->commandCode == CMD_EXEC_TASK_CODE && cmdNumArgs > EXT_HW_TASK_ARGS_LEN) {
                     PRINT_ERROR("Found unexpected data when executing xtasksSubmitCommand");
                     ticketLockRelease(&acc->cmdInLock);
                     return XTASKS_ERROR;
                 }
 #endif /* XTASKS_DEBUG */
-                size_t const cmdNumWords = (sizeof(cmd_exec_task_header_t) +
-                    sizeof(cmd_exec_task_arg_t)*cmdNumArgs)/sizeof(uint64_t);
+                size_t const cmdNumWords = getCmdLength(cmdHeaderPtr);
                 acc->cmdInRdIdx = (idx + cmdNumWords)%CMD_IN_SUBQUEUE_LEN;
                 acc->cmdInAvSlots += cmdNumWords;
             }

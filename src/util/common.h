@@ -93,6 +93,30 @@ typedef struct __attribute__ ((__packed__)) {
     uint64_t     bufferAddr; //[64 :127] Instrumentation buffer address
 } cmd_setup_hw_ins_t;
 
+//! \brief Response out command for execute task commands
+typedef struct __attribute__ ((__packed__)) {
+    cmd_header_t header;     //[0  :63 ] Command header
+    uint64_t     taskID;     //[64 :127] Executed task identifier
+} cmd_out_exec_task_t;
+
+/*!
+ * \brief Returns the length of command based on its header
+ */
+uint8_t getCmdLength(cmd_header_t const * header) {
+    uint8_t length = 0;
+    uint8_t const cmdCode = header->commandCode;
+    if (cmdCode == CMD_EXEC_TASK_CODE) {
+        uint8_t const numArgs = header->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+        uint8_t const argsLength = sizeof(cmd_exec_task_arg_t)/sizeof(uint64_t)*numArgs;
+        length = sizeof(cmd_exec_task_header_t)/sizeof(uint64_t) + argsLength;
+    } else if (cmdCode == CMD_SETUP_INS_CODE) {
+        length = sizeof(cmd_setup_hw_ins_t)/sizeof(uint64_t);
+    } else if (cmdCode == CMD_FINI_EXEC_CODE) {
+        length = sizeof(cmd_out_exec_task_t)/sizeof(uint64_t);
+    }
+    return length;
+}
+
 /*!
  * \brief Returns a xtasks_stat based on a xdma_status
  */

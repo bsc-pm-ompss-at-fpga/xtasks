@@ -48,13 +48,6 @@
 const char _platformName[] = "zynq";
 const char _backendName[] = "stream";
 
-//! \brief Response out command for execute task commands
-typedef struct __attribute__ ((__packed__)) {
-    cmd_header_t header;     //[0  :63 ] Command header
-    uint64_t     taskID;     //[64 :127] Executed task identifier
-    uint64_t     parentID;   //[128:195] Parent task identifier
-} cmd_out_exec_task_t;
-
 //! \brief HW accelerator representation
 typedef struct {
     xdma_device              xdmaDev;
@@ -571,8 +564,8 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     xdma_status retD, retS;
     retD = xdmaStreamAsync(_cmdExecTaskBuffHandle, size, descOffset,
            task->accel->xdmaDev, task->accel->inChannel, &task->cmdExecTx);
-    retS = xdmaStreamAsync(_cmdExecTaskBuffHandle, sizeof(cmd_out_exec_task_t), descOffset,
-           task->accel->xdmaDev, task->accel->outChannel, &task->syncTx);
+    retS = xdmaStreamAsync(_cmdExecTaskBuffHandle, sizeof(cmd_out_exec_task_t) + sizeof(uint64_t)/*parentId*/,
+           descOffset, task->accel->xdmaDev, task->accel->outChannel, &task->syncTx);
     queuePush(task->accel->tasksQueue, (void *)task);
 
     return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
