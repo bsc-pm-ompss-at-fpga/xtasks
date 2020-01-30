@@ -203,8 +203,8 @@ SUB_CMD_CHECK_RD:
             idx = acc->cmdInRdIdx;
             cmdHeader = _cmdInQueue[offset + idx];
             if (cmdHeaderPtr->valid == QUEUE_INVALID) {
-                uint8_t const cmdNumArgs = cmdHeaderPtr->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
 #ifdef XTASKS_DEBUG
+                uint8_t const cmdNumArgs = cmdHeaderPtr->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
                 if (cmdHeaderPtr->commandCode == CMD_EXEC_TASK_CODE && cmdNumArgs > EXT_HW_TASK_ARGS_LEN) {
                     PRINT_ERROR("Found unexpected data when executing xtasksSubmitCommand");
                     ticketLockRelease(&acc->cmdInLock);
