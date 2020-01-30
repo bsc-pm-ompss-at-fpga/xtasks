@@ -158,7 +158,7 @@ static ticketLock_t         _bufferTicket;      ///< Lock to atomically access P
 static ADMXRC3_HANDLE       _hDevice;           ///< Alphadata device handle
 
 static size_t               _numInstrEvents;    ///< Number of instrumentation events for each accelerator buffer
-static uint64_t             _instrBuffPhy;      ///< Physical address of the FPGA side instrumentation buffer
+static xtasks_ins_event    *_instrBuffPhy;      ///< Physical address of the FPGA side instrumentation buffer
 static xtasks_ins_event    *_instrBuff;         ///< Buffer of instrumentation events (host side)
 static xdma_buf_handle      _instrBuffHandle;   ///< Handle of _instrBuff in libxdma
 static uint64_t*            _instrCounter;      ///< Hardware counter
@@ -252,7 +252,9 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     if (s != XDMA_SUCCESS) {
         return XTASKS_ENOAV;
     }
-    xdmaGetDeviceAddress(_instrBuffHandle, &_instrBuffPhy);
+    unsigned long phyAddr;
+    xdmaGetDeviceAddress(_instrBuffHandle, &phyAddr);
+    _instrBuffPhy = (xtasks_ins_event *)((uintptr_t)phyAddr);
 
     //Invalidate all entries
     _instrBuff = (xtasks_ins_event*)malloc(insBufferSize);
@@ -265,7 +267,8 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     if (s != XDMA_SUCCESS) {
         free(_instrBuff);
         xdmaFree(_instrBuffHandle);
-        _numInstrEvents = _instrBuffPhy = 0;
+        _numInstrEvents = 0;
+        _instrBuffPhy = NULL;
         _instrBuff = NULL;
         return XTASKS_ERROR;
     }
@@ -278,12 +281,14 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
         uint32_t * cmdArgs = (uint32_t *)&cmd.header.commandArgs;
         *cmdArgs = _numInstrEvents;
         cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents*i);
+        printf("Sending command to accelerator %lu: %lu instrumentation events and %lX address\n", i, _numInstrEvents, cmd.bufferAddr);
 
         xtasks_stat ret = xtasksSubmitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t)/sizeof(uint64_t));
         if (ret != XTASKS_SUCCESS) {
             free(_instrBuff);
             xdmaFree(_instrBuffHandle);
-            _numInstrEvents = _instrBuffPhy = 0;
+            _numInstrEvents = 0;
+            _instrBuffPhy = NULL;
             _instrBuff = NULL;
             return ret;
         }
@@ -296,7 +301,8 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     if (stat != ADMXRC3_SUCCESS) {
         free(_instrBuff);
         xdmaFree(_instrBuffHandle);
-        _numInstrEvents = _instrBuffPhy = 0;
+        _numInstrEvents = 0;
+        _instrBuffPhy = NULL;
         _instrBuff = NULL;
         return XTASKS_ERROR;
     }
@@ -311,7 +317,8 @@ xtasks_stat xtasksFiniHWIns()
     free(_instrBuff);
     ADMXRC3_STATUS stat = ADMXRC3_UnmapWindow(_hDevice, _instrCounter);
     xdmaFree(_instrBuffHandle);
-    _numInstrEvents = _instrBuffPhy = 0;
+    _numInstrEvents = 0;
+    _instrBuffPhy = NULL;
     _instrBuff = NULL;
     return stat == ADMXRC3_SUCCESS ? XTASKS_SUCCESS:XTASKS_ERROR;
 }
@@ -959,6 +966,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
         //There is another thread reading the buffer for this accelerator
         events->eventType = XTASKS_EVENT_TYPE_INVALID;
     } else {
+        printf("Checking events on acc %d\n", acc->info.id);
         count = min(maxCount, _numInstrEvents - acc->instrIdx);
         accBuffer += acc->instrIdx;
         xdma_status stat = xdmaMemcpy(events, _instrBuffHandle, count*sizeof(xtasks_ins_event), (accBuffer - _instrBuff)*sizeof(xtasks_ins_event), XDMA_FROM_DEVICE);
@@ -969,6 +977,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
         i = 0;
         while (i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID)
         {
+            printf("Found event with value %lu timestamp %lu id %u and type %u\n", events[i].value, events[i].timestamp, events[i].eventId, events[i].eventType);
             //Invalidate all read entries in the accelerator buffer
             accBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
             i++;
