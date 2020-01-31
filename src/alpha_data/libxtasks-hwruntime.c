@@ -36,8 +36,6 @@
 
 #include <admxrc3.h>
 
-//#define PICOS
-
 #define DEF_ACCS_LEN            8               ///< Def. allocated slots in the accs array
 
 #define CMD_IN_QUEUE_LEN        1024            ///< Total number of entries in the cmd_in_queue
@@ -60,12 +58,6 @@
 #define NEW_TASK_COPY_SIZE_WORDOFFSET        32 ///< Offset of new_task_copy_t->size field in the 2nd word forming new_task_copy_t
 #define NEW_TASK_COPY_OFFSET_WORDOFFSET      0  ///< Offset of new_task_copy_t->offset field in the 3rd word forming new_task_copy_t
 #define NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET 32 ///< Offset of new_task_copy_t->accessedLen field in the 3rd word forming new_task_copy_t
-
-#ifdef PICOS
-#define PICOS_RESET0_ADDRESS 0x14000
-#define PICOS_RESET1_ADDRESS 0x18000
-#define PICOS_DEBUG_ADDRESS 0x50000
-#endif
 
 #define CMD_IN_QUEUE_ADDR 0x00004000
 #define CMD_OUT_QUEUE_ADDR 0x00008000
@@ -281,7 +273,6 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
         uint32_t * cmdArgs = (uint32_t *)&cmd.header.commandArgs;
         *cmdArgs = _numInstrEvents;
         cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents*i);
-        printf("Sending command to accelerator %lu: %lu instrumentation events and %lX address\n", i, _numInstrEvents, cmd.bufferAddr);
 
         xtasks_stat ret = xtasksSubmitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t)/sizeof(uint64_t));
         if (ret != XTASKS_SUCCESS) {
@@ -331,9 +322,6 @@ xtasks_stat xtasksInit()
 
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
-#ifdef PICOS
-    _copyTime = 0;
-#endif
 
     ADMXRC3_STATUS admxrc3_status = ADMXRC3_Open(0, &_hDevice);
     if (admxrc3_status != ADMXRC3_SUCCESS) {
@@ -512,29 +500,6 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_MMAP_RST;
     }
 
-#ifdef PICOS
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, PICOS_DEBUG_ADDRESS, sizeof(uint32_t)*36, (void**)&_picosDebug);
-    if (admxrc3_status != ADMXRC3_SUCCESS) {
-        ret = XTASKS_ERROR;
-        PRINT_ERROR("Cannot map Picos debug registers");
-        goto INIT_ERR_MMAP_PICOSDEBUG;
-    }
-
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, PICOS_RESET0_ADDRESS, sizeof(uint32_t), (void**)&_picosRst0);
-    if (admxrc3_status != ADMXRC3_SUCCESS) {
-        ret = XTASKS_ERROR;
-        PRINT_ERROR("Cannot map Picos reset register 0");
-        goto INIT_ERR_MMAP_PICOSRST0;
-    }
-
-    admxrc3_status = ADMXRC3_MapWindow(_hDevice, 1, PICOS_RESET1_ADDRESS, sizeof(uint32_t), (void**)&_picosRst1);
-    if (admxrc3_status != ADMXRC3_SUCCESS) {
-        ret = XTASKS_ERROR;
-        PRINT_ERROR("Cannot map Picos reset register 1");
-        goto INIT_ERR_MMAP_PICOSRST1;
-    }
-#endif
-
     resetHWRuntime();
 
     //Allocate tasks array
@@ -565,14 +530,6 @@ xtasks_stat xtasksInit()
     INIT_ERR_ALLOC_EXEC_TASKS_BUFF:
         free(_tasks);
     INIT_ERR_ALLOC_TASKS:
-#ifdef PICOS
-        ADMXRC3_UnmapWindow(_hDevice, (void*)_picosRst1);
-    INIT_ERR_MMAP_PICOSRST1:
-        ADMXRC3_UnmapWindow(_hDevice, (void*)_picosRst0);
-    INIT_ERR_MMAP_PICOSRST0:
-        ADMXRC3_UnmapWindow(_hDevice, (void*)_picosDebug);
-    INIT_ERR_MMAP_PICOSDEBUG:
-#endif
         ADMXRC3_UnmapWindow(_hDevice, (void*)_hwruntimeRst);
     INIT_ERR_MMAP_RST:
         if (_spawnInQueue != NULL)
@@ -604,35 +561,6 @@ xtasks_stat xtasksFini()
     int init_cnt = __sync_sub_and_fetch(&_init_cnt, 1);
     if (init_cnt > 0) return XTASKS_SUCCESS;
 
-#ifdef PICOS
-    static const char* regNames[] = {
-        "new",
-        "ready",
-        "finish",
-        "remote ready",
-        "remote finish"
-    };
-
-    const int picosQueues = 5;
-    const int numAccs = 15;
-
-    //Picos-only code:
-    printf("----------------------------\n");
-    printf("Picos debug registers:\n");
-    for (int i = 0; i < picosQueues; ++i) {
-        printf("%s:\t%u\n", regNames[i], _picosDebug[i]);
-    }
-    for (int i = picosQueues; i < picosQueues+numAccs; ++i) {
-        printf("hwacc %d finish:\t%u\n", i-picosQueues, _picosDebug[i]);
-    }
-    for (int i = picosQueues+numAccs; i < picosQueues+numAccs*2; ++i) {
-        printf("hwacc %d time:\t%u\n", i-picosQueues-numAccs, _picosDebug[i]);
-    }
-    printf("----------------------------\n");
-    printf("compute %u\n", _picosDebug[picosQueues+numAccs]);
-    printf("copy %lu\n", _copyTime);
-#endif
-
     xtasks_stat ret = XTASKS_SUCCESS;
 
     //Free tasks array
@@ -646,10 +574,6 @@ xtasks_stat xtasksFini()
     free(_tasks);
     _tasks = NULL;
 
-#ifdef PICOS
-    *_hwruntimeRst = 0;
-#endif
-
     //Unmap the hwruntime queues
     ADMXRC3_STATUS statusRd, statusFi, statusNw, statusRFi, statusCtrl;
     statusCtrl = ADMXRC3_UnmapWindow(_hDevice, (void*)_hwruntimeRst);
@@ -660,16 +584,7 @@ xtasks_stat xtasksFini()
     if (_spawnInQueue != NULL)
         statusRFi = ADMXRC3_UnmapWindow(_hDevice, _spawnInQueue);
     statusRd = ADMXRC3_UnmapWindow(_hDevice, _cmdInQueue);
-    ADMXRC3_STATUS statusDbg = ADMXRC3_SUCCESS;
-    ADMXRC3_STATUS statusRst0 = ADMXRC3_SUCCESS;
-    ADMXRC3_STATUS statusRst1 = ADMXRC3_SUCCESS;
-#ifdef PICOS
-    statusDbg = ADMXRC3_UnmapWindow(_hDevice, _picosDebug);
-    statusRst0 = ADMXRC3_UnmapWindow(_hDevice, _picosRst0);
-    statusRst1 = ADMXRC3_UnmapWindow(_hDevice, _picosRst1);
-#endif
     if (statusRd != ADMXRC3_SUCCESS || statusFi != ADMXRC3_SUCCESS || statusCtrl != ADMXRC3_SUCCESS ||
-            statusDbg != ADMXRC3_SUCCESS || statusRst0 != ADMXRC3_SUCCESS || statusRst1 != ADMXRC3_SUCCESS ||
             statusRFi != ADMXRC3_SUCCESS || statusNw != ADMXRC3_SUCCESS) {
         ret = XTASKS_ERROR;
     }
@@ -966,7 +881,6 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
         //There is another thread reading the buffer for this accelerator
         events->eventType = XTASKS_EVENT_TYPE_INVALID;
     } else {
-        printf("Checking events on acc %d\n", acc->info.id);
         count = min(maxCount, _numInstrEvents - acc->instrIdx);
         accBuffer += acc->instrIdx;
         xdma_status stat = xdmaMemcpy(events, _instrBuffHandle, count*sizeof(xtasks_ins_event), (accBuffer - _instrBuff)*sizeof(xtasks_ins_event), XDMA_FROM_DEVICE);
@@ -977,7 +891,6 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
         i = 0;
         while (i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID)
         {
-            printf("Found event with value %lu timestamp %lu id %u and type %u\n", events[i].value, events[i].timestamp, events[i].eventId, events[i].eventType);
             //Invalidate all read entries in the accelerator buffer
             accBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
             i++;
@@ -1189,18 +1102,7 @@ xtasks_stat xtasksMemcpy(xtasks_mem_handle const handle, size_t offset, size_t l
     xtasks_memcpy_kind const kind)
 {
     xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
-#ifdef PICOS
-    struct timeval time1, time2;
-    gettimeofday(&time1, NULL);
-#endif
     xdma_status status = xdmaMemcpy(usr, handle, len, offset, mode);
-#ifdef PICOS
-    gettimeofday(&time2, NULL);
-    uint64_t elapsed = (time2.tv_sec*1000000 + time2.tv_usec) - (time1.tv_sec*1000000 + time1.tv_usec);
-    if (elapsed == 0)
-        printf("Warning, lost precision\n");
-    _copyTime += elapsed;
-#endif
     return toXtasksStat(status);
 }
 
