@@ -127,7 +127,7 @@ typedef struct {
 //! \brief Internal library task information
 typedef struct {
     xtasks_task_id          id;            ///< External task identifier
-    cmd_exec_task_header_t *cmdHeader;     ///< Pointer to the cmd_exec_task_header_t struct
+    cmd_header_t *          cmdHeader;     ///< Pointer to the cmd_header_t struct
     cmd_exec_task_arg_t *   cmdExecArgs;   ///< Pointer to the array of cmd_exec_task_arg_t structs
     acc_t *                 accel;         ///< Accelerator where the task will run
     uint8_t                 extSize:1;     ///< Whether the space available in args is extended or not
