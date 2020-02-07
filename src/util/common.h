@@ -28,12 +28,13 @@
 #include <libxdma.h>
 
 #define PRINT_ERROR(_str_)      fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
-#define MIN_WRAPPER_VER         1
-#define MAX_WRAPPER_VER         2
+#define MIN_WRAPPER_VER         3
+#define MAX_WRAPPER_VER         3
 
 #define CMD_EXEC_TASK_CODE                0x01 ///< Command code for execute task commands
 #define CMD_SETUP_INS_CODE                0x02 ///< Command code for setup instrumentation info
 #define CMD_FINI_EXEC_CODE                0x03 ///< Command code for finished execute task commands
+#define CMD_PERI_TASK_CODE                0x05 ///< Command code for execute periodic task commands
 #define CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET 0    ///< Offset of Num. Args. field in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_COMP_OFFSET    3    ///< Offset of Compute flag in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_OFFSET  4    ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
@@ -76,8 +77,17 @@ typedef struct __attribute__ ((__packed__)) {
 typedef struct __attribute__ ((__packed__)) {
     cmd_header_t header;     //[0  :63 ] Command header
     uint64_t     taskID;     //[64 :127] Task identifier
-    uint64_t     parentID;   //[128:195] Parent task identifier (may be null)
+    uint64_t     parentID;   //[128:191] Parent task identifier (may be null)
 } cmd_exec_task_header_t;
+
+//! \brief Header of execute periodic task command
+typedef struct __attribute__ ((__packed__)) {
+    cmd_header_t header;     //[0  :63 ] Command header
+    uint64_t     taskID;     //[64 :127] Task identifier
+    uint64_t     parentID;   //[128:191] Parent task identifier (may be null)
+    uint32_t     numReps;    //[192:223] Number of task body repetitions
+    uint32_t     period;     //[224:255] Minumum number of cycles between repetitions
+} cmd_peri_task_header_t;
 
 //! \brief Argument entry of execute task command
 typedef struct __attribute__ ((__packed__)) {

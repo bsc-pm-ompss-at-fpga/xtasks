@@ -61,6 +61,13 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     return XTASKS_ENOSYS;
 }
 
+xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle const accId,
+    xtasks_task_id const parent, xtasks_comp_flags const compute, unsigned int const numReps,
+    unsigned int const period, xtasks_task_handle * handle)
+{
+    return XTASKS_ENOSYS;
+}
+
 xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
 {
     return XTASKS_ENOSYS;
