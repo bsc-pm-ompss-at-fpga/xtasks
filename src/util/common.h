@@ -35,6 +35,7 @@
 #define CMD_SETUP_INS_CODE                0x02 ///< Command code for setup instrumentation info
 #define CMD_FINI_EXEC_CODE                0x03 ///< Command code for finished execute task commands
 #define CMD_PERI_TASK_CODE                0x05 ///< Command code for execute periodic task commands
+#define CMD_SETUP_INS_ARGS_NUMEVS_BYTES   3    ///< Number of bytes used by Num. Events argument in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET 0    ///< Offset of Num. Args. field in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_COMP_OFFSET    3    ///< Offset of Compute flag in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_OFFSET  4    ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array

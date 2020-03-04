@@ -135,8 +135,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     }
     cmd_setup_hw_ins_t cmd;
     cmd.header.commandCode = CMD_SETUP_INS_CODE;
-    uint32_t * cmdArgs = (uint32_t *)&cmd.header.commandArgs;
-    *cmdArgs = _numInstrEvents;
+    memcpy((void *)cmd.header.commandArgs, (void *)&_numInstrEvents, CMD_SETUP_INS_ARGS_NUMEVS_BYTES);
     for (size_t i = 0; i < _numAccs; ++i) {
         cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents*i);
         s = xdmaMemcpy((void *)&cmd, cmdBufferHandle, sizeof(cmd_setup_hw_ins_t), 0 /*offset*/, XDMA_TO_DEVICE);

@@ -267,12 +267,10 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     }
 
     //Send the instrumentation buffer to each accelerator
+    cmd_setup_hw_ins_t cmd;
+    cmd.header.commandCode = CMD_SETUP_INS_CODE;
+    memcpy((void *)cmd.header.commandArgs, (void *)&_numInstrEvents, CMD_SETUP_INS_ARGS_NUMEVS_BYTES);
     for (size_t i = 0; i < _numAccs; ++i) {
-        cmd_setup_hw_ins_t cmd;
-
-        cmd.header.commandCode = CMD_SETUP_INS_CODE;
-        uint32_t * cmdArgs = (uint32_t *)&cmd.header.commandArgs;
-        *cmdArgs = _numInstrEvents;
         cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents*i);
 
         xtasks_stat ret = xtasksSubmitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t)/sizeof(uint64_t));
