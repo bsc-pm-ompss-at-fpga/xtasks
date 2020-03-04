@@ -35,6 +35,7 @@
 #define CMD_SETUP_INS_CODE                0x02 ///< Command code for setup instrumentation info
 #define CMD_FINI_EXEC_CODE                0x03 ///< Command code for finished execute task commands
 #define CMD_PERI_TASK_CODE                0x05 ///< Command code for execute periodic task commands
+#define CMD_SETUP_INS_ARGS_NUMEVS_BYTES   3    ///< Number of bytes used by Num. Events argument in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET 0    ///< Offset of Num. Args. field in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_COMP_OFFSET    3    ///< Offset of Compute flag in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_OFFSET  4    ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
@@ -67,21 +68,21 @@ typedef enum {
 } bit_compatibility_t;
 
 //! \brief Command header type
-typedef struct __attribute__ ((__packed__)) {
+typedef struct __attribute__ ((__packed__, aligned(8))) {
     uint8_t commandCode;     //[0  :7  ] Command code
     uint8_t commandArgs[6];  //[8  :55 ] Command arguments
     uint8_t valid;           //[56 :63 ] Valid entry
 } cmd_header_t;
 
 //! \brief Header of execute task command
-typedef struct __attribute__ ((__packed__)) {
+typedef struct __attribute__ ((__packed__, aligned(8))) {
     cmd_header_t header;     //[0  :63 ] Command header
     uint64_t     taskID;     //[64 :127] Task identifier
     uint64_t     parentID;   //[128:191] Parent task identifier (may be null)
 } cmd_exec_task_header_t;
 
 //! \brief Header of execute periodic task command
-typedef struct __attribute__ ((__packed__)) {
+typedef struct __attribute__ ((__packed__, aligned(8))) {
     cmd_header_t header;     //[0  :63 ] Command header
     uint64_t     taskID;     //[64 :127] Task identifier
     uint64_t     parentID;   //[128:191] Parent task identifier (may be null)
@@ -90,7 +91,7 @@ typedef struct __attribute__ ((__packed__)) {
 } cmd_peri_task_header_t;
 
 //! \brief Argument entry of execute task command
-typedef struct __attribute__ ((__packed__)) {
+typedef struct __attribute__ ((__packed__, aligned(8))) {
     uint8_t flags;           //[0  :7  ] Flags
     uint8_t _padding[3];     //[8  :32 ]
     uint32_t id;             //[32 :63 ] Argument ID
@@ -98,13 +99,13 @@ typedef struct __attribute__ ((__packed__)) {
 } cmd_exec_task_arg_t;
 
 //! \brief Setup hw instrumentation command
-typedef struct __attribute__ ((__packed__)) {
+typedef struct __attribute__ ((__packed__, aligned(8))) {
     cmd_header_t header;     //[0  :63 ] Command header
     uint64_t     bufferAddr; //[64 :127] Instrumentation buffer address
 } cmd_setup_hw_ins_t;
 
 //! \brief Response out command for execute task commands
-typedef struct __attribute__ ((__packed__)) {
+typedef struct __attribute__ ((__packed__, aligned(8))) {
     cmd_header_t header;     //[0  :63 ] Command header
     uint64_t     taskID;     //[64 :127] Executed task identifier
 } cmd_out_exec_task_t;
