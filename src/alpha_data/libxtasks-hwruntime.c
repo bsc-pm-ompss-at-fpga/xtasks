@@ -386,12 +386,12 @@ xtasks_stat xtasksInit()
         fclose(accMapFile);
         goto INIT_ERR_3;
     }
-    xtasks_acc_type t;
+    unsigned long long int t;
     int retFscanf;
     float freq;
     size_t num, total;
     total = 0;
-    while ((retFscanf = fscanf(accMapFile, "%u %zu %s %f", &t, &num, buffer, &freq)) == 4) { //< Parse the file
+    while ((retFscanf = fscanf(accMapFile, "%llu %zu %s %f", &t, &num, buffer, &freq)) == 4) { //< Parse the file
         //while (fgets(buffer, STR_BUFFER_SIZE, accMapFile)) {
         total += num;
         if (total > _numAccs) {

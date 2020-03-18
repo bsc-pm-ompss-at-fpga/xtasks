@@ -64,7 +64,7 @@ typedef uint32_t          xtasks_arg_id;
 typedef uint8_t           xtasks_arg_flags;
 typedef void *            xtasks_acc_handle;
 typedef uint32_t          xtasks_acc_id;
-typedef uint32_t          xtasks_acc_type;
+typedef uint64_t          xtasks_acc_type;
 typedef const char *      xtasks_acc_desc;
 typedef uint64_t          xtasks_ins_timestamp;
 typedef void *            xtasks_mem_handle;
@@ -74,9 +74,9 @@ typedef uint64_t          xtasks_newtask_arg;
 
 typedef struct {
     xtasks_acc_id   id;               ///< Accelerator identifier
+    float           freq;             ///< Accelerator frequency (in MHz)
     xtasks_acc_type type;             ///< Accelerator type identifier
     xtasks_acc_desc description;      ///< Accelerator description
-    float           freq;             ///< Accelerator frequency (in MHz)
     short           maxTasks;         ///< Max. number of concurrent tasks that the accelerator can manage (-1: undefined)
 } xtasks_acc_info;
 
