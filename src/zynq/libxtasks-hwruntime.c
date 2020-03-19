@@ -1066,6 +1066,18 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
     (*task)->typeInfo = _spawnOutQueue[idx];
     _spawnOutQueue[idx] = 0; //< Cleanup the memory position
 
+    for (size_t i = 0; i < (*task)->numDeps; ++i) {
+        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
+        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_spawnOutQueue[idx]);
+
+        //Parse the dependence information
+        (*task)->deps[i].address = hwTaskDep->address;
+        (*task)->deps[i].flags = hwTaskDep->flags;
+
+        //Cleanup the memory position
+        _spawnOutQueue[idx] = 0;
+    }
+
     for (size_t i = 0; i < (*task)->numCopies; ++i) {
         //NOTE: Each copy uses 3 uint64_t elements in the newQueue
         //      After using each memory position, we have to clean it
@@ -1092,18 +1104,6 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
         (*task)->copies[i].offset = copyOffset;
         uint32_t copyAccessedLen = tmp >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
         (*task)->copies[i].accessedLen = copyAccessedLen;
-        _spawnOutQueue[idx] = 0;
-    }
-
-    for (size_t i = 0; i < (*task)->numDeps; ++i) {
-        idx = (idx+1)%SPWN_OUT_QUEUE_LEN;
-        new_task_dep_t * hwTaskDep = (new_task_dep_t *)(&_spawnOutQueue[idx]);
-
-        //Parse the dependence information
-        (*task)->deps[i].address = hwTaskDep->address;
-        (*task)->deps[i].flags = hwTaskDep->flags;
-
-        //Cleanup the memory position
         _spawnOutQueue[idx] = 0;
     }
 
