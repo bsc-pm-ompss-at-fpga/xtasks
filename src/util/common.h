@@ -110,6 +110,42 @@ typedef struct __attribute__ ((__packed__, aligned(8))) {
     uint64_t     taskID;     //[64 :127] Executed task identifier
 } cmd_out_exec_task_t;
 
+//! \brief New task buffer representation  (Only the header part, N arguments follow the header)
+typedef struct __attribute__ ((__packed__)) {
+    uint8_t   _padding;      //[0  :7  ]
+    uint8_t   numArgs;       //[8  :15 ] Number of arguments after this header
+    uint8_t   numDeps;       //[16 :23 ] Number of dependencies after the task arguments
+    uint8_t   numCopies;     //[24 :31 ] Number of copies after the task dependencies
+    uint8_t   _padding1[3];  //[32 :55 ]
+    uint8_t   valid;         //[56 :63 ] Valid Entry
+    uint64_t  taskID;        //[64 :127] Task identifier
+    uint64_t  parentID;      //[128:191] Parent task identifier that is creating the task
+    uint64_t  typeInfo;      //[192:255] Information of task type
+} new_task_header_t;
+
+//! \brief New task buffer representation (Only the dependence part, repeated N times)
+typedef struct __attribute__ ((__packed__)) {
+    uint64_t  address:56; //[0  :55 ] Dependence value
+    uint8_t   flags;      //[56 :63 ] Dependence flags
+} new_task_dep_t;
+
+//! \brief New task buffer representation (Only the argument part, repeated N times)
+typedef struct __attribute__ ((__packed__)) {
+    uint64_t address;     //[0  :63 ] Copy address
+    uint32_t flags;       //[64 :95 ] Copy flags
+    uint32_t size;        //[96 :127] Size of the copy
+    uint32_t offset;      //[128:159] Offset of accessed region in the copy
+    uint32_t accessedLen; //[160:191] Length of accessed region in the copy
+} new_task_copy_t;
+
+//! \brief Remote finished task buffer representation
+typedef struct __attribute__ ((__packed__)) {
+    uint8_t  _padding[7]; //[0  :55 ]
+    uint8_t  valid;       //[56 :63 ] Valid Entry
+    uint64_t taskID;      //[64 :127] Task identifier
+    uint64_t parentID;    //[128:191] Parent task identifier that created the tasks
+} rem_fini_task_t;
+
 /*!
  * \brief Returns the length of command based on its header
  */
