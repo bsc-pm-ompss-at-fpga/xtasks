@@ -20,3 +20,10 @@ The configuration file is expected to have the following format:
    - Number of instances of such type (positive integer number).
    - Description (string, max. 128 chars).
    - Working frequency in MHz (floating point number).
+
+### Programming style guide
+
+The library follows the Google style which is verified using the `clang-format` tool (in Debian based systems can be installed with `apt install clang-format`).
+The `tools` folder contains a couple of scripts that can be used to setup a git pre-hook to check&fix the style of staged changes.
+To install the git hook you have to run `./tools/git-pre-commit-format install` (to uninstall you can do the same but with the `uninstall` argument).
+The hook will run during the `git commit` and it will suggest style fixes if needed.
