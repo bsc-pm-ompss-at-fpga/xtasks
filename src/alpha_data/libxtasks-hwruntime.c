@@ -942,7 +942,6 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
     uint8_t numArgs = (header >> 8) & 0x00000000000000FF;
     uint8_t numDeps = 0;
     uint8_t numCopies = (header >> 24) & 0x00000000000000FF;
-    uint32_t archMask = (header >> 32) & 0x0000000000FFFFFF;
     // new_task_header_t headerCopy = *hwTaskHeader;
     if (valid != QUEUE_VALID) {
         ticketLockRelease(&_bufferTicket);
@@ -963,7 +962,6 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
     (*task)->numDeps = numDeps;
     (*task)->copies = (xtasks_newtask_copy *)((*task)->deps + (*task)->numDeps);
     (*task)->numCopies = numCopies;
-    (*task)->architecture = archMask;
 
     idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->taskID field is the 2nd word
     (*task)->taskId = _spawnOutQueue[idx];

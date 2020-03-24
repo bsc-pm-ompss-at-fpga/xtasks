@@ -66,7 +66,6 @@ typedef const char *xtasks_acc_desc;
 typedef uint64_t xtasks_ins_timestamp;
 typedef void *xtasks_mem_handle;
 typedef long unsigned int xtasks_memcpy_handle;
-typedef uint32_t xtasks_newtask_arch;
 typedef uint64_t xtasks_newtask_arg;
 
 typedef struct {
@@ -105,16 +104,15 @@ typedef struct {
 } xtasks_newtask_copy;
 
 typedef struct {
-    xtasks_task_id taskId;    ///< Task identifier inside runtime HW
-    xtasks_task_id parentId;  ///< Parent task identifier that is creating the task (may be SW or HW identifier)
-    xtasks_newtask_arch architecture;  ///< Architecture of the task
-    uint64_t typeInfo;                 ///< Identifier of the task type
-    size_t numArgs;                    ///< Number of arguments
-    xtasks_newtask_arg *args;          ///< Arguments array
-    size_t numDeps;                    ///< Number of dependences
-    xtasks_newtask_dep *deps;          ///< Dependences array
-    size_t numCopies;                  ///< Number of copies
-    xtasks_newtask_copy *copies;       ///< Copies array
+    xtasks_task_id taskId;        ///< Task identifier inside runtime HW
+    xtasks_task_id parentId;      ///< Parent task identifier that is creating the task (may be SW or HW identifier)
+    uint64_t typeInfo;            ///< Identifier of the task type
+    size_t numArgs;               ///< Number of arguments
+    xtasks_newtask_arg *args;     ///< Arguments array
+    size_t numDeps;               ///< Number of dependences
+    xtasks_newtask_dep *deps;     ///< Dependences array
+    size_t numCopies;             ///< Number of copies
+    xtasks_newtask_copy *copies;  ///< Copies array
 } xtasks_newtask;
 
 /*!

@@ -1018,7 +1018,6 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
     (*task)->numDeps = hwTaskHeader->numDeps;
     (*task)->copies = (xtasks_newtask_copy *)((*task)->deps + (*task)->numDeps);
     (*task)->numCopies = hwTaskHeader->numCopies;
-    (*task)->architecture = hwTaskHeader->archMask;
 
     idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->taskID field is the 2nd word
     (*task)->taskId = _spawnOutQueue[idx];
