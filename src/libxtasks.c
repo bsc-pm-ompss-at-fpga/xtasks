@@ -20,88 +20,54 @@
 
 #include "libxtasks.h"
 
-xtasks_stat xtasksInit()
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksInit() { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksFini()
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksFini() { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksGetPlatform(const char ** name)
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksGetPlatform(const char **name) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksGetBackend(const char ** name)
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksGetBackend(const char **name) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksGetNumAccs(size_t * count)
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksGetNumAccs(size_t *count) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle * array, size_t * count)
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle *array, size_t *count) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info * info)
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *info) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_task_id const parent, xtasks_comp_flags const compute, xtasks_task_handle * handle)
+xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId, xtasks_task_id const parent,
+    xtasks_comp_flags const compute, xtasks_task_handle *handle)
 {
     return XTASKS_ENOSYS;
 }
 
 xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_task_id const parent, xtasks_comp_flags const compute, unsigned int const numReps,
-    unsigned int const period, xtasks_task_handle * handle)
+    xtasks_task_id const parent, xtasks_comp_flags const compute, unsigned int const numReps, unsigned int const period,
+    xtasks_task_handle *handle)
 {
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksDeleteTask(xtasks_task_handle * handle)
+xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksAddArg(
+    xtasks_arg_id const id, xtasks_arg_flags const flags, xtasks_arg_val const value, xtasks_task_handle const handle)
 {
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags,
-    xtasks_arg_val const value, xtasks_task_handle const handle)
+xtasks_stat xtasksAddArgs(
+    size_t const num, xtasks_arg_flags const flags, xtasks_arg_val *const values, xtasks_task_handle const handle)
 {
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags,
-    xtasks_arg_val * const values, xtasks_task_handle const handle)
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksWaitTask(xtasks_task_handle const handle) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle * handle, xtasks_task_id * id)
-{
-    return XTASKS_ENOSYS;
-}
-
-xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel,
-    xtasks_task_handle * task, xtasks_task_id * id)
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *task, xtasks_task_id *id)
 {
     return XTASKS_ENOSYS;
 }
@@ -111,12 +77,6 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const handle, xtasks_ins_e
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksTryGetNewTask(xtasks_newtask ** task)
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
-{
-    return XTASKS_ENOSYS;
-}
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id) { return XTASKS_ENOSYS; }

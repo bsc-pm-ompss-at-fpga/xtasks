@@ -23,34 +23,34 @@
 
 #include "../util/common.h"
 
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#define STR_BUFFER_SIZE         128
+#define STR_BUFFER_SIZE 128
 #define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
-#define BIT_INFO_FEATURES_PATH  "/dev/ompss_fpga/bit_info/features"
-#define BIT_INFO_WRAPPER_PATH   "/dev/ompss_fpga/bit_info/wrapper_version"
+#define BIT_INFO_FEATURES_PATH "/dev/ompss_fpga/bit_info/features"
+#define BIT_INFO_WRAPPER_PATH "/dev/ompss_fpga/bit_info/wrapper_version"
 
 /*!
  * \brief Get the path of the configuration file
  *        The function allocates a buffer that caller must delete using free()
  * \return  Configuration file path, NULL on error
  */
-char * getConfigFilePath()
+char *getConfigFilePath()
 {
-    char * buffer = NULL;
+    char *buffer = NULL;
 
-    //1st -> environment var
-    const char * accMapPath = getenv("XTASKS_CONFIG_FILE");
+    // 1st -> environment var
+    const char *accMapPath = getenv("XTASKS_CONFIG_FILE");
     if (accMapPath != NULL) {
-        buffer = malloc(sizeof(char)*max(STR_BUFFER_SIZE, strlen(accMapPath)));
+        buffer = malloc(sizeof(char) * max(STR_BUFFER_SIZE, strlen(accMapPath)));
         strcpy(buffer, accMapPath);
     }
 
-    //2nd -> /dev/ompss_fpga/bit_info/xtasks
+    // 2nd -> /dev/ompss_fpga/bit_info/xtasks
     if (buffer == NULL) {
-        buffer = malloc(sizeof(char)*STR_BUFFER_SIZE);
+        buffer = malloc(sizeof(char) * STR_BUFFER_SIZE);
         strcpy(buffer, XTASKS_CONFIG_FILE_PATH);
     }
 
@@ -63,8 +63,7 @@ char * getConfigFilePath()
 void printErrorMsgCfgFile()
 {
     fprintf(stderr, "ERROR: xTasks Library cannot access the fpga configuration device file.\n");
-    fprintf(stderr, "       Ensure that file '%s' exists and it has read permissions.\n",
-        XTASKS_CONFIG_FILE_PATH);
+    fprintf(stderr, "       Ensure that file '%s' exists and it has read permissions.\n", XTASKS_CONFIG_FILE_PATH);
     fprintf(stderr, "       Alternatively, you may force the configuration file path with");
     fprintf(stderr, " XTASKS_CONFIG_FILE environment variable.\n");
 }
@@ -88,8 +87,9 @@ void printErrorBitstreamCompatibility()
  *          BIT_FEATURE_SKIP if the check was skipped due to user requirements
  *          BIT_FEATURE_UNKNOWN if the check cannot be done or failed
  */
-bit_feature_t checkbitstreamFeature(const char * featureName) {
-    const char * featuresCheck = getenv("XTASKS_FEATURES_CHECK");
+bit_feature_t checkbitstreamFeature(const char *featureName)
+{
+    const char *featuresCheck = getenv("XTASKS_FEATURES_CHECK");
     if (featuresCheck != NULL && featuresCheck[0] == '0') {
         return BIT_FEATURE_SKIP;
     } else if (featuresCheck != NULL && featuresCheck[0] != '1') {
@@ -101,7 +101,7 @@ bit_feature_t checkbitstreamFeature(const char * featureName) {
     strcpy(buffer, BIT_INFO_FEATURES_PATH);
     strcat(buffer, "/");
     strcat(buffer, featureName);
-    FILE * infoFile = fopen(buffer, "r");
+    FILE *infoFile = fopen(buffer, "r");
     size_t nRead;
 
     if (infoFile != NULL) {
@@ -110,8 +110,8 @@ bit_feature_t checkbitstreamFeature(const char * featureName) {
             fprintf(stderr, "ERROR: xTasks could not read feature %s\n", featureName);
         }
         fclose(infoFile);
-        available = buffer[0] == '1' ? BIT_FEATURE_AVAIL :
-            (buffer[0] == '0' ? BIT_FEATURE_NO_AVAIL : BIT_FEATURE_UNKNOWN);
+        available = buffer[0] == '1' ? BIT_FEATURE_AVAIL
+                                     : (buffer[0] == '0' ? BIT_FEATURE_NO_AVAIL : BIT_FEATURE_UNKNOWN);
     }
     return available;
 }
@@ -123,8 +123,9 @@ bit_feature_t checkbitstreamFeature(const char * featureName) {
  *          BIT_COMPAT_SKIP if the check was skipped due to user requirements
  *          BIT_COMPAT_UNKNOWN if the compatibility cannot be determined or failed
  */
-bit_compatibility_t checkbitstreamCompatibility() {
-    const char * compatCheck = getenv("XTASKS_COMPATIBILITY_CHECK");
+bit_compatibility_t checkbitstreamCompatibility()
+{
+    const char *compatCheck = getenv("XTASKS_COMPATIBILITY_CHECK");
     if (compatCheck != NULL && compatCheck[0] == '0') {
         return BIT_COMPAT_SKIP;
     } else if (compatCheck != NULL && compatCheck[0] != '1') {
@@ -132,11 +133,12 @@ bit_compatibility_t checkbitstreamCompatibility() {
     }
 
     bit_compatibility_t compatible = BIT_COMPAT_UNKNOWN;
-    FILE * infoFile = fopen(BIT_INFO_WRAPPER_PATH, "r");
+    FILE *infoFile = fopen(BIT_INFO_WRAPPER_PATH, "r");
     if (infoFile != NULL) {
         int wrapperVersion;
-        if (fscanf(infoFile, "%d", &wrapperVersion) != 1 || wrapperVersion < MIN_WRAPPER_VER || wrapperVersion > MAX_WRAPPER_VER) {
-            //NOTE: If read value is not an integer, probably it is "?" which means that the
+        if (fscanf(infoFile, "%d", &wrapperVersion) != 1 || wrapperVersion < MIN_WRAPPER_VER ||
+            wrapperVersion > MAX_WRAPPER_VER) {
+            // NOTE: If read value is not an integer, probably it is "?" which means that the
             //      bitstream is too old
             compatible = BIT_NO_COMPAT;
         } else {

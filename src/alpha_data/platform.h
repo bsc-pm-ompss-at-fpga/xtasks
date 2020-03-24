@@ -21,10 +21,10 @@
 #ifndef __LIBXTASKS_PLATFORM_H__
 #define __LIBXTASKS_PLATFORM_H__
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <admxrc3.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "../util/common.h"
 
@@ -44,14 +44,14 @@ static uint32_t _bitinfo[BITINFO_MAX_WORDS];
  *        The function allocates a buffer that caller must delete using free()
  * \return  Configuration file path, NULL on error
  */
-char * getConfigFilePath()
+char *getConfigFilePath()
 {
-    char * buffer = NULL;
+    char *buffer = NULL;
 
-    //1st -> environment var
-    const char * accMapPath = getenv("XTASKS_CONFIG_FILE");
+    // 1st -> environment var
+    const char *accMapPath = getenv("XTASKS_CONFIG_FILE");
     if (accMapPath != NULL) {
-        buffer = malloc(sizeof(char)*max(STR_BUFFER_SIZE, strlen(accMapPath)));
+        buffer = malloc(sizeof(char) * max(STR_BUFFER_SIZE, strlen(accMapPath)));
         strcpy(buffer, accMapPath);
     }
 
@@ -93,8 +93,7 @@ int getBitinfoOffset(const int idx)
     }
     int i = 4;
     for (int j = 2; j < idx && i < BITINFO_MAX_WORDS; ++j) {
-        while (_bitinfo[i] != BITINFO_FIELD_SEP && i < BITINFO_MAX_WORDS)
-            ++i;
+        while (_bitinfo[i] != BITINFO_FIELD_SEP && i < BITINFO_MAX_WORDS) ++i;
         ++i;
     }
     return i;
@@ -108,8 +107,9 @@ int getBitinfoOffset(const int idx)
  *          BIT_FEATURE_SKIP if the check was skipped due to user requirements
  *          BIT_FEATURE_UNKNOWN if the check cannot be done or failed
  */
-bit_feature_t checkbitstreamFeature(const char * featureName) {
-    const char * featuresCheck = getenv("XTASKS_FEATURES_CHECK");
+bit_feature_t checkbitstreamFeature(const char *featureName)
+{
+    const char *featuresCheck = getenv("XTASKS_FEATURES_CHECK");
     if (featuresCheck != NULL && featuresCheck[0] == '0') {
         return BIT_FEATURE_SKIP;
     } else if (featuresCheck != NULL && featuresCheck[0] != '1') {
@@ -117,19 +117,16 @@ bit_feature_t checkbitstreamFeature(const char * featureName) {
     }
 
     const int i = getBitinfoOffset(BISTREAM_INFO_FEATURES_IDX);
-    if (i >= BITINFO_MAX_WORDS)
-        return BIT_FEATURE_UNKNOWN;
+    if (i >= BITINFO_MAX_WORDS) return BIT_FEATURE_UNKNOWN;
 
     const uint32_t features = _bitinfo[i];
     bit_feature_t available = BIT_FEATURE_UNKNOWN;
     if (strcmp(featureName, "hwcounter") == 0) {
-        available = features & 0x1 ? BIT_FEATURE_AVAIL:BIT_FEATURE_NO_AVAIL;
-    }
-    else if (strcmp(featureName, "hwruntime") == 0) {
-        available = (features >> 6) & 0x1 ? BIT_FEATURE_AVAIL:BIT_FEATURE_NO_AVAIL;
-    }
-    else if (strcmp(featureName, "hwruntime_ext") == 0) {
-        available = (features >> 7) & 0x1 ? BIT_FEATURE_AVAIL:BIT_FEATURE_NO_AVAIL;
+        available = features & 0x1 ? BIT_FEATURE_AVAIL : BIT_FEATURE_NO_AVAIL;
+    } else if (strcmp(featureName, "hwruntime") == 0) {
+        available = (features >> 6) & 0x1 ? BIT_FEATURE_AVAIL : BIT_FEATURE_NO_AVAIL;
+    } else if (strcmp(featureName, "hwruntime_ext") == 0) {
+        available = (features >> 7) & 0x1 ? BIT_FEATURE_AVAIL : BIT_FEATURE_NO_AVAIL;
     }
 
     return available;
@@ -142,20 +139,22 @@ bit_feature_t checkbitstreamFeature(const char * featureName) {
  *          BIT_COMPAT_SKIP if the check was skipped due to user requirements
  *          BIT_COMPAT_UNKNOWN if the compatibility cannot be determined or failed
  */
-bit_compatibility_t checkbitstreamCompatibility(ADMXRC3_HANDLE hDevice) {
-    const char * compatCheck = getenv("XTASKS_COMPATIBILITY_CHECK");
+bit_compatibility_t checkbitstreamCompatibility(ADMXRC3_HANDLE hDevice)
+{
+    const char *compatCheck = getenv("XTASKS_COMPATIBILITY_CHECK");
     if (compatCheck != NULL && compatCheck[0] == '0') {
         return BIT_COMPAT_SKIP;
     } else if (compatCheck != NULL && compatCheck[0] != '1') {
         PRINT_ERROR("Invalid value in XTASKS_COMPATIBILITY_CHECK, must be 0 or 1. Ignoring it");
     }
 
-    ADMXRC3_STATUS stat = ADMXRC3_Read(hDevice, 1, 0, BISTREAM_INFO_ADDRESS, sizeof(uint32_t)*BITINFO_MAX_WORDS, _bitinfo);
+    ADMXRC3_STATUS stat =
+        ADMXRC3_Read(hDevice, 1, 0, BISTREAM_INFO_ADDRESS, sizeof(uint32_t) * BITINFO_MAX_WORDS, _bitinfo);
     if (stat != ADMXRC3_SUCCESS) {
         return BIT_COMPAT_UNKNOWN;
     }
 
-    //The bitstream info BRAM version is old
+    // The bitstream info BRAM version is old
     const int bitinfoRev = _bitinfo[getBitinfoOffset(BISTREAM_INFO_REV_IDX)];
     if (bitinfoRev < BISTREAM_INFO_MIN_REV) {
         return BIT_NO_COMPAT;
@@ -167,7 +166,7 @@ bit_compatibility_t checkbitstreamCompatibility(ADMXRC3_HANDLE hDevice) {
     }
 
     const uint32_t version = _bitinfo[i];
-    return MIN_WRAPPER_VER <= version && version <= MAX_WRAPPER_VER ? BIT_COMPAT:BIT_NO_COMPAT;
+    return MIN_WRAPPER_VER <= version && version <= MAX_WRAPPER_VER ? BIT_COMPAT : BIT_NO_COMPAT;
 }
 
 #endif /* __LIBXTASKS_PLATFORM_H__ */
