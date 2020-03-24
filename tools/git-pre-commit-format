@@ -271,7 +271,13 @@ trap '{ rm -f "$patch"; }' EXIT
 
 if [ "$(wc -l < "$patch")" -eq 0 ]; then
     echo "The staged content is formatted correctly."
-    exit 0
+    "$apply_format" --style="$style" > "$patch" || \
+        error_exit $'\nThe apply-format script failed.'
+
+    if [ "$(wc -l < "$patch")" -eq 0 ]; then
+        echo "The entire source code is formatted correctly."
+        exit 0
+    fi
 fi
 
 
