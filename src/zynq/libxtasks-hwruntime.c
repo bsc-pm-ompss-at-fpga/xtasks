@@ -83,7 +83,7 @@ typedef struct __attribute__ ((__packed__)) {
     uint8_t   numArgs;       //[8  :15 ] Number of arguments after this header
     uint8_t   numDeps;       //[16 :23 ] Number of dependencies after the task arguments
     uint8_t   numCopies;     //[24 :31 ] Number of copies after the task dependencies
-    uint32_t  archMask:24;   //[32 :55 ] Architecture mask in Picos style
+    uint8_t   _padding1[3];  //[32 :55 ]
     uint8_t   valid;         //[56 :63 ] Valid Entry
     uint64_t  taskID;        //[64 :127] Task identifier
     uint64_t  parentID;      //[128:191] Parent task identifier that is creating the task
@@ -107,7 +107,7 @@ typedef struct __attribute__ ((__packed__)) {
 
 //! \brief Remote finished task buffer representation
 typedef struct __attribute__ ((__packed__)) {
-    uint8_t  _padding[7];
+    uint8_t  _padding[7]; //[0  :55 ]
     uint8_t  valid;       //[56 :63 ] Valid Entry
     uint64_t taskID;      //[64 :127] Task identifier
     uint64_t parentID;    //[128:191] Parent task identifier that created the tasks
