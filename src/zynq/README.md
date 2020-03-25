@@ -3,19 +3,14 @@
 The current supported back-ends for Zynq platforms are:
  - `libxtasks-stream` implements a direct communication to the HW accelerators sending the task arguments by stream.
  - `libxtasks-hwruntime` implements an asynchronous communication where the tasks are pushed into a communication buffer. The HW runtime in the FPGA reads the information and communicates with the accelerators.
- - `libxtasks-picos` *(deprecated)* implements an asynchronous communication using the [Picos](https://doi.org/10.1109/IPDPS.2017.48) queue for direct ready tasks execution.
 
 ### Build
 
 ##### Requirements
 
-Each back-end library has different requirements that are summarized in the following table.
-Moreover, the installation path of required libraries must be provided during the build stage.
-
-|     | stream |  hwruntime  | picos |
-| --- | :----: | :---------: | :---: |
-| [libxdma](https://pm.bsc.es/gitlab/ompss-at-fpga/xdma)          | X | X |   |
-| [libpicos](https://pm.bsc.es/gitlab/picos/libpicos)             |   |   | X |
+The installation path of required libraries must be provided during the build stage.
+List of required libraries:
+ - [libxdma](https://pm.bsc.es/gitlab/ompss-at-fpga/xdma)
 
 ##### Instructions
 
@@ -37,9 +32,6 @@ The supported variables are:
  - `LIBXDMA_DIR`. Installation directory of libxdma library
     - `LIBXDMA_INC_DIR`. Installation directory of includes for libxdma (Default: `$LIBXDMA_DIR/include`)
     - `LIBXDMA_LIB_DIR`. Installation directory of OS libraries for libxdma (Default: `$LIBXDMA_DIR/lib`)
- - `LIBPICOS_DIR`. Installation directory of libpicos library
-    - `LIBPICOS_INC_DIR`. Installation directory of includes for libpicos (Default: `$LIBPICOS_DIR/include`)
-    - `LIBPICOS_LIB_DIR`. Installation directory of OS libraries for libpicos (Default: `$LIBPICOS_DIR/lib`)
 
 4. Build.
 ```

@@ -28,14 +28,14 @@ extern "C" {
 #include <stdlib.h>
 
 typedef struct {
-    unsigned long volatile current; //< Current serving id
-    unsigned long volatile next;    //< Next id to assign
+    unsigned long volatile current;  //< Current serving id
+    unsigned long volatile next;     //< Next id to assign
 } ticketLock_t;
 
 /**
-  * Initialize the lock
-  */
-void ticketLockInit( ticketLock_t * const l )
+ * Initialize the lock
+ */
+void ticketLockInit(ticketLock_t *const l)
 {
     if (l == NULL) return;
 
@@ -44,9 +44,9 @@ void ticketLockInit( ticketLock_t * const l )
 }
 
 /**
-  * Acquire the lock
-  */
-void ticketLockAcquire( ticketLock_t * const l )
+ * Acquire the lock
+ */
+void ticketLockAcquire(ticketLock_t *const l)
 {
     unsigned long const mine = __sync_fetch_and_add(&l->next, 1);
     while (1) {
@@ -55,18 +55,14 @@ void ticketLockAcquire( ticketLock_t * const l )
 }
 
 /**
-  * Release the lock
-  */
-void ticketLockRelease( ticketLock_t * const l )
-{
-    l->current++;
-}
+ * Release the lock
+ */
+void ticketLockRelease(ticketLock_t *const l) { l->current++; }
 
 /**
-  * Finalize the lock
-  */
-void ticketLockFini( ticketLock_t * const l )
-{}
+ * Finalize the lock
+ */
+void ticketLockFini(ticketLock_t *const l) {}
 
 #ifdef __cplusplus
 }

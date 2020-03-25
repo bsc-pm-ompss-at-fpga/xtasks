@@ -28,24 +28,24 @@ extern "C" {
 #include <stdlib.h>
 
 typedef struct node_t {
-    void            *_data;
-    struct node_t   *_next;
+    void *_data;
+    struct node_t *_next;
 } node_t;
 
 typedef struct {
-    node_t * volatile _head;
-    node_t * volatile _tail;
+    node_t *volatile _head;
+    node_t *volatile _tail;
 } queue_t;
 
 /**
-  * Create and initialize a new queue
-  */
-queue_t * queueInit()
+ * Create and initialize a new queue
+ */
+queue_t *queueInit()
 {
-    queue_t * ret = (queue_t *)malloc(sizeof(queue_t));
+    queue_t *ret = (queue_t *)malloc(sizeof(queue_t));
     if (ret == NULL) return NULL;
 
-    node_t * node = (node_t *)malloc(sizeof(node_t));
+    node_t *node = (node_t *)malloc(sizeof(node_t));
     if (node == NULL) {
         free(ret);
         return NULL;
@@ -57,16 +57,16 @@ queue_t * queueInit()
 }
 
 /**
-  * Atomically insert a new element in the queue
-  */
-void queuePush( queue_t * const q, void * elem )
+ * Atomically insert a new element in the queue
+ */
+void queuePush(queue_t *const q, void *elem)
 {
-    node_t * n = (node_t *)malloc(sizeof(node_t));
+    node_t *n = (node_t *)malloc(sizeof(node_t));
     if (n == NULL) return;
 
     n->_data = elem;
     n->_next = NULL;
-    node_t * l;
+    node_t *l;
     do {
         l = q->_tail;
     } while (!__sync_bool_compare_and_swap(&q->_tail, l, n));
@@ -91,24 +91,24 @@ void queuePush( queue_t * const q, void * elem )
 }
 
 /**
-  * Returns the next element of the queue
-  * NOTE: The function is not thread-safe and a race condition may appear if queueTryPop is called
-  *       at the same time
-  */
-void * queueFront( queue_t * const q )
+ * Returns the next element of the queue
+ * NOTE: The function is not thread-safe and a race condition may appear if queueTryPop is called
+ *       at the same time
+ */
+void *queueFront(queue_t *const q)
 {
-    node_t * n = q->_head->_next;
+    node_t *n = q->_head->_next;
     return n == NULL ? n : n->_data;
 }
 
 /**
-  * Remove the next element of the queue
-  * NOTE: The function is not thread-safe and a race condition may appear if queueTryPop is called
-  *       at the same time
-  */
-void queuePop( queue_t * const q )
+ * Remove the next element of the queue
+ * NOTE: The function is not thread-safe and a race condition may appear if queueTryPop is called
+ *       at the same time
+ */
+void queuePop(queue_t *const q)
 {
-    node_t * l = q->_head->_next;
+    node_t *l = q->_head->_next;
     if (l == NULL) return;
 
     q->_head->_next = l->_next;
@@ -116,12 +116,12 @@ void queuePop( queue_t * const q )
 }
 
 /**
-  * Atomically extracts from the queue the next element and returns it.
-  * If the queue is empty returns NULL
-  */
-void * queueTryPop( queue_t * const q )
+ * Atomically extracts from the queue the next element and returns it.
+ * If the queue is empty returns NULL
+ */
+void *queueTryPop(queue_t *const q)
 {
-    node_t * l;
+    node_t *l;
     do {
         l = q->_head;
     } while (l == NULL || !__sync_bool_compare_and_swap(&q->_head, l, NULL));
@@ -131,19 +131,18 @@ void * queueTryPop( queue_t * const q )
         return NULL;
     }
 
-    void * ret = l->_next->_data;
+    void *ret = l->_next->_data;
     q->_head = l->_next;
     free(l);
     return ret;
 }
 
 /**
-  * Finalize the queue
-  */
-void queueFini( queue_t * q )
+ * Finalize the queue
+ */
+void queueFini(queue_t *q)
 {
-
-    for (node_t * n = q->_head->_next, * l = NULL; n != NULL; n = l) {
+    for (node_t *n = q->_head->_next, *l = NULL; n != NULL; n = l) {
         l = n->_next;
         free(n);
     }

@@ -14,26 +14,11 @@ LIBXDMA_LIBS_     = -L$(LIBXDMA_LIB_DIR) -lxdma
 LIBXDMA_SUPPORT_ = $(if $(and $(wildcard $(LIBXDMA_INC_DIR)/libxdma.h ), \
 	$(wildcard $(LIBXDMA_LIB_DIR)/libxdma.so )),YES,NO)
 
-## Check libpicos installation
-#LIBPICOS_DIR      ?= /opt/install-arm/libpicos
-LIBPICOS_INC_DIR  ?= $(LIBPICOS_DIR)/include
-LIBPICOS_LIB_DIR  ?= $(LIBPICOS_DIR)/lib
-LIBPICOS_INCS_     = -I$(LIBPICOS_INC_DIR)
-LIBPICOS_LIBS_     = -L$(LIBPICOS_LIB_DIR) -lpicos
-LIBPICOS_SUPPORT_ = $(if $(and $(wildcard $(LIBPICOS_INC_DIR)/libpicos.h ), \
-	$(wildcard $(LIBPICOS_LIB_DIR)/libpicos.so )),YES,NO)
-
 ## Append needed things to CFLAGS, LDFLAGS and TARGETS
 ifeq ($(LIBXDMA_SUPPORT_),YES)
 	CFLAGS_  += $(LIBXDMA_INCS_)
 	LDFLAGS_ += $(LIBXDMA_LIBS_)
 	TARGETS_ += libxtasks-stream.so libxtasks-hwruntime.so
-
-	ifeq ($(LIBPICOS_SUPPORT_),YES)
-		CFLAGS_  +=
-		LDFLAGS_ +=
-		TARGETS_ += libxtasks-picos.so
-	endif
 endif
 
 .PHONY: all
@@ -50,13 +35,6 @@ libxtasks-stream.o: libxtasks-stream.c
 
 libxtasks-stream.so: libxtasks-stream.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
-
-libxtasks-picos.o: libxtasks-picos.c
-	$(CC_) $(CFLAGS_) $(LIBPICOS_INCS_) -c $^
-
-libxtasks-picos.so: libxtasks-picos.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-rpath=$(LIBPICOS_LIB_DIR),-soname,libxtasks.so \
-	-o $@ $^ $(LDFLAGS_) $(LIBPICOS_LIBS_)
 
 .PHONY: libxtasks_version.h
 libxtasks_version.h: ../libxtasks_version_template.h
