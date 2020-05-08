@@ -255,7 +255,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
 
 /*!
  * \brief Initialize hardware instrumentation
- * \param[in] nEvents   Maximum number of events that will be recorded per task execution
+ * \param[in] nEvents   Number of elements in the circular buffers of each accelerator
  */
 xtasks_stat xtasksInitHWIns(size_t const nEvents);
 
