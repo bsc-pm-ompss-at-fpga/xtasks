@@ -310,7 +310,7 @@ xtasks_stat xtasksFiniHWIns()
 
     if (_instrBuff == NULL) {
         // Instrumentation is not initialized or has been already finished
-        return XDMA_SUCCESS;
+        return XTASKS_SUCCESS;
     }
     s1 = xdmaFree(_instrBuffHandle);
     _numInstrEvents = 0;
@@ -1086,7 +1086,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
     __sync_synchronize();
     hwTaskHeader->valid = QUEUE_INVALID;
 
-    return XDMA_SUCCESS;
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
