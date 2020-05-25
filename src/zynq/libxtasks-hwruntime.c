@@ -360,6 +360,13 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_0;
     }
 
+    //open cdma device
+    s = xdmaOpen();
+    if (s != XDMA_SUCCESS) {
+        PRINT_ERROR("could not open xdma device");
+        //TODO: error management
+    }
+
     // Preallocate accelerators array
     _numAccs = DEF_ACCS_LEN;
     _accs = malloc(sizeof(acc_t) * _numAccs);
@@ -634,6 +641,8 @@ xtasks_stat xtasksFini()
     free(_accs);
     _accs = NULL;
     _numAccs = 0;
+
+    xdmaClose(); //TODO error management
 
     // Close xdma memory management
     if (xdmaFiniMem() != XDMA_SUCCESS) {
