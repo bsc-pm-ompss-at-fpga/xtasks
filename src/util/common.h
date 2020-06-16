@@ -29,7 +29,7 @@
 
 #define PRINT_ERROR(_str_) fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
 #define MIN_WRAPPER_VER 5
-#define MAX_WRAPPER_VER 7
+#define MAX_WRAPPER_VER 8
 
 #define CMD_EXEC_TASK_CODE 0x01              ///< Command code for execute task commands
 #define CMD_SETUP_INS_CODE 0x02              ///< Command code for setup instrumentation info
