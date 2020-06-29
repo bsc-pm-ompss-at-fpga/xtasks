@@ -30,7 +30,7 @@ extern "C" {
 #include <stdlib.h>
 
 typedef enum {
-    XTASKS_SUCCESS = 0,  ///< Operation finised sucessfully
+    XTASKS_SUCCESS = 0,  ///< Operation finished successfully
     XTASKS_ENOSYS,       ///< Function not implemented
     XTASKS_EINVAL,       ///< Invalid operation arguments
     XTASKS_ENOMEM,       ///< Not enough memory to execute the operation
@@ -38,7 +38,7 @@ typedef enum {
     XTASKS_ENOENTRY,     ///< Operation failed because no entry could be reserved
     XTASKS_PENDING,      ///< Operation not finished yet
     XTASKS_ENOAV,        ///< Function/operation not available
-    XTASKS_ERROR         ///< Operation finished with sone error
+    XTASKS_ERROR         ///< Operation finished with some error
 } xtasks_stat;
 
 typedef enum { XTASKS_COMPUTE_DISABLE = 0, XTASKS_COMPUTE_ENABLE = 1 } xtasks_comp_flags;
@@ -255,7 +255,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
 
 /*!
  * \brief Initialize hardware instrumentation
- * \param[in] nEvents   Maximum number of events that will be recorded per task execution
+ * \param[in] nEvents   Number of elements in the circular buffers of each accelerator
  */
 xtasks_stat xtasksInitHWIns(size_t const nEvents);
 
