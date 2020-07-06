@@ -689,7 +689,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task) { return XTASKS_PENDING; }
 
 xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id) { return XTASKS_ENOSYS; }
 
