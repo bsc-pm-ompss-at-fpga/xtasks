@@ -113,6 +113,10 @@ static uint64_t     *_cmdOutQueue;
 static uint32_t     *_hwruntimeRst;
 static uint8_t      *_cmdExecTaskBuff;
 
+//! \brief Platform and Backend strings
+const char _platformName[] = "qdma";
+const char _backendName[] = "hwruntime";
+
 //forward declarations
 static int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo);
 static int initAccList(acc_t *accs, const char *accInfo);
@@ -310,15 +314,44 @@ static int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo) {
 
 }
 
-xtasks_stat xtasksGetPlatform(const char **name) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksGetPlatform(const char **name) {
+    *name = _platformName;
+    return XTASKS_SUCCESS;
+}
 
-xtasks_stat xtasksGetBackend(const char **name) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksGetNumAccs(size_t *count) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksGetBackend(const char **name) {
+    *name = _backendName;
+    return XTASKS_SUCCESS;
+}
 
-xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle *array, size_t *count) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksGetNumAccs(size_t *count) {
+    *count =  _numAccs;
+    return XTASKS_SUCCESS;
+}
 
-xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *info) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle *array, size_t *count)
+{
+    if (array == NULL || count == NULL) return XTASKS_EINVAL;
+
+    size_t tmp = maxCount > _numAccs ? _numAccs : maxCount;
+    for (size_t i = 0; i < tmp; ++i) {
+        array[i] = (xtasks_acc_handle)(&_accs[i]);
+    }
+    *count = tmp;
+
+    return XTASKS_SUCCESS;
+}
+xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *info)
+
+{
+    if (info == NULL) return XTASKS_EINVAL;
+
+    acc_t *ptr = (acc_t *)handle;
+    *info = ptr->info;
+
+    return XTASKS_SUCCESS;
+}
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId, xtasks_task_id const parent,
     xtasks_comp_flags const compute, xtasks_task_handle *handle)
