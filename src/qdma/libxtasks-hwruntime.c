@@ -124,6 +124,7 @@ static inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32
 static int getFreeTaskEntry();
 static void initializeTask(task_t *task, const xtasks_task_id id, acc_t *accel,
         xtasks_task_id const parent, xtasks_comp_flags const compute);
+static xtasks_stat setExtendedModeTask(task_t *task);
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
@@ -418,14 +419,65 @@ xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle)
 xtasks_stat xtasksAddArg(
     xtasks_arg_id const id, xtasks_arg_flags const flags, xtasks_arg_val const value, xtasks_task_handle const handle)
 {
-    return XTASKS_ENOSYS;
+    task_t *task = (task_t *)(handle);
+    uint8_t argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+    if (argsCnt >= EXT_HW_TASK_ARGS_LEN) {
+        // Unsupported number of arguments
+        return XTASKS_ENOSYS;
+    } else if (argsCnt == DEF_EXEC_TASK_ARGS_LEN) {
+        // Entering in extended mode
+        setExtendedModeTask(task);
+    }
+
+    argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET]++;
+    task->cmdExecArgs[argsCnt].flags = flags;
+    task->cmdExecArgs[argsCnt].id = id;
+    task->cmdExecArgs[argsCnt].value = value;
+
+    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksAddArgs(
     size_t const num, xtasks_arg_flags const flags, xtasks_arg_val *const values, xtasks_task_handle const handle)
 {
-    return XTASKS_ENOSYS;
+    task_t *task = (task_t *)(handle);
+    uint8_t argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+    if (argsCnt >= EXT_HW_TASK_ARGS_LEN) {
+        // Unsupported number of arguments
+        return XTASKS_ENOSYS;
+    } else if (argsCnt == DEF_EXEC_TASK_ARGS_LEN) {
+        // Entering in extended mode
+        xtasks_stat rv;
+        rv = setExtendedModeTask(task);
+        if (rv != XTASKS_SUCCESS) {
+            return rv;
+        }
+    }
+
+    for (size_t i = 0, idx = argsCnt; i < num; ++i, ++idx) {
+        task->cmdExecArgs[idx].flags = flags;
+        task->cmdExecArgs[idx].id = idx;
+        task->cmdExecArgs[idx].value = values[i];
+    }
+    task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] += num;
+
+    return XTASKS_SUCCESS;
 }
+
+static xtasks_stat setExtendedModeTask(task_t *task) {
+    cmd_header_t *prevHeader = task->cmdHeader;
+    task->cmdHeader = (cmd_header_t *)malloc(EXT_HW_TASK_SIZE);
+    if (task->cmdHeader == NULL) {
+        task->cmdHeader = prevHeader;
+        return XTASKS_ENOMEM;
+    }
+    task->extSize = 1;
+    task->cmdExecArgs =
+        (cmd_exec_task_arg_t *)(((unsigned char *)task->cmdHeader) +
+                (task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t)));
+    memcpy(task->cmdHeader, prevHeader, DEF_EXEC_TASK_SIZE);  //< Move the hw task header and args
+}
+
 
 xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle) { return XTASKS_ENOSYS; }
 
