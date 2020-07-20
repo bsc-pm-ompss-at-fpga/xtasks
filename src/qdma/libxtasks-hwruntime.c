@@ -125,6 +125,7 @@ static int getFreeTaskEntry();
 static void initializeTask(task_t *task, const xtasks_task_id id, acc_t *accel,
         xtasks_task_id const parent, xtasks_comp_flags const compute);
 static xtasks_stat setExtendedModeTask(task_t *task);
+static xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue);
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
@@ -479,15 +480,193 @@ static xtasks_stat setExtendedModeTask(task_t *task) {
 }
 
 
-xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle) { return XTASKS_ENOSYS; }
-
-xtasks_stat xtasksWaitTask(xtasks_task_handle const handle) { return XTASKS_ENOSYS; }
-
-xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id) { return XTASKS_ENOSYS; }
-
-xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *task, xtasks_task_id *id)
+xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 {
-    return XTASKS_ENOSYS;
+    task_t *task = (task_t *)(handle);
+    acc_t *acc = task->accel;
+
+    // Update the task/command information
+    task->cmdHeader->valid = QUEUE_VALID;
+
+    // NOTE: cmdExecArgs array is after the header
+    uint8_t const argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+    size_t const numHeaderBytes =
+        task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t);
+    size_t const numCmdWords = (numHeaderBytes + sizeof(cmd_exec_task_arg_t) * argsCnt) / sizeof(uint64_t);
+    return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue);
+}
+
+
+static xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue)
+{
+
+    size_t idx;
+    uint64_t cmdHeader;
+    size_t const offset = acc->info.id * CMD_IN_SUBQUEUE_LEN;
+    cmd_header_t *const cmdHeaderPtr = (cmd_header_t *const) & cmdHeader;
+
+    // While there is not enough space in the queue, look for already read commands
+    while (acc->cmdInAvSlots < length) {
+        ticketLockAcquire(&acc->cmdInLock);
+        if (acc->cmdInAvSlots < length) {
+        SUB_CMD_CHECK_RD:
+            idx = acc->cmdInRdIdx;
+            cmdHeader = queue[offset + idx];
+            if (cmdHeaderPtr->valid == QUEUE_INVALID) {
+#ifdef XTASKS_DEBUG
+                uint8_t const cmdNumArgs = cmdHeaderPtr->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+                if (cmdHeaderPtr->commandCode == CMD_EXEC_TASK_CODE && cmdNumArgs > EXT_HW_TASK_ARGS_LEN) {
+                    PRINT_ERROR("Found unexpected data when executing xtasksSubmitCommand");
+                    ticketLockRelease(&acc->cmdInLock);
+                    return XTASKS_ERROR;
+                }
+#endif /* XTASKS_DEBUG */
+                size_t const cmdNumWords = getCmdLength(cmdHeaderPtr);
+                acc->cmdInRdIdx = (idx + cmdNumWords) % CMD_IN_SUBQUEUE_LEN;
+                acc->cmdInAvSlots += cmdNumWords;
+            }
+        } else {
+            // NOTE: At this point the thread has the lock acquired, so directly bypass it into the queue idx update.
+            //      The lock will be released in the code after the atomic operations
+            goto SUB_CMD_UPDATE_IDX;
+        }
+        ticketLockRelease(&acc->cmdInLock);
+    }
+
+    ticketLockAcquire(&acc->cmdInLock);
+    if (acc->cmdInAvSlots >= length) {
+    SUB_CMD_UPDATE_IDX:
+        idx = acc->cmdInWrIdx;
+        acc->cmdInWrIdx = (idx + length) % CMD_IN_SUBQUEUE_LEN;
+        acc->cmdInAvSlots -= length;
+        cmdHeader = queue[offset + idx];
+        cmdHeaderPtr->valid = QUEUE_RESERVED;
+        queue[offset + idx] = cmdHeader;
+
+        // Release the lock as it is not needed anymore
+        __sync_synchronize();
+        ticketLockRelease(&acc->cmdInLock);
+
+        // Do no write the header (1st word pointer by command ptr) until all payload is write
+        // Check if 2 writes have to be done because there is not enough space at the end of subqueue
+        const size_t count = min(CMD_IN_SUBQUEUE_LEN - idx - 1, length - 1);
+        memcpy(&queue[offset + idx + 1], command + 1, count * sizeof(uint64_t));
+        if ((length - 1) > count) {
+            memcpy(&queue[offset], command + 1 + count, (length - count) * sizeof(uint64_t));
+        }
+        cmdHeader = *command;
+        cmdHeaderPtr->valid = QUEUE_VALID;
+
+        __sync_synchronize();
+        // Write the header now
+        queue[offset + idx] = cmdHeader;
+    } else {
+        // NOTE: At this point the thread has the lock acquired, so directly bypass it into the check.
+        //      The lock will be released in the code after the check
+        goto SUB_CMD_CHECK_RD;
+    }
+
+    return XTASKS_SUCCESS;
+}
+
+
+xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
+{
+    task_t *task = (task_t *)(handle);
+    acc_t *acc = task->accel;
+    size_t tries = 0;
+    static size_t const MAX_WAIT_TASKS_TRIES = 0xFFFFFFFF;
+
+    // NOTE: This implementation loses some tasks if waitTask and tryGetFinishedTask are combined.
+    //      Force waiting for the first submited task?
+    while (task->cmdHeader->valid == QUEUE_VALID && tries++ < MAX_WAIT_TASKS_TRIES) {
+        xtasks_task_id id;
+        xtasks_task_handle h;
+        xtasksTryGetFinishedTaskAccel(acc, &h, &id);
+    }
+    return tries > MAX_WAIT_TASKS_TRIES ? XTASKS_PENDING : XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id)
+{
+    if (handle == NULL || id == NULL) {
+        return XTASKS_EINVAL;
+    }
+
+    xtasks_stat ret = XTASKS_PENDING;
+    size_t i = 0;
+    do {
+        ret = xtasksTryGetFinishedTaskAccel(&_accs[i], handle, id);
+    } while (++i < _numAccs && ret == XTASKS_PENDING);
+
+    return ret;
+}
+
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id)
+{
+    acc_t *acc = (acc_t *)accel;
+    uint64_t *const subqueue = _cmdOutQueue + acc->info.id * CMD_OUT_SUBQUEUE_LEN;
+
+    if (handle == NULL || id == NULL || acc == NULL) {
+        return XTASKS_EINVAL;
+    }
+
+    size_t idx = acc->cmdOutIdx;
+    uint64_t cmdBuffer = subqueue[idx];
+    cmd_header_t *cmd = (cmd_header_t *)&cmdBuffer;
+
+    if (cmd->valid == QUEUE_VALID) {
+        if (__sync_lock_test_and_set(&acc->cmdOutLock, 1) == 0) {
+            // Read the command header
+            idx = acc->cmdOutIdx;
+            cmdBuffer = subqueue[idx];
+
+            if (cmd->valid != QUEUE_VALID) {
+                __sync_lock_release(&acc->cmdOutLock);
+                return XTASKS_PENDING;
+            }
+
+#ifdef XTASKS_DEBUG
+            if (cmd->commandCode != CMD_FINI_EXEC_CODE ||
+                cmd->commandArgs[CMD_FINI_EXEC_ARGS_ACCID_OFFSET] != acc->info.id) {
+                PRINT_ERROR("Found unexpected data when executing xtasksTryGetFinishedTaskAccel");
+                __sync_lock_release(&acc->cmdOutLock);
+                return XTASKS_ERROR;
+            }
+#endif /* XTASKS_DEBUG */
+
+            // Read the command payload (task identifier)
+            size_t const dataIdx = (idx + 1) % CMD_OUT_SUBQUEUE_LEN;
+            uint64_t const taskID = subqueue[dataIdx];
+            subqueue[dataIdx] = 0;  //< Clean the buffer slot
+
+            // Invalidate the buffer entry
+            cmd = (cmd_header_t *)&subqueue[idx];
+            cmd->valid = QUEUE_INVALID;
+
+            // Update the read index and release the lock
+            acc->cmdOutIdx = (idx + sizeof(cmd_out_exec_task_t) / sizeof(uint64_t)) % CMD_OUT_SUBQUEUE_LEN;
+            __sync_lock_release(&acc->cmdOutLock);
+
+#ifdef XTASKS_DEBUG
+            if (taskID < (uintptr_t)_tasks || taskID >= (uintptr_t)(_tasks + NUM_RUN_TASKS)) {
+                PRINT_ERROR("Found an invalid task identifier when executing xtasksTryGetFinishedTaskAccel");
+                return XTASKS_ERROR;
+            }
+#endif /* XTASKS_DEBUG */
+
+            uintptr_t taskPtr = (uintptr_t)taskID;
+            task_t *task = (task_t *)taskPtr;
+            *handle = (xtasks_task_handle)task;
+            *id = task->id;
+
+            // Mark the task as executed (using the valid field as it is not used in the cached copy)<
+            task->cmdHeader->valid = QUEUE_INVALID;
+
+            return XTASKS_SUCCESS;
+        }
+    }
+    return XTASKS_PENDING;
 }
 
 xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const handle, xtasks_ins_event *events, size_t const maxCount)
