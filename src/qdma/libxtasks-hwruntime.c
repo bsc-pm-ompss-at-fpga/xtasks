@@ -121,6 +121,9 @@ const char _backendName[] = "hwruntime";
 static int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo);
 static int initAccList(acc_t *accs, const char *accInfo);
 static inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32_t *resetReg);
+static int getFreeTaskEntry();
+static void initializeTask(task_t *task, const xtasks_task_id id, acc_t *accel,
+        xtasks_task_id const parent, xtasks_comp_flags const compute);
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
@@ -356,7 +359,44 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *in
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId, xtasks_task_id const parent,
     xtasks_comp_flags const compute, xtasks_task_handle *handle)
 {
-    return XTASKS_ENOSYS;
+    acc_t *accel = (acc_t *)accId;
+    int idx = getFreeTaskEntry();
+    if (idx < 0) {
+        return XTASKS_ENOENTRY;
+    }
+
+    initializeTask(&_tasks[idx], id, accel, parent, compute);
+
+    *handle = (xtasks_task_handle)&_tasks[idx];
+    return XTASKS_SUCCESS;
+}
+
+static int getFreeTaskEntry()
+{
+    for (int i = 0; i < NUM_RUN_TASKS; ++i) {
+        if (_tasks[i].id == 0) {
+            if (__sync_bool_compare_and_swap(&_tasks[i].id, 0, 1)) {
+                return i;
+            }
+        }
+    }
+    return -1;
+}
+
+static void initializeTask(task_t *task, const xtasks_task_id id, acc_t *accel,
+        xtasks_task_id const parent, xtasks_comp_flags const compute) {
+
+    task->id = id;
+    task->accel = accel;
+    task->periTask = 0;
+    cmd_exec_task_header_t *cmdHeader = (cmd_exec_task_header_t *)task->cmdHeader;
+    task->cmdExecArgs = (cmd_exec_task_arg_t *)(cmdHeader + 1);
+    cmdHeader->header.commandCode = CMD_EXEC_TASK_CODE;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = 0;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_COMP_OFFSET] = compute;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_TM;
+    cmdHeader->parentID = (uintptr_t)(parent);
+    cmdHeader->taskID = (uintptr_t)(task);
 }
 
 xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle const accId,
@@ -366,7 +406,14 @@ xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle 
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle)
+{
+    task_t *task = (task_t *)(*handle);
+    *handle = NULL;
+    task->id = 0;
+
+    return XTASKS_SUCCESS;
+}
 
 xtasks_stat xtasksAddArg(
     xtasks_arg_id const id, xtasks_arg_flags const flags, xtasks_arg_val const value, xtasks_task_handle const handle)
