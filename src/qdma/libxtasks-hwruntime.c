@@ -113,6 +113,14 @@ static uint64_t     *_cmdOutQueue;
 static uint32_t     *_hwruntimeRst;
 static uint8_t      *_cmdExecTaskBuff;
 
+
+static size_t _numInstrEvents;
+static xtasks_ins_event *_instrBuffPhy;
+static xtasks_ins_event *_instrBuff;
+static xdma_buf_handle _instrBuffHandle;
+static uint64_t *_instrCounter;
+
+
 //! \brief Platform and Backend strings
 const char _platformName[] = "qdma";
 const char _backendName[] = "hwruntime";
@@ -126,6 +134,7 @@ static void initializeTask(task_t *task, const xtasks_task_id id, acc_t *accel,
         xtasks_task_id const parent, xtasks_comp_flags const compute);
 static xtasks_stat setExtendedModeTask(task_t *task);
 static xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue);
+static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtasks_ins_event *accBuffer);
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
@@ -240,6 +249,98 @@ init_mem_err:
     xdmaClose();
     return ret;
 }
+
+
+xtasks_stat xtasksInitHWIns(const size_t nEvents)
+{
+    xtasks_stat ret;
+    size_t insBufferSize;
+
+    if (nEvents < 1) {
+        return XTASKS_EINVAL;
+    }
+
+    bit_feature_t feature = checkbitstreamFeature("hwcounter", _bitinfo);
+    if (feature == BIT_FEATURE_NO_AVAIL || feature == BIT_FEATURE_UNKNOWN) {
+        return XTASKS_ENOAV;
+    }
+
+    _numInstrEvents = nEvents;
+    insBufferSize = _numInstrEvents * _numAccs * sizeof(xtasks_ins_event);
+
+    xdma_status s = xdmaAllocate(&_instrBuffHandle, insBufferSize);
+    if (s != XDMA_SUCCESS) {
+        return XTASKS_ENOMEM;
+    }
+    unsigned long phyAddr;
+    xdmaGetDeviceAddress(_instrBuffHandle, &phyAddr);
+    _instrBuffPhy = (xtasks_ins_event *)((uintptr_t)phyAddr);
+
+    // Invalidate all entries
+    _instrBuff = (xtasks_ins_event *)malloc(insBufferSize);
+    for (int i = 0; i < _numInstrEvents * _numAccs; ++i) {
+        _instrBuff[i].eventType = XTASKS_EVENT_TYPE_INVALID;
+    }
+    s = xdmaMemcpy(_instrBuff, _instrBuffHandle, insBufferSize, 0, XDMA_TO_DEVICE);
+
+    if (s != XDMA_SUCCESS) {
+        PRINT_ERROR("Could not initialize instrumentation buffer");
+        ret = XTASKS_ERROR;
+        goto hwins_buff_init_err;
+    }
+
+    //Send instr setup command to acc
+    cmd_setup_hw_ins_t cmd;
+    cmd.header.commandCode = CMD_SETUP_INS_CODE;
+    memcpy((void *)cmd.header.commandArgs, (void *)&_numInstrEvents, CMD_SETUP_INS_ARGS_NUMEVS_BYTES);
+    for (size_t i = 0; i < _numAccs; ++i) {
+        cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents * i);
+
+        xtasks_stat ret =
+            submitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t),
+                    _cmdInQueue);
+        if (ret != XTASKS_SUCCESS) {
+            PRINT_ERROR("Error setting up instrumentation");
+            goto hwins_cmd_err;
+        }
+
+        _accs[i].instrIdx = 0;
+        _accs[i].instrLock = 0;
+    }
+
+    //Init HW counter
+    if (_pciBar == NULL) {
+        ret = XTASKS_ERROR;
+        PRINT_ERROR("xtasks has not been initialized");
+        goto hwins_no_pcibar;
+    }
+    _instrCounter = (uint64_t *)(_pciBar + HWCOUNTER_ADDRESS/sizeof(*_pciBar));
+
+    return XTASKS_SUCCESS;
+
+hwins_no_pcibar:
+hwins_cmd_err:
+hwins_buff_init_err:
+        free(_instrBuff);
+        xdmaFree(_instrBuffHandle);
+        _numInstrEvents = 0;
+        _instrBuffPhy = NULL;
+        _instrBuff = NULL;
+        return ret;
+}
+
+xtasks_stat xtasksFiniHWIns()
+{
+    if (_instrBuff == NULL || _numInstrEvents == 0)
+        return XTASKS_SUCCESS;  //Instrumentation is not initialized
+    free(_instrBuff);
+    xdmaFree(_instrBuffHandle);
+    _numInstrEvents = 0;
+    _instrBuffPhy = NULL;
+    _instrBuff = NULL;
+    return XTASKS_SUCCESS;
+}
+
 
 xtasks_stat xtasksFini() {
 
@@ -669,9 +770,71 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
     return XTASKS_PENDING;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const handle, xtasks_ins_event *events, size_t const maxCount)
+xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount)
 {
-    return XTASKS_ENOSYS;
+
+    acc_t *acc = (acc_t *)(accel);
+    xtasks_ins_event *accBuffer = _instrBuff + acc->info.id * _numInstrEvents;
+    size_t count, validEvents;
+
+    if (events == NULL || (acc - _accs) >= _numAccs || maxCount <= 0)
+        return XTASKS_EINVAL;
+    else if (_instrBuff == NULL)
+        return XTASKS_ENOAV;
+
+    count = min(maxCount, _numInstrEvents - acc->instrIdx);
+    validEvents = getAccEvents(acc, events, count, accBuffer);
+    if (validEvents < maxCount) {
+        // Ensure invalid type of first non-wrote event slot in the caller buffer
+        events[validEvents].eventType = XTASKS_EVENT_TYPE_INVALID;
+    }
+
+    return XTASKS_SUCCESS;
+}
+
+//TODO: accBuffer sems just an scratchpad to invalidate event entries
+static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtasks_ins_event *accBuffer) {
+    size_t devInstroff;
+    accBuffer += acc->instrIdx;
+    devInstroff = (acc->info.id * _numInstrEvents + acc->instrIdx) * sizeof(xtasks_ins_event);
+
+    if (__sync_lock_test_and_set(&acc->instrLock, 1)) {
+        // There is another thread reading the buffer for this accelerator
+        events->eventType = XTASKS_EVENT_TYPE_INVALID;
+    } else {
+        xdma_status stat;
+        int i;
+
+        //stat = xdmaMemcpy(events, _instrBuffHandle, count * sizeof(xtasks_ins_event),
+        //    (accBuffer - _instrBuff) * sizeof(xtasks_ins_event), XDMA_FROM_DEVICE);
+        stat = xdmaMemcpy(events, _instrBuffHandle, count * sizeof(xtasks_ins_event),
+            devInstroff, XDMA_FROM_DEVICE);
+        if (stat != XDMA_SUCCESS) {
+            __sync_lock_release(&acc->instrLock);
+            return -1;
+        }
+        i = 0;
+        //TODO: Preinitialize invalidation event buffers
+        while (i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID) {
+            // Invalidate all read entries in the accelerator buffer
+            accBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
+            i++;
+        }
+        if (i > 0) {
+            //stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i * sizeof(xtasks_ins_event),
+            //    (accBuffer - _instrBuff) * sizeof(xtasks_ins_event), XDMA_TO_DEVICE);
+            stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i * sizeof(xtasks_ins_event),
+                devInstroff, XDMA_TO_DEVICE);
+            if (stat != XDMA_SUCCESS) {
+                __sync_lock_release(&acc->instrLock);
+                return -1;
+            }
+        }
+        acc->instrIdx = (acc->instrIdx + i) % _numInstrEvents;
+        __sync_lock_release(&acc->instrLock);
+        return i;
+
+    }
 }
 
 xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task) { return XTASKS_ENOSYS; }
