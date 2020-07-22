@@ -36,6 +36,8 @@
 #define CMD_IN_SUBQUEUE_LEN 64   ///< Number of entries in the sub-queue of cmd_in_queue for one accelerator
 #define CMD_OUT_QUEUE_LEN 1024   ///< Total number of entries in the cmd_out_queue
 #define CMD_OUT_SUBQUEUE_LEN 64  ///< Number of entries in the sub-queue of cmd_out_queue for one accelerator
+#define SPWN_OUT_QUEUE_LEN 1024  ///< Total number of entries in the spawn_out queue (tasks created inside the FPGA)
+#define SPWN_IN_QUEUE_LEN 1024   ///< Total number of entries in the spawn_in queue
 
 #define MAX_NUM_ACC         (CMD_IN_QUEUE_LEN/CMD_IN_SUBQUEUE_LEN)
 #define ACC_INFO_MAX_LEN    4096
@@ -110,6 +112,10 @@ static int _numAccs;
 
 static uint64_t     *_cmdInQueue;
 static uint64_t     *_cmdOutQueue;
+static uint64_t     *_spawnOutQueue;
+static size_t       _spawnOutQueueIdx;
+static uint64_t     *_spawnInQueue;
+static size_t       _spawnInQueueIdx;
 static uint32_t     *_hwruntimeRst;
 static uint8_t      *_cmdExecTaskBuff;
 
@@ -135,6 +141,7 @@ static void initializeTask(task_t *task, const xtasks_task_id id, acc_t *accel,
 static xtasks_stat setExtendedModeTask(task_t *task);
 static xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue);
 static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtasks_ins_event *accBuffer);
+static void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx);
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
@@ -228,6 +235,27 @@ xtasks_stat xtasksInit() {
         _tasks[idx].extSize = 0;
         _tasks[idx].periTask = 0;
     }
+
+    feature = checkbitstreamFeature("hwruntime_ext", bitInfo);
+    if (feature == BIT_FEATURE_NO_AVAIL) {
+        _spawnOutQueue = NULL;
+        _spawnInQueue = NULL;
+    } else {
+        _spawnOutQueue = (uint64_t*)_pciBar + SPAWN_OUT_QUEUE_ADDRESS/sizeof(*_pciBar);
+        _spawnInQueue = (uint64_t*)_pciBar + SPAWN_IN_QUEUE_ADDRESS/sizeof(*_pciBar);
+        _spawnInQueueIdx = 0;
+        _spawnOutQueueIdx = 0;
+
+        //Invalidate entries
+        for (int i=0; i<SPWN_OUT_QUEUE_LEN; i++) {
+            _spawnOutQueue[i];
+        }
+        for (int i=0; i<SPAWN_IN_QUEUE_ADDRESS; i++) {
+            _spawnInQueue[i];
+        }
+    }
+
+
     free(accInfo);
     free(bitInfo);
 
@@ -784,6 +812,9 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
 
     count = min(maxCount, _numInstrEvents - acc->instrIdx);
     validEvents = getAccEvents(acc, events, count, accBuffer);
+    if (validEvents < 0) {
+        return XTASKS_ERROR;
+    }
     if (validEvents < maxCount) {
         // Ensure invalid type of first non-wrote event slot in the caller buffer
         events[validEvents].eventType = XTASKS_EVENT_TYPE_INVALID;
@@ -837,9 +868,140 @@ static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtas
     }
 }
 
-xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
+{
+    if (_spawnOutQueue == NULL) return XTASKS_PENDING;
 
-xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id) { return XTASKS_ENOSYS; }
+    // Get a non-empty slot into the spawn out queue
+    size_t idx, next, taskSize;
+    new_task_header_t *hwTaskHeader;
+    do {
+        idx = _spawnOutQueueIdx;
+        hwTaskHeader = (new_task_header_t *)(&_spawnOutQueue[idx]);
+        if (hwTaskHeader->valid != QUEUE_VALID) {
+            return XTASKS_PENDING;
+        }
+        taskSize =
+            (sizeof(new_task_header_t) + sizeof(uint64_t) * hwTaskHeader->numArgs +
+                sizeof(new_task_dep_t) * hwTaskHeader->numDeps + sizeof(new_task_copy_t) * hwTaskHeader->numCopies) /
+            sizeof(uint64_t);
+        next = (idx + taskSize) % SPWN_OUT_QUEUE_LEN;
+    } while (!__sync_bool_compare_and_swap(&_spawnOutQueueIdx, idx, next));
+
+
+    getNewTaskFromQ(task, _spawnOutQueue, idx);
+    return XTASKS_SUCCESS;
+}
+
+static void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx)
+{
+
+    new_task_header_t *hwTaskHeader = (new_task_header_t*)&spawnQueue[idx];
+    // Extract the information from the new buffer
+    *task = realloc(*task, sizeof(xtasks_newtask) + sizeof(xtasks_newtask_arg) * hwTaskHeader->numArgs +
+                               sizeof(xtasks_newtask_dep) * hwTaskHeader->numDeps +
+                               sizeof(xtasks_newtask_copy) * hwTaskHeader->numCopies);
+    (*task)->args = (xtasks_newtask_arg *)(*task + 1);
+    (*task)->numArgs = hwTaskHeader->numArgs;
+    (*task)->deps = (xtasks_newtask_dep *)((*task)->args + (*task)->numArgs);
+    (*task)->numDeps = hwTaskHeader->numDeps;
+    (*task)->copies = (xtasks_newtask_copy *)((*task)->deps + (*task)->numDeps);
+    (*task)->numCopies = hwTaskHeader->numCopies;
+
+    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->taskID field is the 2nd word
+    (*task)->taskId = spawnQueue[idx];
+    spawnQueue[idx] = 0;  //< Cleanup the memory position
+
+    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;     // NOTE: new_task_header_t->parentID field is the 3th word
+    (*task)->parentId = spawnQueue[idx];  //< NOTE: We don't know what is that ID (SW or HW)
+    spawnQueue[idx] = 0;                  //< Cleanup the memory position
+
+    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->typeInfo field is the 4th word
+    (*task)->typeInfo = spawnQueue[idx];
+    spawnQueue[idx] = 0;  //< Cleanup the memory position
+
+    for (size_t i = 0; i < (*task)->numDeps; ++i) {
+        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
+        new_task_dep_t *hwTaskDep = (new_task_dep_t *)(&spawnQueue[idx]);
+
+        // Parse the dependence information
+        (*task)->deps[i].address = hwTaskDep->address;
+        (*task)->deps[i].flags = hwTaskDep->flags;
+
+        // Cleanup the memory position
+        spawnQueue[idx] = 0;
+    }
+
+    for (size_t i = 0; i < (*task)->numCopies; ++i) {
+        // NOTE: Each copy uses 3 uint64_t elements in the newQueue
+        //      After using each memory position, we have to clean it
+        uint64_t tmp;
+
+        // NOTE: new_task_copy_t->address field is the 1st word
+        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
+        (*task)->copies[i].address = (void *)((uintptr_t)spawnQueue[idx]);
+        spawnQueue[idx] = 0;
+
+        // NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
+        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
+        tmp = spawnQueue[idx];
+        uint8_t copyFlags = tmp >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
+        (*task)->copies[i].flags = copyFlags;
+        uint32_t copySize = tmp >> NEW_TASK_COPY_SIZE_WORDOFFSET;
+        (*task)->copies[i].size = copySize;
+        spawnQueue[idx] = 0;
+
+        // NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
+        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
+        tmp = spawnQueue[idx];
+        uint32_t copyOffset = tmp >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
+        (*task)->copies[i].offset = copyOffset;
+        uint32_t copyAccessedLen = tmp >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
+        (*task)->copies[i].accessedLen = copyAccessedLen;
+        spawnQueue[idx] = 0;
+    }
+
+    for (size_t i = 0; i < (*task)->numArgs; ++i) {
+        // Check that arg pointer is not out of bounds
+        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
+        (*task)->args[i] = spawnQueue[idx];
+
+        // Cleanup the memory position
+        spawnQueue[idx] = 0;
+    }
+
+    // Free the buffer slot
+    // NOTE: This word cannot be set to 0 as the task size information must be keept
+    __sync_synchronize();
+    hwTaskHeader->valid = QUEUE_INVALID;
+}
+
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id) {
+    // Get an empty slot into the TM remote finished queue
+    size_t idx, next;
+    rem_fini_task_t *entryHeader;
+    do {
+        idx = _spawnInQueueIdx;
+        entryHeader = (rem_fini_task_t *)(&_spawnInQueue[idx]);
+        if (entryHeader->valid == QUEUE_VALID) {
+            return XTASKS_ENOENTRY;
+        }
+        next = (idx + sizeof(rem_fini_task_t) / sizeof(uint64_t)) % SPWN_IN_QUEUE_LEN;
+    } while (!__sync_bool_compare_and_swap(&_spawnInQueueIdx, idx, next));
+
+    // NOTE: rem_fini_task_t->taskId is the 1st word
+    idx = (idx + 1) % SPWN_IN_QUEUE_LEN;
+    _spawnInQueue[idx] = id;
+
+    // NOTE: rem_fini_task_t->parentId is the 2nd word
+    idx = (idx + 1) % SPWN_IN_QUEUE_LEN;
+    _spawnInQueue[idx] = parent;
+
+    __sync_synchronize();
+    entryHeader->valid = QUEUE_VALID;
+
+    return XTASKS_SUCCESS;
+}
 
 xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle *handle)
 {
