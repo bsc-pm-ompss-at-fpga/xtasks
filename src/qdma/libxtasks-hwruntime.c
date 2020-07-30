@@ -1061,3 +1061,10 @@ xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle *handle)
     xdma_status status = xdmaWaitTransfer(handle);
     return toXtasksStat(status);
 }
+
+
+xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp *timestamp)
+{
+    *timestamp = *_instrCounter;
+    return XTASKS_SUCCESS;
+}
