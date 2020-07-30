@@ -397,8 +397,10 @@ static int initAccList(acc_t *accs, const char *accInfo) {
     total = 0;
     char buffer[STR_BUFFER_SIZE];
     //Parse acc information
+    //discard first line containing headers
+    accInfo = index(accInfo, '\n') + 1 ;    //set pointer to next character after \n
     while ((retScanf = sscanf(accInfo, "%llu %zu %128s %f%n", &t, &num, buffer, &freq, &numRead)) == 4) {
-        accInfo += numRead;  //Advance ponter
+        accInfo += numRead + (*(accInfo+numRead) == '\n' ? 1 : 0);  //Advance ponter
         total += num;
         for (size_t i = total - num; i < total; ++i) {
             _accs[i].info.id = i;
@@ -413,7 +415,7 @@ static int initAccList(acc_t *accs, const char *accInfo) {
             _accs[i].cmdOutIdx = 0;
         }
     }
-    ret = (total < numAccs) ? total : numAccs;
+    ret = total;
 
     if (retScanf != EOF && retScanf != 0) {
         // Looks like the configuration file doesn't match the expected format
