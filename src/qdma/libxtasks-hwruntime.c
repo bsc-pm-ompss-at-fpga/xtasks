@@ -206,8 +206,8 @@ xtasks_stat xtasksInit() {
     //Initialize command queues
     _cmdInQueue = (uint64_t*)(_pciBar + (CMD_IN_QUEUE_ADDR/sizeof(*_pciBar)));
     memset(_cmdInQueue, 0, CMD_IN_QUEUE_LEN*sizeof(*_cmdInQueue));
-    _cmdOutQueue = (uint64_t*)(_pciBar + (CMD_OUT_QUEUE_ADDR/sizeof(_cmdOutQueue)));
-    memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN*sizeof(_cmdInQueue));
+    _cmdOutQueue = (uint64_t*)(_pciBar + (CMD_OUT_QUEUE_ADDR/sizeof(*_pciBar)));
+    memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN*sizeof(*_cmdOutQueue));
     //TODO: Implement remote queues
 
     //initialize reset
