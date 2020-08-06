@@ -173,7 +173,7 @@ xtasks_stat xtasksInit() {
         goto init_open_bar_err;
 
     }
-    _pciBar = mmap(NULL, PCI_BAR_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE, _pciBarFd, 0);
+    _pciBar = mmap(NULL, PCI_BAR_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, _pciBarFd, 0);
     if (_pciBar ==MAP_FAILED) {
         ret = XTASKS_ERROR;
         perror("XTASKS: Could not map BAR into process memory space");
