@@ -120,6 +120,7 @@ static uint32_t     *_hwruntimeRst;
 static uint8_t      *_cmdExecTaskBuff;
 
 
+static bit_feature_t _instrAvail;
 static size_t _numInstrEvents;
 static xtasks_ins_event *_instrBuffPhy;
 static xtasks_ins_event *_instrBuff;
@@ -255,6 +256,8 @@ xtasks_stat xtasksInit() {
         }
     }
 
+    //Check for instrumentation
+    _instrAvail = checkbitstreamFeature("hwcounter", bitInfo);
 
     free(accInfo);
     free(bitInfo);
@@ -288,8 +291,7 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
         return XTASKS_EINVAL;
     }
 
-    bit_feature_t feature = checkbitstreamFeature("hwcounter", _bitinfo);
-    if (feature == BIT_FEATURE_NO_AVAIL || feature == BIT_FEATURE_UNKNOWN) {
+    if (_instrAvail == BIT_FEATURE_NO_AVAIL || _instrAvail == BIT_FEATURE_UNKNOWN) {
         return XTASKS_ENOAV;
     }
 

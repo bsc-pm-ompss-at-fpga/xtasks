@@ -36,8 +36,6 @@
 #define BITINFO_FIELD_SEP 0xFFFFFFFF
 #define BITINFO_MAX_WORDS 512
 
-static uint32_t _bitinfo[BITINFO_MAX_WORDS];
-
 /*!
  * \brief Get the path of the configuration file
  *        The function allocates a buffer that caller must delete using free()
