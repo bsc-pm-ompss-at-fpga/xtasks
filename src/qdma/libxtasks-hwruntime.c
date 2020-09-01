@@ -436,7 +436,7 @@ static int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo) {
     filePath = getConfigFilePath();
     if (filePath) { //User config takes precedence over bitinfo data
         FILE *accFile = fopen(filePath, "r");
-        size = fread(accInfo, BITINFO_MAX_WORDS*sizeof(*rawBitInfo), 1, accFile);
+        size = fread(accInfo, 1, BITINFO_MAX_WORDS*sizeof(*rawBitInfo), accFile);
         free(filePath);
     } else {    //Read from bit info
         //Apply the offset directly as its returned in 32-bit words
