@@ -836,6 +836,7 @@ static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtas
     if (__sync_lock_test_and_set(&acc->instrLock, 1)) {
         // There is another thread reading the buffer for this accelerator
         events->eventType = XTASKS_EVENT_TYPE_INVALID;
+        return 0;
     } else {
         xdma_status stat;
         int i;
