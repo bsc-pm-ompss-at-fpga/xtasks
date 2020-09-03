@@ -22,7 +22,7 @@
 #define __LIBXTASKS_VERSION_H__
 
 #define LIBXTASKS_VERSION_MAJOR 9
-#define LIBXTASKS_VERSION_MINOR 8
+#define LIBXTASKS_VERSION_MINOR 9
 
 // This comment should be replaced by the commit build info after the "make install" step
 
