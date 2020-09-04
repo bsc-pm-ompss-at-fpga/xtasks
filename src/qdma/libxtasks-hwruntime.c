@@ -242,8 +242,8 @@ xtasks_stat xtasksInit() {
         _spawnOutQueue = NULL;
         _spawnInQueue = NULL;
     } else {
-        _spawnOutQueue = (uint64_t*)_pciBar + SPAWN_OUT_QUEUE_ADDRESS/sizeof(*_pciBar);
-        _spawnInQueue = (uint64_t*)_pciBar + SPAWN_IN_QUEUE_ADDRESS/sizeof(*_pciBar);
+        _spawnOutQueue = (uint64_t*)(_pciBar + SPAWN_OUT_QUEUE_ADDRESS/sizeof(*_pciBar));
+        _spawnInQueue = (uint64_t*)(_pciBar + SPAWN_IN_QUEUE_ADDRESS/sizeof(*_pciBar));
         _spawnInQueueIdx = 0;
         _spawnOutQueueIdx = 0;
 
