@@ -249,10 +249,10 @@ xtasks_stat xtasksInit() {
 
         //Invalidate entries
         for (int i=0; i<SPWN_OUT_QUEUE_LEN; i++) {
-            _spawnOutQueue[i];
+            _spawnOutQueue[i] = 0;
         }
-        for (int i=0; i<SPAWN_IN_QUEUE_ADDRESS; i++) {
-            _spawnInQueue[i];
+        for (int i=0; i<SPWN_IN_QUEUE_LEN; i++) {
+            _spawnInQueue[i] = 0;
         }
     }
 
