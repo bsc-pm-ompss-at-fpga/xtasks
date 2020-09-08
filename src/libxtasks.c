@@ -20,7 +20,6 @@
 
 #include "libxtasks.h"
 
-
 xtasks_stat xtasksInit() { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksFini() { return XTASKS_ENOSYS; }
@@ -36,19 +35,31 @@ xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle *array, size_
 xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *info) { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId, xtasks_task_id const parent,
-    xtasks_comp_flags const compute, xtasks_task_handle *handle) { return XTASKS_ENOSYS; }
+    xtasks_comp_flags const compute, xtasks_task_handle *handle)
+{
+    return XTASKS_ENOSYS;
+}
 
 xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle const accId,
     xtasks_task_id const parent, xtasks_comp_flags const compute, unsigned int const numReps, unsigned int const period,
-    xtasks_task_handle *handle) { return XTASKS_ENOSYS; }
+    xtasks_task_handle *handle)
+{
+    return XTASKS_ENOSYS;
+}
 
 xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle) { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksAddArg(
-    xtasks_arg_id const id, xtasks_arg_flags const flags, xtasks_arg_val const value, xtasks_task_handle const handle) { return XTASKS_ENOSYS; }
+    xtasks_arg_id const id, xtasks_arg_flags const flags, xtasks_arg_val const value, xtasks_task_handle const handle)
+{
+    return XTASKS_ENOSYS;
+}
 
 xtasks_stat xtasksAddArgs(
-    size_t const num, xtasks_arg_flags const flags, xtasks_arg_val *const values, xtasks_task_handle const handle) { return XTASKS_ENOSYS; }
+    size_t const num, xtasks_arg_flags const flags, xtasks_arg_val *const values, xtasks_task_handle const handle)
+{
+    return XTASKS_ENOSYS;
+}
 
 xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle) { return XTASKS_ENOSYS; }
 
@@ -56,10 +67,15 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle) { return XTASKS_ENOS
 
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksTryGetFinishedTaskAccel(
-    xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id)
+{
+    return XTASKS_ENOSYS;
+}
 
-xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount)
+{
+    return XTASKS_ENOSYS;
+}
 
 xtasks_stat xtasksInitHWIns(size_t const nEvents) { return XTASKS_ENOSYS; }
 
@@ -69,7 +85,10 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task) { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp *timestamp) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp *timestamp)
+{
+    return XTASKS_ENOSYS;
+}
 
 xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle *handle) { return XTASKS_ENOSYS; }
 
@@ -78,10 +97,16 @@ xtasks_stat xtasksFree(xtasks_mem_handle handle) { return XTASKS_ENOSYS; }
 xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t *addr) { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksMemcpy(
-    xtasks_mem_handle const handle, size_t offset, size_t len, void *usr, xtasks_memcpy_kind const kind) { return XTASKS_ENOSYS; }
+    xtasks_mem_handle const handle, size_t offset, size_t len, void *usr, xtasks_memcpy_kind const kind)
+{
+    return XTASKS_ENOSYS;
+}
 
 xtasks_stat xtasksMemcpyAsync(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
-    xtasks_memcpy_kind const kind, xtasks_memcpy_handle *cpyHandle) { return XTASKS_ENOSYS; }
+    xtasks_memcpy_kind const kind, xtasks_memcpy_handle *cpyHandle)
+{
+    return XTASKS_ENOSYS;
+}
 
 xtasks_stat xtasksTestCopy(xtasks_memcpy_handle *handle) { return XTASKS_ENOSYS; }
 
