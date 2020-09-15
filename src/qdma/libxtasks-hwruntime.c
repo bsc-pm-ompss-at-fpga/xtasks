@@ -18,16 +18,16 @@
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
-#include <stdlib.h>
+#include <fcntl.h>
 #include <stdio.h>
-#include <unistd.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <fcntl.h>
+#include <unistd.h>
 
-#include "libxtasks.h"
 #include "libxdma.h"
 #include "libxdma_version.h"
+#include "libxtasks.h"
 #include "platform.h"
 #include "util/common.h"
 #include "util/ticket-lock.h"
@@ -39,9 +39,9 @@
 #define SPWN_OUT_QUEUE_LEN 1024  ///< Total number of entries in the spawn_out queue (tasks created inside the FPGA)
 #define SPWN_IN_QUEUE_LEN 1024   ///< Total number of entries in the spawn_in queue
 
-#define MAX_NUM_ACC         (CMD_IN_QUEUE_LEN/CMD_IN_SUBQUEUE_LEN)
-#define ACC_INFO_MAX_LEN    4096
-#define STR_BUFFER_SIZE     128
+#define MAX_NUM_ACC (CMD_IN_QUEUE_LEN / CMD_IN_SUBQUEUE_LEN)
+#define ACC_INFO_MAX_LEN 4096
+#define STR_BUFFER_SIZE 128
 
 #define QUEUE_VALID 0x80
 #define QUEUE_RESERVED 0x40
@@ -71,15 +71,15 @@
 #define HWRUNTIME_RESET_ADDRESS 0x0000C000
 #define SPAWN_OUT_QUEUE_ADDRESS 0x00014000
 #define SPAWN_IN_QUEUE_ADDRESS 0x000018000
-#define BRAM_INFO_ADDRESS       0x00020000
+#define BRAM_INFO_ADDRESS 0x00020000
 
 #define HWCOUNTER_ADDRESS 0x00010000
 
-#define PCI_DEV_BASE_PATH   "/sys/bus/pci/devices/"
-#define PCI_DEV             "0000:02:00.0"
-#define PCI_BAR_FILE        "resource2"
-#define PCI_MAX_PATH_LEN    64
-#define PCI_BAR_SIZE        0x40000     //map only 256KB even if the BAR is larger
+#define PCI_DEV_BASE_PATH "/sys/bus/pci/devices/"
+#define PCI_DEV "0000:02:00.0"
+#define PCI_BAR_FILE "resource2"
+#define PCI_MAX_PATH_LEN 64
+#define PCI_BAR_SIZE 0x40000  // map only 256KB even if the BAR is larger
 
 typedef struct {
     char descBuffer[STR_BUFFER_SIZE];
@@ -110,15 +110,14 @@ static acc_t _accs[MAX_NUM_ACC];
 static task_t *_tasks;
 static int _numAccs;
 
-static uint64_t     *_cmdInQueue;
-static uint64_t     *_cmdOutQueue;
-static uint64_t     *_spawnOutQueue;
-static size_t       _spawnOutQueueIdx;
-static uint64_t     *_spawnInQueue;
-static size_t       _spawnInQueueIdx;
-static uint32_t     *_hwruntimeRst;
-static uint8_t      *_cmdExecTaskBuff;
-
+static uint64_t *_cmdInQueue;
+static uint64_t *_cmdOutQueue;
+static uint64_t *_spawnOutQueue;
+static size_t _spawnOutQueueIdx;
+static uint64_t *_spawnInQueue;
+static size_t _spawnInQueueIdx;
+static uint32_t *_hwruntimeRst;
+static uint8_t *_cmdExecTaskBuff;
 
 static bit_feature_t _instrAvail;
 static size_t _numInstrEvents;
@@ -127,18 +126,17 @@ static xtasks_ins_event *_instrBuff;
 static xdma_buf_handle _instrBuffHandle;
 static uint64_t *_instrCounter;
 
-
 //! \brief Platform and Backend strings
 const char _platformName[] = "qdma";
 const char _backendName[] = "hwruntime";
 
-//forward declarations
+// forward declarations
 static int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo);
 static int initAccList(acc_t *accs, const char *accInfo);
 static inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32_t *resetReg);
 static int getFreeTaskEntry();
-static void initializeTask(task_t *task, const xtasks_task_id id, acc_t *accel,
-        xtasks_task_id const parent, xtasks_comp_flags const compute);
+static void initializeTask(
+    task_t *task, const xtasks_task_id id, acc_t *accel, xtasks_task_id const parent, xtasks_comp_flags const compute);
 static xtasks_stat setExtendedModeTask(task_t *task);
 static xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue);
 static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtasks_ins_event *accBuffer);
@@ -149,10 +147,10 @@ static void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx
 #error Installed libxdma is not supported (use >= 3.0)
 #endif
 
-xtasks_stat xtasksInit() {
-
+xtasks_stat xtasksInit()
+{
     xdma_status st;
-    xtasks_stat ret = XTASKS_ERROR; //Initialize DMA
+    xtasks_stat ret = XTASKS_ERROR;  // Initialize DMA
     st = xdmaOpen();
     if (st != XDMA_SUCCESS) {
         PRINT_ERROR("Could not initialize XDMA\n");
@@ -162,26 +160,23 @@ xtasks_stat xtasksInit() {
     if (st != XDMA_SUCCESS) {
         PRINT_ERROR("Could not initialize device memory\n");
         goto init_mem_err;
-
     }
-    //Map PCI BAR into user space
+    // Map PCI BAR into user space
     char pciBarPath[PCI_MAX_PATH_LEN];
-    snprintf(pciBarPath, PCI_MAX_PATH_LEN, "%s/%s/%s",
-            PCI_DEV_BASE_PATH, PCI_DEV, PCI_BAR_FILE);
+    snprintf(pciBarPath, PCI_MAX_PATH_LEN, "%s/%s/%s", PCI_DEV_BASE_PATH, PCI_DEV, PCI_BAR_FILE);
     _pciBarFd = open(pciBarPath, O_RDWR);
     if (_pciBarFd < 0) {
         perror("XTASKS: Could not open PCIe register window");
         goto init_open_bar_err;
-
     }
-    _pciBar = mmap(NULL, PCI_BAR_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, _pciBarFd, 0);
-    if (_pciBar ==MAP_FAILED) {
+    _pciBar = mmap(NULL, PCI_BAR_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, _pciBarFd, 0);
+    if (_pciBar == MAP_FAILED) {
         ret = XTASKS_ERROR;
         perror("XTASKS: Could not map BAR into process memory space");
         goto init_map_bar_err;
     }
-    uint32_t *bitInfo = malloc(BITINFO_MAX_WORDS*sizeof(uint32_t));
-    memcpy(bitInfo, _pciBar + BRAM_INFO_ADDRESS/sizeof(*_pciBar), BITINFO_MAX_WORDS*sizeof(uint32_t));
+    uint32_t *bitInfo = malloc(BITINFO_MAX_WORDS * sizeof(uint32_t));
+    memcpy(bitInfo, _pciBar + BRAM_INFO_ADDRESS / sizeof(*_pciBar), BITINFO_MAX_WORDS * sizeof(uint32_t));
 
     // Check if bitstream is compatible
     //
@@ -200,21 +195,20 @@ xtasks_stat xtasksInit() {
         goto init_compat_err;
     }
 
-    char * accInfo = malloc(ACC_INFO_MAX_LEN);
+    char *accInfo = malloc(ACC_INFO_MAX_LEN);
     getAccRawInfo(accInfo, bitInfo);
     _numAccs = initAccList(_accs, accInfo);
 
-    //Initialize command queues
-    _cmdInQueue = (uint64_t*)(_pciBar + (CMD_IN_QUEUE_ADDR/sizeof(*_pciBar)));
-    memset(_cmdInQueue, 0, CMD_IN_QUEUE_LEN*sizeof(*_cmdInQueue));
-    _cmdOutQueue = (uint64_t*)(_pciBar + (CMD_OUT_QUEUE_ADDR/sizeof(*_pciBar)));
-    memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN*sizeof(*_cmdOutQueue));
-    //TODO: Implement remote queues
+    // Initialize command queues
+    _cmdInQueue = (uint64_t *)(_pciBar + (CMD_IN_QUEUE_ADDR / sizeof(*_pciBar)));
+    memset(_cmdInQueue, 0, CMD_IN_QUEUE_LEN * sizeof(*_cmdInQueue));
+    _cmdOutQueue = (uint64_t *)(_pciBar + (CMD_OUT_QUEUE_ADDR / sizeof(*_pciBar)));
+    memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN * sizeof(*_cmdOutQueue));
+    // TODO: Implement remote queues
 
-    //initialize reset
-    _hwruntimeRst = (uint32_t*)(_pciBar + (HWRUNTIME_RESET_ADDRESS/sizeof(*_pciBar)));
+    // initialize reset
+    _hwruntimeRst = (uint32_t *)(_pciBar + (HWRUNTIME_RESET_ADDRESS / sizeof(*_pciBar)));
     resetHWRuntime(_hwruntimeRst);
-
 
     // Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS * sizeof(task_t));
@@ -242,21 +236,21 @@ xtasks_stat xtasksInit() {
         _spawnOutQueue = NULL;
         _spawnInQueue = NULL;
     } else {
-        _spawnOutQueue = (uint64_t*)(_pciBar + SPAWN_OUT_QUEUE_ADDRESS/sizeof(*_pciBar));
-        _spawnInQueue = (uint64_t*)(_pciBar + SPAWN_IN_QUEUE_ADDRESS/sizeof(*_pciBar));
+        _spawnOutQueue = (uint64_t *)(_pciBar + SPAWN_OUT_QUEUE_ADDRESS / sizeof(*_pciBar));
+        _spawnInQueue = (uint64_t *)(_pciBar + SPAWN_IN_QUEUE_ADDRESS / sizeof(*_pciBar));
         _spawnInQueueIdx = 0;
         _spawnOutQueueIdx = 0;
 
-        //Invalidate entries
-        for (int i=0; i<SPWN_OUT_QUEUE_LEN; i++) {
+        // Invalidate entries
+        for (int i = 0; i < SPWN_OUT_QUEUE_LEN; i++) {
             _spawnOutQueue[i] = 0;
         }
-        for (int i=0; i<SPWN_IN_QUEUE_LEN; i++) {
+        for (int i = 0; i < SPWN_IN_QUEUE_LEN; i++) {
             _spawnInQueue[i] = 0;
         }
     }
 
-    //Check for instrumentation
+    // Check for instrumentation
     _instrAvail = checkbitstreamFeature("hwcounter", bitInfo);
 
     free(accInfo);
@@ -264,7 +258,7 @@ xtasks_stat xtasksInit() {
 
     return XTASKS_SUCCESS;
 
-    //Error cleanup
+    // Error cleanup
 init_alloc_exec_tasks_err:
     free(_tasks);
 init_alloc_tasks_err:
@@ -280,7 +274,6 @@ init_mem_err:
     xdmaClose();
     return ret;
 }
-
 
 xtasks_stat xtasksInitHWIns(const size_t nEvents)
 {
@@ -319,7 +312,7 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
         goto hwins_buff_init_err;
     }
 
-    //Send instr setup command to acc
+    // Send instr setup command to acc
     cmd_setup_hw_ins_t cmd;
     cmd.header.commandCode = CMD_SETUP_INS_CODE;
     memcpy((void *)cmd.header.commandArgs, (void *)&_numInstrEvents, CMD_SETUP_INS_ARGS_NUMEVS_BYTES);
@@ -327,8 +320,7 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
         cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents * i);
 
         xtasks_stat ret =
-            submitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t),
-                    _cmdInQueue);
+            submitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t), _cmdInQueue);
         if (ret != XTASKS_SUCCESS) {
             PRINT_ERROR("Error setting up instrumentation");
             goto hwins_cmd_err;
@@ -338,31 +330,30 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
         _accs[i].instrLock = 0;
     }
 
-    //Init HW counter
+    // Init HW counter
     if (_pciBar == NULL) {
         ret = XTASKS_ERROR;
         PRINT_ERROR("xtasks has not been initialized");
         goto hwins_no_pcibar;
     }
-    _instrCounter = (uint64_t *)(_pciBar + HWCOUNTER_ADDRESS/sizeof(*_pciBar));
+    _instrCounter = (uint64_t *)(_pciBar + HWCOUNTER_ADDRESS / sizeof(*_pciBar));
 
     return XTASKS_SUCCESS;
 
 hwins_no_pcibar:
 hwins_cmd_err:
 hwins_buff_init_err:
-        free(_instrBuff);
-        xdmaFree(_instrBuffHandle);
-        _numInstrEvents = 0;
-        _instrBuffPhy = NULL;
-        _instrBuff = NULL;
-        return ret;
+    free(_instrBuff);
+    xdmaFree(_instrBuffHandle);
+    _numInstrEvents = 0;
+    _instrBuffPhy = NULL;
+    _instrBuff = NULL;
+    return ret;
 }
 
 xtasks_stat xtasksFiniHWIns()
 {
-    if (_instrBuff == NULL || _numInstrEvents == 0)
-        return XTASKS_SUCCESS;  //Instrumentation is not initialized
+    if (_instrBuff == NULL || _numInstrEvents == 0) return XTASKS_SUCCESS;  // Instrumentation is not initialized
     free(_instrBuff);
     xdmaFree(_instrBuffHandle);
     _numInstrEvents = 0;
@@ -371,9 +362,8 @@ xtasks_stat xtasksFiniHWIns()
     return XTASKS_SUCCESS;
 }
 
-
-xtasks_stat xtasksFini() {
-
+xtasks_stat xtasksFini()
+{
     free(_tasks);
     munmap(_pciBar, PCI_BAR_SIZE);
     close(_pciBarFd);
@@ -387,22 +377,22 @@ static inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32
 {
     // Nudge one register
     *resetReg = 0x01;
-    usleep(1);     //Wait for the reset to propagate
+    usleep(1);  // Wait for the reset to propagate
     *resetReg = 0x00;
 }
-static int initAccList(acc_t *accs, const char *accInfo) {
-
+static int initAccList(acc_t *accs, const char *accInfo)
+{
     unsigned long long int t;
     int retScanf, ret, numRead, numAccs;
     float freq;
     size_t num, total;
     total = 0;
     char buffer[STR_BUFFER_SIZE];
-    //Parse acc information
-    //discard first line containing headers
-    accInfo = index(accInfo, '\n') + 1 ;    //set pointer to next character after \n
+    // Parse acc information
+    // discard first line containing headers
+    accInfo = index(accInfo, '\n') + 1;  // set pointer to next character after \n
     while ((retScanf = sscanf(accInfo, "%llu %zu %128s %f%n", &t, &num, buffer, &freq, &numRead)) == 4) {
-        accInfo += numRead + (*(accInfo+numRead) == '\n' ? 1 : 0);  //Advance ponter
+        accInfo += numRead + (*(accInfo + numRead) == '\n' ? 1 : 0);  // Advance ponter
         total += num;
         for (size_t i = total - num; i < total; ++i) {
             _accs[i].info.id = i;
@@ -429,42 +419,45 @@ static int initAccList(acc_t *accs, const char *accInfo) {
     return ret;
 }
 
-static int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo) {
+static int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo)
+{
     char *filePath;
 
     int size;
     filePath = getConfigFilePath();
-    if (filePath) { //User config takes precedence over bitinfo data
+    if (filePath) {  // User config takes precedence over bitinfo data
         FILE *accFile = fopen(filePath, "r");
-        size = fread(accInfo, 1, BITINFO_MAX_WORDS*sizeof(*rawBitInfo), accFile);
+        size = fread(accInfo, 1, BITINFO_MAX_WORDS * sizeof(*rawBitInfo), accFile);
         free(filePath);
-    } else {    //Read from bit info
-        //Apply the offset directly as its returned in 32-bit words
+    } else {  // Read from bit info
+        // Apply the offset directly as its returned in 32-bit words
         rawBitInfo += getBitinfoOffset(BITSTREAM_INFO_ACC_LIST, rawBitInfo);
-        //Find out the size of the acc info field in
+        // Find out the size of the acc info field in
         int idx;
-        for (idx=0; rawBitInfo[idx] != BITINFO_FIELD_SEP; idx++);
+        for (idx = 0; rawBitInfo[idx] != BITINFO_FIELD_SEP; idx++)
+            ;
         size = idx * sizeof(*rawBitInfo);
         memcpy(accInfo, rawBitInfo, size);
-        accInfo[size] = '\0';   //terminate the string
+        accInfo[size] = '\0';  // terminate the string
     }
     return size;
-
 }
 
-xtasks_stat xtasksGetPlatform(const char **name) {
+xtasks_stat xtasksGetPlatform(const char **name)
+{
     *name = _platformName;
     return XTASKS_SUCCESS;
 }
 
-
-xtasks_stat xtasksGetBackend(const char **name) {
+xtasks_stat xtasksGetBackend(const char **name)
+{
     *name = _backendName;
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetNumAccs(size_t *count) {
-    *count =  _numAccs;
+xtasks_stat xtasksGetNumAccs(size_t *count)
+{
+    *count = _numAccs;
     return XTASKS_SUCCESS;
 }
 
@@ -518,9 +511,9 @@ static int getFreeTaskEntry()
     return -1;
 }
 
-static void initializeTask(task_t *task, const xtasks_task_id id, acc_t *accel,
-        xtasks_task_id const parent, xtasks_comp_flags const compute) {
-
+static void initializeTask(
+    task_t *task, const xtasks_task_id id, acc_t *accel, xtasks_task_id const parent, xtasks_comp_flags const compute)
+{
     task->id = id;
     task->accel = accel;
     task->periTask = 0;
@@ -598,7 +591,8 @@ xtasks_stat xtasksAddArgs(
     return XTASKS_SUCCESS;
 }
 
-static xtasks_stat setExtendedModeTask(task_t *task) {
+static xtasks_stat setExtendedModeTask(task_t *task)
+{
     cmd_header_t *prevHeader = task->cmdHeader;
     task->cmdHeader = (cmd_header_t *)malloc(EXT_HW_TASK_SIZE);
     if (task->cmdHeader == NULL) {
@@ -608,10 +602,9 @@ static xtasks_stat setExtendedModeTask(task_t *task) {
     task->extSize = 1;
     task->cmdExecArgs =
         (cmd_exec_task_arg_t *)(((unsigned char *)task->cmdHeader) +
-                (task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t)));
+                                (task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t)));
     memcpy(task->cmdHeader, prevHeader, DEF_EXEC_TASK_SIZE);  //< Move the hw task header and args
 }
-
 
 xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 {
@@ -623,16 +616,13 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 
     // NOTE: cmdExecArgs array is after the header
     uint8_t const argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
-    size_t const numHeaderBytes =
-        task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t);
+    size_t const numHeaderBytes = task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t);
     size_t const numCmdWords = (numHeaderBytes + sizeof(cmd_exec_task_arg_t) * argsCnt) / sizeof(uint64_t);
     return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue);
 }
 
-
 static xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue)
 {
-
     size_t idx;
     uint64_t cmdHeader;
     size_t const offset = acc->info.id * CMD_IN_SUBQUEUE_LEN;
@@ -701,7 +691,6 @@ static xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t len
 
     return XTASKS_SUCCESS;
 }
-
 
 xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 {
@@ -804,7 +793,6 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
 
 xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount)
 {
-
     acc_t *acc = (acc_t *)(accel);
     xtasks_ins_event *accBuffer = _instrBuff + acc->info.id * _numInstrEvents;
     size_t count, validEvents;
@@ -827,8 +815,9 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
     return XTASKS_SUCCESS;
 }
 
-//TODO: accBuffer sems just an scratchpad to invalidate event entries
-static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtasks_ins_event *accBuffer) {
+// TODO: accBuffer sems just an scratchpad to invalidate event entries
+static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtasks_ins_event *accBuffer)
+{
     size_t devInstroff;
     accBuffer += acc->instrIdx;
     devInstroff = (acc->info.id * _numInstrEvents + acc->instrIdx) * sizeof(xtasks_ins_event);
@@ -841,26 +830,24 @@ static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtas
         xdma_status stat;
         int i;
 
-        //stat = xdmaMemcpy(events, _instrBuffHandle, count * sizeof(xtasks_ins_event),
+        // stat = xdmaMemcpy(events, _instrBuffHandle, count * sizeof(xtasks_ins_event),
         //    (accBuffer - _instrBuff) * sizeof(xtasks_ins_event), XDMA_FROM_DEVICE);
-        stat = xdmaMemcpy(events, _instrBuffHandle, count * sizeof(xtasks_ins_event),
-            devInstroff, XDMA_FROM_DEVICE);
+        stat = xdmaMemcpy(events, _instrBuffHandle, count * sizeof(xtasks_ins_event), devInstroff, XDMA_FROM_DEVICE);
         if (stat != XDMA_SUCCESS) {
             __sync_lock_release(&acc->instrLock);
             return -1;
         }
         i = 0;
-        //TODO: Preinitialize invalidation event buffers
+        // TODO: Preinitialize invalidation event buffers
         while (i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID) {
             // Invalidate all read entries in the accelerator buffer
             accBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
             i++;
         }
         if (i > 0) {
-            //stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i * sizeof(xtasks_ins_event),
+            // stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i * sizeof(xtasks_ins_event),
             //    (accBuffer - _instrBuff) * sizeof(xtasks_ins_event), XDMA_TO_DEVICE);
-            stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i * sizeof(xtasks_ins_event),
-                devInstroff, XDMA_TO_DEVICE);
+            stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i * sizeof(xtasks_ins_event), devInstroff, XDMA_TO_DEVICE);
             if (stat != XDMA_SUCCESS) {
                 __sync_lock_release(&acc->instrLock);
                 return -1;
@@ -869,7 +856,6 @@ static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtas
         acc->instrIdx = (acc->instrIdx + i) % _numInstrEvents;
         __sync_lock_release(&acc->instrLock);
         return i;
-
     }
 }
 
@@ -893,15 +879,13 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
         next = (idx + taskSize) % SPWN_OUT_QUEUE_LEN;
     } while (!__sync_bool_compare_and_swap(&_spawnOutQueueIdx, idx, next));
 
-
     getNewTaskFromQ(task, _spawnOutQueue, idx);
     return XTASKS_SUCCESS;
 }
 
 static void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx)
 {
-
-    new_task_header_t *hwTaskHeader = (new_task_header_t*)&spawnQueue[idx];
+    new_task_header_t *hwTaskHeader = (new_task_header_t *)&spawnQueue[idx];
     // Extract the information from the new buffer
     *task = realloc(*task, sizeof(xtasks_newtask) + sizeof(xtasks_newtask_arg) * hwTaskHeader->numArgs +
                                sizeof(xtasks_newtask_dep) * hwTaskHeader->numDeps +
@@ -917,9 +901,9 @@ static void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx
     (*task)->taskId = spawnQueue[idx];
     spawnQueue[idx] = 0;  //< Cleanup the memory position
 
-    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;     // NOTE: new_task_header_t->parentID field is the 3th word
-    (*task)->parentId = spawnQueue[idx];  //< NOTE: We don't know what is that ID (SW or HW)
-    spawnQueue[idx] = 0;                  //< Cleanup the memory position
+    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->parentID field is the 3th word
+    (*task)->parentId = spawnQueue[idx];   //< NOTE: We don't know what is that ID (SW or HW)
+    spawnQueue[idx] = 0;                   //< Cleanup the memory position
 
     idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->typeInfo field is the 4th word
     (*task)->typeInfo = spawnQueue[idx];
@@ -981,7 +965,8 @@ static void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx
     hwTaskHeader->valid = QUEUE_INVALID;
 }
 
-xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id) {
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
+{
     // Get an empty slot into the TM remote finished queue
     size_t idx, next;
     rem_fini_task_t *entryHeader;
@@ -1064,7 +1049,6 @@ xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle *handle)
     xdma_status status = xdmaWaitTransfer(handle);
     return toXtasksStat(status);
 }
-
 
 xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp *timestamp)
 {
