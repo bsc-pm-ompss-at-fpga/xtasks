@@ -27,3 +27,6 @@ The library follows the Google style which is verified using the `clang-format` 
 The `tools` folder contains a couple of scripts that can be used to setup a git pre-hook to check&fix the style of staged changes.
 To install the git hook you have to run `./tools/git-pre-commit-format install` (to uninstall you can do the same but with the `uninstall` argument).
 The hook will run during the `git commit` and it will suggest style fixes if needed.
+
+To apply style to a file, run `./tools/apply-format -i -f <file to format>`. This will modify yout file.
+Run `./tools/apply-format --help` for further info`
