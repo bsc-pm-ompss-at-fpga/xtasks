@@ -67,16 +67,47 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle) { return XTASKS_ENOS
 
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *task, xtasks_task_id *id)
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id)
 {
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const handle, xtasks_ins_event *events, size_t const maxCount)
+xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount)
 {
     return XTASKS_ENOSYS;
 }
+
+xtasks_stat xtasksInitHWIns(size_t const nEvents) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksFiniHWIns() { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task) { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp *timestamp)
+{
+    return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle *handle) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksFree(xtasks_mem_handle handle) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t *addr) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksMemcpy(
+    xtasks_mem_handle const handle, size_t offset, size_t len, void *usr, xtasks_memcpy_kind const kind)
+{
+    return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksMemcpyAsync(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+    xtasks_memcpy_kind const kind, xtasks_memcpy_handle *cpyHandle)
+{
+    return XTASKS_ENOSYS;
+}
+
+xtasks_stat xtasksTestCopy(xtasks_memcpy_handle *handle) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle *handle) { return XTASKS_ENOSYS; }
