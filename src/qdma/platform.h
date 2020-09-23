@@ -30,11 +30,8 @@
 #define BISTREAM_INFO_ADDRESS 0x00020000
 #define BISTREAM_INFO_MIN_REV 4
 #define BISTREAM_INFO_REV_IDX 0
-#define BITSTREAM_INFO_ACC_LIST 2
 #define BISTREAM_INFO_FEATURES_IDX 3
 #define BISTREAM_INFO_WRAPPER_IDX 6
-#define BITINFO_FIELD_SEP 0xFFFFFFFF
-#define BITINFO_MAX_WORDS 512
 
 /*!
  * \brief Get the path of the configuration file
@@ -74,26 +71,6 @@ void printErrorBitstreamCompatibility()
     fprintf(stderr, "       The compatible versions are: [%d,%d]\n", MIN_WRAPPER_VER, MAX_WRAPPER_VER);
     fprintf(stderr, "       Alternatively, you may disable the compatibility check setting");
     fprintf(stderr, " XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
-}
-
-/*!
- * \brief Returns the offset in words where the "idx" information of bitinfo starts
- */
-int getBitinfoOffset(const int idx, const uint32_t *bitinfo)
-{
-    if (idx == 0) {
-        return 0;
-    } else if (idx == 1) {
-        return 2;
-    } else if (idx == 2) {
-        return 4;
-    }
-    int i = 4;
-    for (int j = 2; j < idx && i < BITINFO_MAX_WORDS; ++j) {
-        while (bitinfo[i] != BITINFO_FIELD_SEP && i < BITINFO_MAX_WORDS) ++i;
-        ++i;
-    }
-    return i;
 }
 
 /*!

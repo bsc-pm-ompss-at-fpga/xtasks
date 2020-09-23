@@ -32,39 +32,7 @@
 #include "util/common.h"
 #include "util/ticket-lock.h"
 
-#define CMD_IN_QUEUE_LEN 1024    ///< Total number of entries in the cmd_in_queue
-#define CMD_IN_SUBQUEUE_LEN 64   ///< Number of entries in the sub-queue of cmd_in_queue for one accelerator
-#define CMD_OUT_QUEUE_LEN 1024   ///< Total number of entries in the cmd_out_queue
-#define CMD_OUT_SUBQUEUE_LEN 64  ///< Number of entries in the sub-queue of cmd_out_queue for one accelerator
-#define SPWN_OUT_QUEUE_LEN 1024  ///< Total number of entries in the spawn_out queue (tasks created inside the FPGA)
-#define SPWN_IN_QUEUE_LEN 1024   ///< Total number of entries in the spawn_in queue
-
-#define MAX_NUM_ACC (CMD_IN_QUEUE_LEN / CMD_IN_SUBQUEUE_LEN)
 #define ACC_INFO_MAX_LEN 4096
-#define STR_BUFFER_SIZE 128
-
-#define QUEUE_VALID 0x80
-#define QUEUE_RESERVED 0x40
-#define QUEUE_INVALID 0x00
-#define DEF_EXEC_TASK_SIZE 256  ///< Size of hw task when using the defult num. of args.
-#define DEF_EXEC_TASK_ARGS_LEN \
-    14  // NOTE: (DEF_EXEC_TASK_SIZE - sizeof(cmd_exec_task_header_t))/sizeof(cmd_exec_task_arg_t)
-// NOTE: A task in extended mode MUST fit into the a sub-queue of cmd_in queue
-#define EXT_HW_TASK_SIZE 512  ///< Size of hw task when using the extended num. of args.
-#define EXT_HW_TASK_ARGS_LEN \
-    30  // NOTE: (EXT_HW_TASK_SIZE -
-        // sizeof(cmd_exec_task_header_t))/sizeof(cmd_exec_task_arg_t)
-// NOTE: The value NUM_RUN_TASKS may be changed to increase the number of concurrent tasks submited into the
-// accelerators
-#define NUM_RUN_TASKS 1024  ///< Maximum number of concurrently running tasks
-#define NEW_TASK_COPY_FLAGS_WORDOFFSET \
-    0  ///< Offset of new_task_copy_t->flags field in the 2nd word forming new_task_copy_t
-#define NEW_TASK_COPY_SIZE_WORDOFFSET \
-    32  ///< Offset of new_task_copy_t->size field in the 2nd word forming new_task_copy_t
-#define NEW_TASK_COPY_OFFSET_WORDOFFSET \
-    0  ///< Offset of new_task_copy_t->offset field in the 3rd word forming new_task_copy_t
-#define NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET \
-    32  ///< Offset of new_task_copy_t->accessedLen field in the 3rd word forming new_task_copy_t
 
 #define CMD_IN_QUEUE_ADDR 0x00004000
 #define CMD_OUT_QUEUE_ADDR 0x00008000
@@ -81,28 +49,6 @@
 #define PCI_MAX_PATH_LEN 64
 #define PCI_BAR_SIZE 0x40000  // map only 256KB even if the BAR is larger
 
-typedef struct {
-    char descBuffer[STR_BUFFER_SIZE];
-    xtasks_acc_info info;
-    unsigned short volatile cmdInWrIdx;    ///< Writing index of the accelerator sub-queue in the cmd_in queue
-    unsigned short volatile cmdInRdIdx;    ///< Reading index of the accelerator sub-queue in the cmd_in queue
-    unsigned short volatile cmdInAvSlots;  ///< Counter for available slots in cmd_in sub-queue
-    ticketLock_t cmdInLock;                ///< Lock for atomic operations over cmd_in sub-queue
-    unsigned short volatile cmdOutIdx;     ///< Reading index of the accelerator sub-queue in the cmd_out queue
-    unsigned short volatile cmdOutLock;    ///< Lock for atomic operations over cmd_out sub-queue
-    unsigned short volatile instrIdx;      ///< Reading index of the accelerator instrumentation buffer
-    unsigned short volatile instrLock;     ///< Lock for atomic operations over instrumentation buffers
-} acc_t;
-//
-//! \brief Internal library task information
-typedef struct {
-    xtasks_task_id id;                 ///< External task identifier
-    cmd_header_t *cmdHeader;           ///< Pointer to the cmd_header_t struct
-    cmd_exec_task_arg_t *cmdExecArgs;  ///< Pointer to the array of cmd_exec_task_arg_t structs
-    acc_t *accel;                      ///< Accelerator where the task will run
-    uint8_t extSize : 1;               ///< Whether the space available in args is extended or not
-    uint8_t periTask : 1;              ///< Whether the tasks is a periodic task or not
-} task_t;
 
 static int _pciBarFd;
 static uint32_t *_pciBar;
@@ -129,18 +75,6 @@ static uint64_t *_instrCounter;
 //! \brief Platform and Backend strings
 const char _platformName[] = "qdma";
 const char _backendName[] = "hwruntime";
-
-// forward declarations
-static int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo);
-static int initAccList(acc_t *accs, const char *accInfo);
-static inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32_t *resetReg);
-static int getFreeTaskEntry();
-static void initializeTask(
-    task_t *task, const xtasks_task_id id, acc_t *accel, xtasks_task_id const parent, xtasks_comp_flags const compute);
-static xtasks_stat setExtendedModeTask(task_t *task);
-static xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue);
-static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtasks_ins_event *accBuffer);
-static void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx);
 
 //! Check that libxdma version is compatible
 #if !defined(LIBXDMA_VERSION_MAJOR) || LIBXDMA_VERSION_MAJOR < 3
@@ -175,8 +109,8 @@ xtasks_stat xtasksInit()
         perror("XTASKS: Could not map BAR into process memory space");
         goto init_map_bar_err;
     }
-    uint32_t *bitInfo = malloc(BITINFO_MAX_WORDS * sizeof(uint32_t));
-    memcpy(bitInfo, _pciBar + BRAM_INFO_ADDRESS / sizeof(*_pciBar), BITINFO_MAX_WORDS * sizeof(uint32_t));
+    uint32_t *bitInfo = malloc(BITINFO_MAX_SIZE);
+    memcpy(bitInfo, _pciBar + BRAM_INFO_ADDRESS / sizeof(*_pciBar), BITINFO_MAX_SIZE);
 
     // Check if bitstream is compatible
     //
@@ -373,76 +307,6 @@ xtasks_stat xtasksFini()
     return XTASKS_SUCCESS;
 }
 
-static inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32_t *resetReg)
-{
-    // Nudge one register
-    *resetReg = 0x01;
-    usleep(1);  // Wait for the reset to propagate
-    *resetReg = 0x00;
-}
-static int initAccList(acc_t *accs, const char *accInfo)
-{
-    unsigned long long int t;
-    int retScanf, ret, numRead, numAccs;
-    float freq;
-    size_t num, total;
-    total = 0;
-    char buffer[STR_BUFFER_SIZE];
-    // Parse acc information
-    // discard first line containing headers
-    accInfo = index(accInfo, '\n') + 1;  // set pointer to next character after \n
-    while ((retScanf = sscanf(accInfo, "%llu %zu %128s %f%n", &t, &num, buffer, &freq, &numRead)) == 4) {
-        accInfo += numRead + (*(accInfo + numRead) == '\n' ? 1 : 0);  // Advance ponter
-        total += num;
-        for (size_t i = total - num; i < total; ++i) {
-            _accs[i].info.id = i;
-            _accs[i].info.type = t;
-            _accs[i].info.freq = freq;
-            _accs[i].info.maxTasks = -1;
-            _accs[i].info.description = _accs[i].descBuffer;
-            strcpy(_accs[i].descBuffer, buffer);
-            _accs[i].cmdInWrIdx = 0;
-            _accs[i].cmdInAvSlots = CMD_IN_SUBQUEUE_LEN;
-            _accs[i].cmdInRdIdx = 0;
-            _accs[i].cmdOutIdx = 0;
-        }
-    }
-    ret = total;
-
-    if (retScanf != EOF && retScanf != 0) {
-        // Looks like the configuration file doesn't match the expected format
-        fprintf(stderr, "WARN: xTasks configuration file may be not well formated.\n");
-    } else if (numAccs > MAX_NUM_ACC) {
-        ret = -1;
-        PRINT_ERROR("The maximum number of accelerators supported by the library was reached");
-    }
-    return ret;
-}
-
-static int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo)
-{
-    char *filePath;
-
-    int size;
-    filePath = getConfigFilePath();
-    if (filePath) {  // User config takes precedence over bitinfo data
-        FILE *accFile = fopen(filePath, "r");
-        size = fread(accInfo, 1, BITINFO_MAX_WORDS * sizeof(*rawBitInfo), accFile);
-        free(filePath);
-    } else {  // Read from bit info
-        // Apply the offset directly as its returned in 32-bit words
-        rawBitInfo += getBitinfoOffset(BITSTREAM_INFO_ACC_LIST, rawBitInfo);
-        // Find out the size of the acc info field in
-        int idx;
-        for (idx = 0; rawBitInfo[idx] != BITINFO_FIELD_SEP; idx++)
-            ;
-        size = idx * sizeof(*rawBitInfo);
-        memcpy(accInfo, rawBitInfo, size);
-        accInfo[size] = '\0';  // terminate the string
-    }
-    return size;
-}
-
 xtasks_stat xtasksGetPlatform(const char **name)
 {
     *name = _platformName;
@@ -488,7 +352,7 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
     xtasks_comp_flags const compute, xtasks_task_handle *handle)
 {
     acc_t *accel = (acc_t *)accId;
-    int idx = getFreeTaskEntry();
+    int idx = getFreeTaskEntry(_tasks);
     if (idx < 0) {
         return XTASKS_ENOENTRY;
     }
@@ -497,34 +361,6 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
-}
-
-static int getFreeTaskEntry()
-{
-    for (int i = 0; i < NUM_RUN_TASKS; ++i) {
-        if (_tasks[i].id == 0) {
-            if (__sync_bool_compare_and_swap(&_tasks[i].id, 0, 1)) {
-                return i;
-            }
-        }
-    }
-    return -1;
-}
-
-static void initializeTask(
-    task_t *task, const xtasks_task_id id, acc_t *accel, xtasks_task_id const parent, xtasks_comp_flags const compute)
-{
-    task->id = id;
-    task->accel = accel;
-    task->periTask = 0;
-    cmd_exec_task_header_t *cmdHeader = (cmd_exec_task_header_t *)task->cmdHeader;
-    task->cmdExecArgs = (cmd_exec_task_arg_t *)(cmdHeader + 1);
-    cmdHeader->header.commandCode = CMD_EXEC_TASK_CODE;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = 0;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_COMP_OFFSET] = compute;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_TM;
-    cmdHeader->parentID = (uintptr_t)(parent);
-    cmdHeader->taskID = (uintptr_t)(task);
 }
 
 xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle const accId,
@@ -591,21 +427,6 @@ xtasks_stat xtasksAddArgs(
     return XTASKS_SUCCESS;
 }
 
-static xtasks_stat setExtendedModeTask(task_t *task)
-{
-    cmd_header_t *prevHeader = task->cmdHeader;
-    task->cmdHeader = (cmd_header_t *)malloc(EXT_HW_TASK_SIZE);
-    if (task->cmdHeader == NULL) {
-        task->cmdHeader = prevHeader;
-        return XTASKS_ENOMEM;
-    }
-    task->extSize = 1;
-    task->cmdExecArgs =
-        (cmd_exec_task_arg_t *)(((unsigned char *)task->cmdHeader) +
-                                (task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t)));
-    memcpy(task->cmdHeader, prevHeader, DEF_EXEC_TASK_SIZE);  //< Move the hw task header and args
-}
-
 xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 {
     task_t *task = (task_t *)(handle);
@@ -619,77 +440,6 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     size_t const numHeaderBytes = task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t);
     size_t const numCmdWords = (numHeaderBytes + sizeof(cmd_exec_task_arg_t) * argsCnt) / sizeof(uint64_t);
     return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue);
-}
-
-static xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue)
-{
-    size_t idx;
-    uint64_t cmdHeader;
-    size_t const offset = acc->info.id * CMD_IN_SUBQUEUE_LEN;
-    cmd_header_t *const cmdHeaderPtr = (cmd_header_t *const) & cmdHeader;
-
-    // While there is not enough space in the queue, look for already read commands
-    while (acc->cmdInAvSlots < length) {
-        ticketLockAcquire(&acc->cmdInLock);
-        if (acc->cmdInAvSlots < length) {
-        SUB_CMD_CHECK_RD:
-            idx = acc->cmdInRdIdx;
-            cmdHeader = queue[offset + idx];
-            if (cmdHeaderPtr->valid == QUEUE_INVALID) {
-#ifdef XTASKS_DEBUG
-                uint8_t const cmdNumArgs = cmdHeaderPtr->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
-                if (cmdHeaderPtr->commandCode == CMD_EXEC_TASK_CODE && cmdNumArgs > EXT_HW_TASK_ARGS_LEN) {
-                    PRINT_ERROR("Found unexpected data when executing xtasksSubmitCommand");
-                    ticketLockRelease(&acc->cmdInLock);
-                    return XTASKS_ERROR;
-                }
-#endif /* XTASKS_DEBUG */
-                size_t const cmdNumWords = getCmdLength(cmdHeaderPtr);
-                acc->cmdInRdIdx = (idx + cmdNumWords) % CMD_IN_SUBQUEUE_LEN;
-                acc->cmdInAvSlots += cmdNumWords;
-            }
-        } else {
-            // NOTE: At this point the thread has the lock acquired, so directly bypass it into the queue idx update.
-            //      The lock will be released in the code after the atomic operations
-            goto SUB_CMD_UPDATE_IDX;
-        }
-        ticketLockRelease(&acc->cmdInLock);
-    }
-
-    ticketLockAcquire(&acc->cmdInLock);
-    if (acc->cmdInAvSlots >= length) {
-    SUB_CMD_UPDATE_IDX:
-        idx = acc->cmdInWrIdx;
-        acc->cmdInWrIdx = (idx + length) % CMD_IN_SUBQUEUE_LEN;
-        acc->cmdInAvSlots -= length;
-        cmdHeader = queue[offset + idx];
-        cmdHeaderPtr->valid = QUEUE_RESERVED;
-        queue[offset + idx] = cmdHeader;
-
-        // Release the lock as it is not needed anymore
-        __sync_synchronize();
-        ticketLockRelease(&acc->cmdInLock);
-
-        // Do no write the header (1st word pointer by command ptr) until all payload is write
-        // Check if 2 writes have to be done because there is not enough space at the end of subqueue
-        const size_t count = min(CMD_IN_SUBQUEUE_LEN - idx - 1, length - 1);
-        memcpy(&queue[offset + idx + 1], command + 1, count * sizeof(uint64_t));
-        if ((length - 1) > count) {
-            memcpy(&queue[offset], command + 1 + count, (length - count) * sizeof(uint64_t));
-        }
-        cmdHeader = *command;
-        cmdHeaderPtr->valid = QUEUE_VALID;
-
-        __sync_synchronize();
-        // Write the header now
-        queue[offset + idx] = cmdHeader;
-    } else {
-        // NOTE: At this point the thread has the lock acquired, so directly bypass it into the check.
-        //      The lock will be released in the code after the check
-        goto SUB_CMD_CHECK_RD;
-    }
-
-    return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
@@ -803,7 +553,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
         return XTASKS_ENOAV;
 
     count = min(maxCount, _numInstrEvents - acc->instrIdx);
-    validEvents = getAccEvents(acc, events, count, accBuffer);
+    validEvents = getAccEvents(acc, events, count, _numInstrEvents, _instrBuffHandle, accBuffer);
     if (validEvents < 0) {
         return XTASKS_ERROR;
     }
@@ -813,50 +563,6 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
     }
 
     return XTASKS_SUCCESS;
-}
-
-// TODO: accBuffer sems just an scratchpad to invalidate event entries
-static int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, xtasks_ins_event *accBuffer)
-{
-    size_t devInstroff;
-    accBuffer += acc->instrIdx;
-    devInstroff = (acc->info.id * _numInstrEvents + acc->instrIdx) * sizeof(xtasks_ins_event);
-
-    if (__sync_lock_test_and_set(&acc->instrLock, 1)) {
-        // There is another thread reading the buffer for this accelerator
-        events->eventType = XTASKS_EVENT_TYPE_INVALID;
-        return 0;
-    } else {
-        xdma_status stat;
-        int i;
-
-        // stat = xdmaMemcpy(events, _instrBuffHandle, count * sizeof(xtasks_ins_event),
-        //    (accBuffer - _instrBuff) * sizeof(xtasks_ins_event), XDMA_FROM_DEVICE);
-        stat = xdmaMemcpy(events, _instrBuffHandle, count * sizeof(xtasks_ins_event), devInstroff, XDMA_FROM_DEVICE);
-        if (stat != XDMA_SUCCESS) {
-            __sync_lock_release(&acc->instrLock);
-            return -1;
-        }
-        i = 0;
-        // TODO: Preinitialize invalidation event buffers
-        while (i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID) {
-            // Invalidate all read entries in the accelerator buffer
-            accBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
-            i++;
-        }
-        if (i > 0) {
-            // stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i * sizeof(xtasks_ins_event),
-            //    (accBuffer - _instrBuff) * sizeof(xtasks_ins_event), XDMA_TO_DEVICE);
-            stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i * sizeof(xtasks_ins_event), devInstroff, XDMA_TO_DEVICE);
-            if (stat != XDMA_SUCCESS) {
-                __sync_lock_release(&acc->instrLock);
-                return -1;
-            }
-        }
-        acc->instrIdx = (acc->instrIdx + i) % _numInstrEvents;
-        __sync_lock_release(&acc->instrLock);
-        return i;
-    }
 }
 
 xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
@@ -881,88 +587,6 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
 
     getNewTaskFromQ(task, _spawnOutQueue, idx);
     return XTASKS_SUCCESS;
-}
-
-static void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx)
-{
-    new_task_header_t *hwTaskHeader = (new_task_header_t *)&spawnQueue[idx];
-    // Extract the information from the new buffer
-    *task = realloc(*task, sizeof(xtasks_newtask) + sizeof(xtasks_newtask_arg) * hwTaskHeader->numArgs +
-                               sizeof(xtasks_newtask_dep) * hwTaskHeader->numDeps +
-                               sizeof(xtasks_newtask_copy) * hwTaskHeader->numCopies);
-    (*task)->args = (xtasks_newtask_arg *)(*task + 1);
-    (*task)->numArgs = hwTaskHeader->numArgs;
-    (*task)->deps = (xtasks_newtask_dep *)((*task)->args + (*task)->numArgs);
-    (*task)->numDeps = hwTaskHeader->numDeps;
-    (*task)->copies = (xtasks_newtask_copy *)((*task)->deps + (*task)->numDeps);
-    (*task)->numCopies = hwTaskHeader->numCopies;
-
-    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->taskID field is the 2nd word
-    (*task)->taskId = spawnQueue[idx];
-    spawnQueue[idx] = 0;  //< Cleanup the memory position
-
-    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->parentID field is the 3th word
-    (*task)->parentId = spawnQueue[idx];   //< NOTE: We don't know what is that ID (SW or HW)
-    spawnQueue[idx] = 0;                   //< Cleanup the memory position
-
-    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->typeInfo field is the 4th word
-    (*task)->typeInfo = spawnQueue[idx];
-    spawnQueue[idx] = 0;  //< Cleanup the memory position
-
-    for (size_t i = 0; i < (*task)->numDeps; ++i) {
-        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
-        new_task_dep_t *hwTaskDep = (new_task_dep_t *)(&spawnQueue[idx]);
-
-        // Parse the dependence information
-        (*task)->deps[i].address = hwTaskDep->address;
-        (*task)->deps[i].flags = hwTaskDep->flags;
-
-        // Cleanup the memory position
-        spawnQueue[idx] = 0;
-    }
-
-    for (size_t i = 0; i < (*task)->numCopies; ++i) {
-        // NOTE: Each copy uses 3 uint64_t elements in the newQueue
-        //      After using each memory position, we have to clean it
-        uint64_t tmp;
-
-        // NOTE: new_task_copy_t->address field is the 1st word
-        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
-        (*task)->copies[i].address = (void *)((uintptr_t)spawnQueue[idx]);
-        spawnQueue[idx] = 0;
-
-        // NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
-        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
-        tmp = spawnQueue[idx];
-        uint8_t copyFlags = tmp >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
-        (*task)->copies[i].flags = copyFlags;
-        uint32_t copySize = tmp >> NEW_TASK_COPY_SIZE_WORDOFFSET;
-        (*task)->copies[i].size = copySize;
-        spawnQueue[idx] = 0;
-
-        // NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
-        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
-        tmp = spawnQueue[idx];
-        uint32_t copyOffset = tmp >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
-        (*task)->copies[i].offset = copyOffset;
-        uint32_t copyAccessedLen = tmp >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
-        (*task)->copies[i].accessedLen = copyAccessedLen;
-        spawnQueue[idx] = 0;
-    }
-
-    for (size_t i = 0; i < (*task)->numArgs; ++i) {
-        // Check that arg pointer is not out of bounds
-        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
-        (*task)->args[i] = spawnQueue[idx];
-
-        // Cleanup the memory position
-        spawnQueue[idx] = 0;
-    }
-
-    // Free the buffer slot
-    // NOTE: This word cannot be set to 0 as the task size information must be keept
-    __sync_synchronize();
-    hwTaskHeader->valid = QUEUE_INVALID;
 }
 
 xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
