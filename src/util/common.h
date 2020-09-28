@@ -246,30 +246,6 @@ xtasks_stat toXtasksStat(xdma_status const status)
 }
 
 /*!
- * \breif Set n times the byte c in dst
- * \note Assuming: n is multiple of 32, dst and src are aligned to 32 bits
- * \note Avoid optimizations for the function implementation as aarch64 cannot execute
- *       some fast copy instructions over non-cacheable memory
- */
-inline void __attribute__((optimize("O1"))) _memset(void *dst, int c, size_t n)
-{
-#if __aarch64__
-    uint32_t *d = (uint32_t *)dst;
-    char cc = c;
-    uint32_t v;
-    v = cc;
-    v = (v << 8) | cc;
-    v = (v << 8) | cc;
-    v = (v << 8) | cc;
-    for (size_t i = 0; i < n / sizeof(uint32_t); ++i) {
-        d[i] = v;
-    }
-#else
-    memset(dst, c, n);
-#endif
-}
-
-/*!
  * \brief Returns the offset in words where the "idx" information of bitinfo starts
  */
 int getBitinfoOffset(const int idx, const uint32_t *bitinfo)
