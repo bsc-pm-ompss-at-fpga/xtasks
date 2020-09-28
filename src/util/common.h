@@ -336,7 +336,7 @@ inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32_t *res
     *resetReg = 0x00;
 }
 
-inline int getFreeTaskEntry(task_t *tasks)
+int getFreeTaskEntry(task_t *tasks)
 {
     for (int i = 0; i < NUM_RUN_TASKS; ++i) {
         if (tasks[i].id == 0) {
