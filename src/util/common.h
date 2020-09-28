@@ -313,7 +313,10 @@ int initAccList(acc_t *accs, const char *accInfo)
             accs[i].cmdInWrIdx = 0;
             accs[i].cmdInAvSlots = CMD_IN_SUBQUEUE_LEN;
             accs[i].cmdInRdIdx = 0;
+            ticketLockInit(&accs[i].cmdInLock);
             accs[i].cmdOutIdx = 0;
+            accs[i].cmdOutLock = 0;
+
         }
     }
     ret = total;
