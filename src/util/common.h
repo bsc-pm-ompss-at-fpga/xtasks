@@ -225,6 +225,10 @@ uint8_t getCmdLength(cmd_header_t const *header)
         length = sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t);
     } else if (cmdCode == CMD_FINI_EXEC_CODE) {
         length = sizeof(cmd_out_exec_task_t) / sizeof(uint64_t);
+    } else if (cmdCode == CMD_PERI_TASK_CODE) {
+        uint8_t const numArgs = header->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+        uint8_t const argsLength = sizeof(cmd_exec_task_arg_t) / sizeof(uint64_t) * numArgs;
+        length = sizeof(cmd_peri_task_header_t) / sizeof(uint64_t) + argsLength;
     }
     return length;
 }
