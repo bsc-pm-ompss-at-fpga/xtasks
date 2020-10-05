@@ -371,6 +371,24 @@ void initializeTask(
     cmdHeader->taskID = (uintptr_t)(task);
 }
 
+static void initializePeriodicTask(task_t *task, const xtasks_task_id id, acc_t *accel, xtasks_task_id const parent,
+    xtasks_comp_flags const compute, int numReps, int period)
+{
+    task->id = id;
+    task->accel = accel;
+    task->periTask = 1;
+    cmd_peri_task_header_t *cmdHeader = (cmd_peri_task_header_t *)task->cmdHeader;
+    task->cmdExecArgs = (cmd_exec_task_arg_t *)(cmdHeader + 1);
+    cmdHeader->header.commandCode = CMD_PERI_TASK_CODE;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = 0;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_COMP_OFFSET] = compute;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_TM;
+    cmdHeader->parentID = (uintptr_t)(parent);
+    cmdHeader->taskID = (uintptr_t)(task);
+    cmdHeader->numReps = numReps;
+    cmdHeader->period = period;
+}
+
 xtasks_stat setExtendedModeTask(task_t *task)
 {
     cmd_header_t *prevHeader = task->cmdHeader;

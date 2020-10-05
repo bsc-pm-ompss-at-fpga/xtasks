@@ -589,19 +589,7 @@ xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle 
         return XTASKS_ENOMEM;
     }
 
-    _tasks[idx].id = id;
-    _tasks[idx].accel = accel;
-    _tasks[idx].periTask = 1;
-    cmd_peri_task_header_t *cmdHeader = (cmd_peri_task_header_t *)_tasks[idx].cmdHeader;
-    _tasks[idx].cmdExecArgs = (cmd_exec_task_arg_t *)(cmdHeader + 1);
-    cmdHeader->header.commandCode = CMD_PERI_TASK_CODE;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = 0;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_COMP_OFFSET] = compute;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_TM;
-    cmdHeader->parentID = (uintptr_t)(parent);
-    cmdHeader->taskID = (uintptr_t)(&_tasks[idx]);
-    cmdHeader->numReps = numReps;
-    cmdHeader->period = period;
+    initializePeriodicTask(&_tasks[idx], id, accel, parent, compute, numReps, period);
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
