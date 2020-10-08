@@ -34,6 +34,7 @@
 #define DEF_EXEC_TASK_SIZE 256  ///< Size of hw task when using the defult num. of args.
 #define DEF_EXEC_TASK_ARGS_LEN \
     14  // NOTE: (DEF_EXEC_TASK_SIZE - sizeof(cmd_exec_task_header_t))/sizeof(cmd_exec_task_arg_t)
+#undef NUM_RUN_TASKS
 #define NUM_RUN_TASKS (8192 / 256)  // NOTE: 2 pages (8192 bytes) considering that each task is 256 bytes
 
 //! Check that libxdma version is compatible
@@ -60,25 +61,25 @@ typedef struct {
     unsigned short volatile tasksQueueLock;
     unsigned short volatile instrIdx;   ///< Reading index of the accelerator instrumentation buffer
     unsigned short volatile instrLock;  ///< Lock for atomic operations over instrumentation buffers
-} acc_t;
+} str_acc_t;
 
 typedef struct {
     xtasks_task_id id;                  ///< External task identifier
     cmd_exec_task_header_t *cmdHeader;  ///< Pointer to the cmd_exec_task_header_t struct
     cmd_exec_task_arg_t *cmdExecArgs;   ///< Pointer to the array of cmd_exec_task_arg_t structs
     uint8_t argsCnt;                    ///< Number of arguments in the task
-    acc_t *accel;                       ///< Accelerator where the task will run
+    str_acc_t *accel;                       ///< Accelerator where the task will run
     xdma_transfer_handle cmdExecTx;     ///< Execute command transfer handle
     xdma_transfer_handle syncTx;        ///< Task sync transfer handle
     xdma_buf_handle taskHandle;         ///< Task buffer handle (only used if: argsCnt > DEF_EXEC_TASK_ARGS_LEN)
-} task_t;
+} str_task_t;
 
 static int _init_cnt = 0;                       ///< Counter of calls to init/fini
 static size_t _numAccs;                         ///< Number of accelerators in the system
-static acc_t *_accs;                            ///< Accelerators data
+static str_acc_t *_accs;                            ///< Accelerators data
 static uint8_t *_cmdExecTaskBuff;               ///< Buffer to send the HW tasks
 static xdma_buf_handle _cmdExecTaskBuffHandle;  ///< Handle of _cmdExecTaskBuff in libxdma
-static task_t *_tasks;                          ///< Array with internal task information
+static str_task_t *_tasks;                          ///< Array with internal task information
 
 static size_t _numInstrEvents;            ///< Number of instrumentation events for each accelerator buffer
 static xtasks_ins_event *_instrBuff;      ///< Buffer of instrumentation events
@@ -248,7 +249,7 @@ xtasks_stat xtasksInit()
     _numAccs = (size_t)xdmaDevices;
 
     // Preallocate accelerators array
-    _accs = malloc(sizeof(acc_t) * _numAccs);
+    _accs = malloc(sizeof(str_acc_t) * _numAccs);
     if (_accs == NULL) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate memory for accelerators info");
@@ -331,7 +332,7 @@ xtasks_stat xtasksInit()
     }
 
     // Allocate tasks array
-    _tasks = (task_t *)malloc(NUM_RUN_TASKS * sizeof(task_t));
+    _tasks = (str_task_t *)malloc(NUM_RUN_TASKS * sizeof(str_task_t));
     if (_tasks == NULL) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate memory for tasks");
@@ -457,13 +458,13 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *in
 {
     if (info == NULL) return XTASKS_EINVAL;
 
-    acc_t *ptr = (acc_t *)handle;
+    str_acc_t *ptr = (str_acc_t *)handle;
     *info = ptr->info;
 
     return XTASKS_SUCCESS;
 }
 
-static int getFreeTaskEntry(acc_t *accel)
+static int getFreeTaskEntryAcc(str_acc_t *accel)
 {
     for (int i = 0; i < NUM_RUN_TASKS; ++i) {
         if (_tasks[i].accel == NULL) {
@@ -478,8 +479,8 @@ static int getFreeTaskEntry(acc_t *accel)
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId, xtasks_task_id const parent,
     xtasks_comp_flags const compute, xtasks_task_handle *handle)
 {
-    acc_t *accel = (acc_t *)accId;
-    int idx = getFreeTaskEntry(accel);
+    str_acc_t *accel = (str_acc_t *)accId;
+    int idx = getFreeTaskEntryAcc(accel);
     if (idx < 0) {
         return XTASKS_ENOMEM;
     }
@@ -512,7 +513,7 @@ xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle 
 
 xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle)
 {
-    task_t *task = (task_t *)(*handle);
+    str_task_t *task = (str_task_t *)(*handle);
 
     *handle = NULL;
     task->accel = NULL;
@@ -523,9 +524,9 @@ xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle)
 xtasks_stat xtasksAddArg(
     xtasks_arg_id const id, xtasks_arg_flags const flags, xtasks_arg_val const value, xtasks_task_handle const handle)
 {
-    task_t *task = (task_t *)(handle);
+    str_task_t *task = (str_task_t *)(handle);
     if (1 > DEF_EXEC_TASK_ARGS_LEN - task->argsCnt) {
-        // TODO: Allocate a new chunk for the hw_task_t struct
+        // TODO: Allocate a new chunk for the hw_str_task_t struct
         return XTASKS_ENOMEM;
     }
 
@@ -541,9 +542,9 @@ xtasks_stat xtasksAddArg(
 xtasks_stat xtasksAddArgs(
     size_t const num, xtasks_arg_flags const flags, xtasks_arg_val *const values, xtasks_task_handle const handle)
 {
-    task_t *task = (task_t *)(handle);
+    str_task_t *task = (str_task_t *)(handle);
     if (num > DEF_EXEC_TASK_ARGS_LEN - task->argsCnt) {
-        // TODO: Allocate a new chunk for the hw_task_t struct
+        // TODO: Allocate a new chunk for the hw_str_task_t struct
         return XTASKS_ENOMEM;
     }
 
@@ -561,7 +562,7 @@ xtasks_stat xtasksAddArgs(
 
 xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 {
-    task_t *task = (task_t *)(handle);
+    str_task_t *task = (str_task_t *)(handle);
 
     // Update execute command with the number of args information
     task->cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = task->argsCnt;
@@ -578,7 +579,7 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     return (retD == XDMA_SUCCESS && retS == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
-static xtasks_stat xtasksWaitTaskInternal(task_t *task)
+static xtasks_stat xtasksWaitTaskInternal(str_task_t *task)
 {
     xdma_status retD, retS;
     retD = xdmaWaitTransfer(&task->cmdExecTx);
@@ -598,12 +599,12 @@ static xtasks_stat xtasksWaitTaskInternal(task_t *task)
 
 xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
 {
-    task_t *task = (task_t *)(handle);
+    str_task_t *task = (str_task_t *)(handle);
 
-    if (task != (task_t *)queueFront(task->accel->tasksQueue)) {
+    if (task != (str_task_t *)queueFront(task->accel->tasksQueue)) {
         // Only waiting for the first task of the queue is supported
         return XTASKS_PENDING;
-    } else if (task != (task_t *)queueTryPop(task->accel->tasksQueue)) {
+    } else if (task != (str_task_t *)queueTryPop(task->accel->tasksQueue)) {
         // Some other thread stoled the task from the queue (in previous check tasks matched)
         return XTASKS_ERROR;
     }
@@ -622,14 +623,14 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id 
 
 xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *task, xtasks_task_id *id)
 {
-    acc_t *acc = (acc_t *)accel;
+    str_acc_t *acc = (str_acc_t *)accel;
 
     xtasks_stat ret = XTASKS_PENDING;
 #if 0
-    task_t * t = NULL;
+    str_task_t * t = NULL;
     if (acc->tasksQueueLock == 0 && __sync_lock_test_and_set(&acc->tasksQueueLock, 1) == 0) {
         //NOTE: Only pop the task if finished -> atomically get the front, test and ¿pop?
-        t = (task_t *)queueFront(acc->tasksQueue);
+        t = (str_task_t *)queueFront(acc->tasksQueue);
         if (t != NULL) {
             ret = xtasksWaitTaskInternal(t); //xtasksTryWaitTask(t);
             if (ret != XTASKS_PENDING) {
@@ -642,7 +643,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
         __sync_lock_release(&acc->tasksQueueLock);
     }
 #else
-    task_t *t = (task_t *)queueTryPop(acc->tasksQueue);
+    str_task_t *t = (str_task_t *)queueTryPop(acc->tasksQueue);
     if (t != NULL) {
         ret = xtasksWaitTaskInternal(t);
         *task = (xtasks_task_handle)t;
@@ -654,7 +655,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
 
 xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount)
 {
-    acc_t *acc = (acc_t *)(accel);
+    str_acc_t *acc = (str_acc_t *)(accel);
     xtasks_ins_event *accBuffer = _instrBuff + acc->info.id * _numInstrEvents;
     size_t count, i;
 

@@ -371,7 +371,7 @@ void initializeTask(
     cmdHeader->taskID = (uintptr_t)(task);
 }
 
-static void initializePeriodicTask(task_t *task, const xtasks_task_id id, acc_t *accel, xtasks_task_id const parent,
+void initializePeriodicTask(task_t *task, const xtasks_task_id id, acc_t *accel, xtasks_task_id const parent,
     xtasks_comp_flags const compute, int numReps, int period)
 {
     task->id = id;
