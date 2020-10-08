@@ -320,7 +320,6 @@ int initAccList(acc_t *accs, const char *accInfo)
             ticketLockInit(&accs[i].cmdInLock);
             accs[i].cmdOutIdx = 0;
             accs[i].cmdOutLock = 0;
-
         }
     }
     ret = total;

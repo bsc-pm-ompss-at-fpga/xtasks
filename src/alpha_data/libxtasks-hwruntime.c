@@ -123,7 +123,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
         cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents * i);
 
         xtasks_stat ret =
-            //xtasksSubmitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t));
+            // xtasksSubmitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t));
             submitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t), _cmdInQueue);
         if (ret != XTASKS_SUCCESS) {
             free(_instrBuff);
@@ -628,7 +628,7 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     size_t const numHeaderBytes = task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t);
     size_t const numCmdWords = (numHeaderBytes + sizeof(cmd_exec_task_arg_t) * argsCnt) / sizeof(uint64_t);
     return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue);
-    //return xtasksSubmitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords);
+    // return xtasksSubmitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords);
 }
 
 xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)

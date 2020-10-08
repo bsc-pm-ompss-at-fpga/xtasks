@@ -49,7 +49,6 @@
 #define PCI_MAX_PATH_LEN 64
 #define PCI_BAR_SIZE 0x40000  // map only 256KB even if the BAR is larger
 
-
 static int _pciBarFd;
 static uint32_t *_pciBar;
 static acc_t _accs[MAX_NUM_ACC];
