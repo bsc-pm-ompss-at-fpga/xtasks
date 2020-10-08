@@ -35,7 +35,6 @@
 #define BISTREAM_INFO_FEATURES_IDX 3
 #define BISTREAM_INFO_WRAPPER_IDX 6
 #define BITINFO_FIELD_SEP 0xFFFFFFFF
-#define BITINFO_MAX_WORDS 512
 
 static uint32_t _bitinfo[BITINFO_MAX_WORDS];
 
@@ -80,26 +79,6 @@ void printErrorBitstreamCompatibility()
 }
 
 /*!
- * \brief Returns the offset in words where the "idx" information of bitinfo starts
- */
-int getBitinfoOffset(const int idx)
-{
-    if (idx == 0) {
-        return 0;
-    } else if (idx == 1) {
-        return 2;
-    } else if (idx == 2) {
-        return 4;
-    }
-    int i = 4;
-    for (int j = 2; j < idx && i < BITINFO_MAX_WORDS; ++j) {
-        while (_bitinfo[i] != BITINFO_FIELD_SEP && i < BITINFO_MAX_WORDS) ++i;
-        ++i;
-    }
-    return i;
-}
-
-/*!
  * \brief Checks whether a bitstream feature is present in the current fpga configuration or not.
  *          checkbitstreamCompatibility must be called before calling this function.
  * \return  BIT_FEATURE_NO_AVAIL if the feature is not available
@@ -116,7 +95,7 @@ bit_feature_t checkbitstreamFeature(const char *featureName)
         PRINT_ERROR("Invalid value in XTASKS_FEATURES_CHECK, must be 0 or 1. Ignoring it");
     }
 
-    const int i = getBitinfoOffset(BISTREAM_INFO_FEATURES_IDX);
+    const int i = getBitinfoOffset(BISTREAM_INFO_FEATURES_IDX, _bitinfo);
     if (i >= BITINFO_MAX_WORDS) return BIT_FEATURE_UNKNOWN;
 
     const uint32_t features = _bitinfo[i];
@@ -155,12 +134,12 @@ bit_compatibility_t checkbitstreamCompatibility(ADMXRC3_HANDLE hDevice)
     }
 
     // The bitstream info BRAM version is old
-    const int bitinfoRev = _bitinfo[getBitinfoOffset(BISTREAM_INFO_REV_IDX)];
+    const int bitinfoRev = _bitinfo[getBitinfoOffset(BISTREAM_INFO_REV_IDX, _bitinfo)];
     if (bitinfoRev < BISTREAM_INFO_MIN_REV) {
         return BIT_NO_COMPAT;
     }
 
-    const int i = getBitinfoOffset(BISTREAM_INFO_WRAPPER_IDX);
+    const int i = getBitinfoOffset(BISTREAM_INFO_WRAPPER_IDX, _bitinfo);
     if (i >= BITINFO_MAX_WORDS) {
         return BIT_FEATURE_UNKNOWN;
     }
