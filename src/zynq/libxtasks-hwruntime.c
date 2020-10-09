@@ -60,7 +60,7 @@ const char _backendName[] = "hwruntime";
 
 static int _init_cnt = 0;                 ///< Counter of calls to init/fini
 static size_t _numAccs;                   ///< Number of accelerators in the system
-static acc_t *_accs;                      ///< Accelerators data
+static acc_t _accs[MAX_NUM_ACC];                      ///< Accelerators data
 static uint8_t *_cmdExecTaskBuff;         ///< Buffer to send the HW tasks
 static task_t *_tasks;                    ///< Array with internal task information
 static int _cmdInQFd;                     ///< File descriptior of command IN queue
@@ -270,15 +270,6 @@ xtasks_stat xtasksInit()
         // TODO: Error management
     }
 
-    // Preallocate accelerators array
-    _numAccs = DEF_ACCS_LEN;
-    _accs = malloc(sizeof(acc_t) * _numAccs);
-    if (_accs == NULL) {
-        ret = XTASKS_ENOMEM;
-        PRINT_ERROR("Cannot allocate memory for accelerators info");
-        goto INIT_ERR_0;
-    }
-
     // Generate the configuration file path
     char *buffer = getConfigFilePath();
     if (buffer == NULL) {
@@ -445,7 +436,6 @@ INIT_ERR_OPEN_COMM:
     close(_cmdOutQFd);
     close(_cmdInQFd);
 INIT_ERR_1:
-    free(_accs);
     _numAccs = 0;
 INIT_ERR_0:
     __sync_sub_and_fetch(&_init_cnt, 1);
@@ -500,8 +490,6 @@ xtasks_stat xtasksFini()
     for (size_t idx = 0; idx < _numAccs; ++idx) {
         ticketLockFini(&_accs[idx].cmdInLock);
     }
-    free(_accs);
-    _accs = NULL;
     _numAccs = 0;
 
     xdmaClose();  // TODO: Error management
