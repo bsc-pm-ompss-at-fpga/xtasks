@@ -38,35 +38,6 @@
 
 #define DEF_ACCS_LEN 8  ///< Def. allocated slots in the accs array
 
-#define CMD_IN_QUEUE_LEN 1024    ///< Total number of entries in the cmd_in_queue
-#define CMD_IN_SUBQUEUE_LEN 64   ///< Number of entries in the sub-queue of cmd_in_queue for one accelerator
-#define CMD_OUT_QUEUE_LEN 1024   ///< Total number of entries in the cmd_out_queue
-#define CMD_OUT_SUBQUEUE_LEN 64  ///< Number of entries in the sub-queue of cmd_out_queue for one accelerator
-#define SPWN_OUT_QUEUE_LEN 1024  // NOTE: Each element is a uint64_t (the number of arguments for a task is unknown)
-#define SPWN_IN_QUEUE_LEN 1024   ///< Total number of entries in the spawn_out_in_queue
-#define QUEUE_VALID 0x80
-#define QUEUE_RESERVED 0x40
-#define QUEUE_INVALID 0x00
-#define DEF_EXEC_TASK_SIZE 256  ///< Size of hw task when using the defult num. of args.
-#define DEF_EXEC_TASK_ARGS_LEN \
-    14  // NOTE: (DEF_EXEC_TASK_SIZE - sizeof(cmd_exec_task_header_t))/sizeof(cmd_exec_task_arg_t)
-// NOTE: A task in extended mode MUST fit into the a sub-queue of cmd_in queue
-#define EXT_HW_TASK_SIZE 512  ///< Size of hw task when using the extended num. of args.
-#define EXT_HW_TASK_ARGS_LEN \
-    30  // NOTE: (EXT_HW_TASK_SIZE -
-        // sizeof(cmd_exec_task_header_t))/sizeof(cmd_exec_task_arg_t)
-// NOTE: The value NUM_RUN_TASKS may be changed to increase the number of concurrent tasks submited into the
-// accelerators
-#define NUM_RUN_TASKS 1024  ///< Maximum number of concurrently running tasks
-#define NEW_TASK_COPY_FLAGS_WORDOFFSET \
-    0  ///< Offset of new_task_copy_t->flags field in the 2nd word forming new_task_copy_t
-#define NEW_TASK_COPY_SIZE_WORDOFFSET \
-    32  ///< Offset of new_task_copy_t->size field in the 2nd word forming new_task_copy_t
-#define NEW_TASK_COPY_OFFSET_WORDOFFSET \
-    0  ///< Offset of new_task_copy_t->offset field in the 3rd word forming new_task_copy_t
-#define NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET \
-    32  ///< Offset of new_task_copy_t->accessedLen field in the 3rd word forming new_task_copy_t
-
 #define CMD_IN_QUEUE_ADDR 0x00004000
 #define CMD_OUT_QUEUE_ADDR 0x00008000
 #define HWRUNTIME_RESET_ADDRESS 0x0000C000
@@ -83,28 +54,6 @@
 //! \brief Platform and Backend strings
 const char _platformName[] = "alpha_data";
 const char _backendName[] = "hwruntime";
-
-//! \brief Internal library HW accelerator information
-typedef struct {
-    char descBuffer[STR_BUFFER_SIZE];
-    xtasks_acc_info info;
-    unsigned short volatile cmdInWrIdx;    ///< Writing index of the accelerator sub-queue in the cmd_in queue
-    unsigned short volatile cmdInRdIdx;    ///< Reading index of the accelerator sub-queue in the cmd_in queue
-    unsigned short volatile cmdInAvSlots;  ///< Counter for available slots in cmd_in sub-queue
-    unsigned short volatile cmdOutIdx;     ///< Reading index of the accelerator sub-queue in the cmd_out queue
-    unsigned short volatile instrIdx;      ///< Reading index of the accelerator instrumentation buffer
-    unsigned short volatile instrLock;     ///< Lock for atomic operations over instrumentation buffers
-} acc_t;
-
-//! \brief Internal library task information
-typedef struct {
-    xtasks_task_id id;                 ///< External task identifier
-    cmd_header_t *cmdHeader;           ///< Pointer to the cmd_header_t struct
-    cmd_exec_task_arg_t *cmdExecArgs;  ///< Pointer to the array of cmd_exec_task_arg_t structs
-    acc_t *accel;                      ///< Accelerator where the task will run
-    uint8_t extSize : 1;               ///< Whether the space available in args is extended or not
-    uint8_t periTask : 1;              ///< Whether the tasks is a periodic task or not
-} task_t;
 
 static int _init_cnt = 0;                 ///< Counter of calls to init/fini
 static size_t _numAccs;                   ///< Number of accelerators in the system
@@ -127,80 +76,6 @@ static xtasks_ins_event *_instrBuffPhy;   ///< Physical address of the FPGA side
 static xtasks_ins_event *_instrBuff;      ///< Buffer of instrumentation events (host side)
 static xdma_buf_handle _instrBuffHandle;  ///< Handle of _instrBuff in libxdma
 static uint64_t *_instrCounter;           ///< Hardware counter
-
-static inline __attribute__((always_inline)) void resetHWRuntime()
-{
-    // Nudge one register
-    *_hwruntimeRst = 0x01;
-    for (int i = 0; i < 10; i++) i = i;  // Lose some time
-    *_hwruntimeRst = 0x00;
-}
-
-static xtasks_stat xtasksSubmitCommand(acc_t *acc, uint64_t *command, size_t const length)
-{
-    size_t idx;
-    uint64_t cmdHeader;
-    size_t const offset = acc->info.id * CMD_IN_SUBQUEUE_LEN;
-    cmd_header_t *const cmdHeaderPtr = (cmd_header_t *const) & cmdHeader;
-
-    // While there is not enough space in the queue, look for already read commands
-    while (acc->cmdInAvSlots < length) {
-        ticketLockAcquire(&_bufferTicket);
-        if (acc->cmdInAvSlots < length) {
-        SUB_CMD_CHECK_RD:
-            idx = acc->cmdInRdIdx;
-            cmdHeader = _cmdInQueue[offset + idx];
-            if (cmdHeaderPtr->valid == QUEUE_INVALID) {
-                size_t const cmdNumWords = getCmdLength(cmdHeaderPtr);
-                acc->cmdInRdIdx = (idx + cmdNumWords) % CMD_IN_SUBQUEUE_LEN;
-                acc->cmdInAvSlots += cmdNumWords;
-            }
-        } else {
-            // NOTE: At this point the thread has the lock acquired, so directly bypass it into the queue idx update.
-            //      The lock will be released in the code after the atomic operations
-            goto SUB_CMD_UPDATE_IDX;
-        }
-        ticketLockRelease(&_bufferTicket);
-    }
-
-    ticketLockAcquire(&_bufferTicket);
-    if (acc->cmdInAvSlots >= length) {
-    SUB_CMD_UPDATE_IDX:
-        idx = acc->cmdInWrIdx;
-        acc->cmdInWrIdx = (idx + length) % CMD_IN_SUBQUEUE_LEN;
-        acc->cmdInAvSlots -= length;
-
-        // Do no write the header (1st word pointer by command ptr) until all payload is write
-        // Check if 2 writes have to be done because there is not enough space at the end of subqueue
-        const size_t count = min(CMD_IN_SUBQUEUE_LEN - idx - 1, length - 1);
-        // memcpy(&_cmdInQueue[offset + idx + 1], command + 1, count*sizeof(uint64_t));
-        if (ADMXRC3_Write(_hDevice, 1, 0, CMD_IN_QUEUE_ADDR + (offset + idx + 1) * sizeof(uint64_t),
-                count * sizeof(uint64_t), command + 1) != ADMXRC3_SUCCESS) {
-            perror("Error submitting command\n");
-        }
-        if ((length - 1) > count) {
-            // memcpy(&_cmdInQueue[offset], command + 1 + count, (length - count)*sizeof(uint64_t));
-            if (ADMXRC3_Write(_hDevice, 1, 0, CMD_IN_QUEUE_ADDR + offset * sizeof(uint64_t),
-                    (length - count) * sizeof(uint64_t), command + 1 + count) != ADMXRC3_SUCCESS) {
-                perror("Error submitting command\n");
-            }
-        }
-        cmdHeader = *command;
-        cmdHeaderPtr->valid = QUEUE_VALID;
-
-        __sync_synchronize();
-        // Write the header now
-        _cmdInQueue[offset + idx] = cmdHeader;
-    } else {
-        // NOTE: At this point the thread has the lock acquired, so directly bypass it into the check.
-        //      The lock will be released in the code after the check
-        goto SUB_CMD_CHECK_RD;
-    }
-
-    ticketLockRelease(&_bufferTicket);
-
-    return XTASKS_SUCCESS;
-}
 
 xtasks_stat xtasksInitHWIns(size_t const nEvents)
 {
@@ -248,7 +123,8 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
         cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents * i);
 
         xtasks_stat ret =
-            xtasksSubmitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t));
+            // xtasksSubmitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t));
+            submitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t), _cmdInQueue);
         if (ret != XTASKS_SUCCESS) {
             free(_instrBuff);
             xdmaFree(_instrBuffHandle);
@@ -477,7 +353,7 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_MMAP_RST;
     }
 
-    resetHWRuntime();
+    resetHWRuntime(_hwruntimeRst);
 
     // Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS * sizeof(task_t));
@@ -629,38 +505,16 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *in
     return XTASKS_SUCCESS;
 }
 
-static int getFreeTaskEntry()
-{
-    for (int i = 0; i < NUM_RUN_TASKS; ++i) {
-        if (_tasks[i].id == 0) {
-            if (__sync_bool_compare_and_swap(&_tasks[i].id, 0, 1)) {
-                return i;
-            }
-        }
-    }
-    return -1;
-}
-
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId, xtasks_task_id const parent,
     xtasks_comp_flags const compute, xtasks_task_handle *handle)
 {
     acc_t *accel = (acc_t *)accId;
-    int idx = getFreeTaskEntry();
+    int idx = getFreeTaskEntry(_tasks);
     if (idx < 0) {
         return XTASKS_ENOMEM;
     }
 
-    _tasks[idx].id = id;
-    _tasks[idx].accel = accel;
-    _tasks[idx].periTask = 0;
-    cmd_exec_task_header_t *cmdHeader = (cmd_exec_task_header_t *)_tasks[idx].cmdHeader;
-    _tasks[idx].cmdExecArgs = (cmd_exec_task_arg_t *)(cmdHeader + 1);
-    cmdHeader->header.commandCode = CMD_EXEC_TASK_CODE;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = 0;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_COMP_OFFSET] = compute;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_TM;
-    cmdHeader->parentID = (uintptr_t)(parent);
-    cmdHeader->taskID = (uintptr_t)(&_tasks[idx]);
+    initializeTask(&_tasks[idx], id, accel, parent, compute);
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
@@ -671,7 +525,7 @@ xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle 
     xtasks_task_handle *handle)
 {
     acc_t *accel = (acc_t *)accId;
-    int idx = getFreeTaskEntry();
+    int idx = getFreeTaskEntry(_tasks);
     if (idx < 0) {
         return XTASKS_ENOMEM;
     }
@@ -708,22 +562,16 @@ xtasks_stat xtasksAddArg(
 {
     task_t *task = (task_t *)(handle);
     uint8_t argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+    xtasks_stat st;
     if (argsCnt >= EXT_HW_TASK_ARGS_LEN) {
         // Unsupported number of arguments
         return XTASKS_ENOSYS;
     } else if (argsCnt == DEF_EXEC_TASK_ARGS_LEN) {
         // Entering in extended mode
-        cmd_header_t *prevHeader = task->cmdHeader;
-        task->cmdHeader = (cmd_header_t *)malloc(EXT_HW_TASK_SIZE);
-        if (task->cmdHeader == NULL) {
-            task->cmdHeader = prevHeader;
-            return XTASKS_ENOMEM;
+        st = setExtendedModeTask(task);
+        if (st != XTASKS_SUCCESS) {
+            return st;
         }
-        task->extSize = 1;
-        task->cmdExecArgs =
-            (cmd_exec_task_arg_t *)(((unsigned char *)task->cmdHeader) +
-                                    (task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t)));
-        memcpy(task->cmdHeader, prevHeader, DEF_EXEC_TASK_SIZE);  //< Move the hw task header and args
     }
 
     argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET]++;
@@ -739,6 +587,7 @@ xtasks_stat xtasksAddArgs(
 {
     task_t *task = (task_t *)(handle);
     uint8_t argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
+    xtasks_stat st;
     if (num > EXT_HW_TASK_ARGS_LEN - argsCnt) {
         // Unsupported number of arguments
         return XTASKS_ENOSYS;
@@ -747,17 +596,10 @@ xtasks_stat xtasksAddArgs(
         // 1) The number of args to add does not fit in current allocated space
         // 2) We are not in extended mode
         // 3) The number of args will fit in extended mode
-        cmd_header_t *prevHeader = task->cmdHeader;
-        task->cmdHeader = (cmd_header_t *)malloc(EXT_HW_TASK_SIZE);
-        if (task->cmdHeader == NULL) {
-            task->cmdHeader = prevHeader;
-            return XTASKS_ENOMEM;
+        st = setExtendedModeTask(task);
+        if (st != XTASKS_SUCCESS) {
+            return st;
         }
-        task->extSize = 1;
-        task->cmdExecArgs =
-            (cmd_exec_task_arg_t *)(((unsigned char *)task->cmdHeader) +
-                                    (task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t)));
-        memcpy(task->cmdHeader, prevHeader, DEF_EXEC_TASK_SIZE);  //< Move the hw task header and args
     }
 
     for (size_t i = 0, idx = argsCnt; i < num; ++i, ++idx) {
@@ -785,7 +627,8 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     uint8_t const argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
     size_t const numHeaderBytes = task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t);
     size_t const numCmdWords = (numHeaderBytes + sizeof(cmd_exec_task_arg_t) * argsCnt) / sizeof(uint64_t);
-    return xtasksSubmitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords);
+    return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue);
+    // return xtasksSubmitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords);
 }
 
 xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
@@ -879,48 +722,15 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
 {
     acc_t *acc = (acc_t *)(accel);
     xtasks_ins_event *accBuffer = _instrBuff + acc->info.id * _numInstrEvents;
-    size_t count, i;
+    size_t count;
+    count = min(maxCount, _numInstrEvents - acc->instrIdx);
 
     if (events == NULL || (acc - _accs) >= _numAccs || maxCount <= 0)
         return XTASKS_EINVAL;
     else if (_instrBuff == NULL)
         return XTASKS_ENOAV;
 
-    if (__sync_lock_test_and_set(&acc->instrLock, 1)) {
-        // There is another thread reading the buffer for this accelerator
-        events->eventType = XTASKS_EVENT_TYPE_INVALID;
-    } else {
-        count = min(maxCount, _numInstrEvents - acc->instrIdx);
-        accBuffer += acc->instrIdx;
-        xdma_status stat = xdmaMemcpy(events, _instrBuffHandle, count * sizeof(xtasks_ins_event),
-            (accBuffer - _instrBuff) * sizeof(xtasks_ins_event), XDMA_FROM_DEVICE);
-        if (stat != XDMA_SUCCESS) {
-            __sync_lock_release(&acc->instrLock);
-            return XTASKS_ERROR;
-        }
-        i = 0;
-        while (i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID) {
-            // Invalidate all read entries in the accelerator buffer
-            accBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
-            i++;
-        }
-        if (i > 0) {
-            stat = xdmaMemcpy(accBuffer, _instrBuffHandle, i * sizeof(xtasks_ins_event),
-                (accBuffer - _instrBuff) * sizeof(xtasks_ins_event), XDMA_TO_DEVICE);
-            if (stat != XDMA_SUCCESS) {
-                __sync_lock_release(&acc->instrLock);
-                return XTASKS_ERROR;
-            }
-        }
-        acc->instrIdx = (acc->instrIdx + i) % _numInstrEvents;
-        __sync_lock_release(&acc->instrLock);
-
-        if (i < maxCount) {
-            // Ensure invalid type of first non-wrote event slot in the caller buffer
-            events[i].eventType = XTASKS_EVENT_TYPE_INVALID;
-        }
-    }
-
+    getAccEvents(acc, events, count, _numInstrEvents, _instrBuffHandle, accBuffer);
     return XTASKS_SUCCESS;
 }
 
