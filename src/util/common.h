@@ -28,7 +28,18 @@
 #include <libxdma.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h> //include index for old compilers
+//__USE_BSD is one of the defines needed to enable the usleep function, it seems
+//to not be enabled with old compilers
+#ifdef __USE_BSD
+#define BSD_USED
+#endif
+#define __USE_BSD
 #include <unistd.h>
+#ifndef BSD_USED
+#undef __USE_BSD
+#endif
+#undef BSD_USED
 
 #define PRINT_ERROR(_str_) fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
 #define MIN_WRAPPER_VER 5
