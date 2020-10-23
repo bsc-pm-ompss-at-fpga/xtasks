@@ -28,9 +28,9 @@
 #include <libxdma.h>
 #include <stdio.h>
 #include <string.h>
-#include <strings.h> //include index for old compilers
+#include <strings.h>  //include index for old compilers
 //__USE_BSD is one of the defines needed to enable the usleep function, it seems
-//to not be enabled with old compilers
+// to not be enabled with old compilers
 #ifdef __USE_BSD
 #define BSD_USED
 #endif
