@@ -68,7 +68,7 @@ typedef struct {
     cmd_exec_task_header_t *cmdHeader;  ///< Pointer to the cmd_exec_task_header_t struct
     cmd_exec_task_arg_t *cmdExecArgs;   ///< Pointer to the array of cmd_exec_task_arg_t structs
     uint8_t argsCnt;                    ///< Number of arguments in the task
-    str_acc_t *accel;                       ///< Accelerator where the task will run
+    str_acc_t *accel;                   ///< Accelerator where the task will run
     xdma_transfer_handle cmdExecTx;     ///< Execute command transfer handle
     xdma_transfer_handle syncTx;        ///< Task sync transfer handle
     xdma_buf_handle taskHandle;         ///< Task buffer handle (only used if: argsCnt > DEF_EXEC_TASK_ARGS_LEN)
@@ -76,10 +76,10 @@ typedef struct {
 
 static int _init_cnt = 0;                       ///< Counter of calls to init/fini
 static size_t _numAccs;                         ///< Number of accelerators in the system
-static str_acc_t *_accs;                            ///< Accelerators data
+static str_acc_t *_accs;                        ///< Accelerators data
 static uint8_t *_cmdExecTaskBuff;               ///< Buffer to send the HW tasks
 static xdma_buf_handle _cmdExecTaskBuffHandle;  ///< Handle of _cmdExecTaskBuff in libxdma
-static str_task_t *_tasks;                          ///< Array with internal task information
+static str_task_t *_tasks;                      ///< Array with internal task information
 
 static size_t _numInstrEvents;            ///< Number of instrumentation events for each accelerator buffer
 static xtasks_ins_event *_instrBuff;      ///< Buffer of instrumentation events

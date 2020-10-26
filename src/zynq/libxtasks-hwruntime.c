@@ -60,7 +60,7 @@ const char _backendName[] = "hwruntime";
 
 static int _init_cnt = 0;                 ///< Counter of calls to init/fini
 static size_t _numAccs;                   ///< Number of accelerators in the system
-static acc_t _accs[MAX_NUM_ACC];                      ///< Accelerators data
+static acc_t _accs[MAX_NUM_ACC];          ///< Accelerators data
 static uint8_t *_cmdExecTaskBuff;         ///< Buffer to send the HW tasks
 static task_t *_tasks;                    ///< Array with internal task information
 static int _cmdInQFd;                     ///< File descriptior of command IN queue
