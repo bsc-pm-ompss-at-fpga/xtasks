@@ -186,6 +186,19 @@ xtasks_stat xtasksFiniHWIns()
 
 xtasks_stat xtasksInit()
 {
+    fprintf(stderr,
+        "**********************************************************************************************************\n");
+    fprintf(stderr,
+        "**********************************************************************************************************\n");
+    fprintf(stderr,
+        "  [xTasks WARNING]: The stream backend has been deprecated and will be removed in the following releases\n");
+    fprintf(stderr, "                    You will need to switch to hwruntime backend\n");
+    fprintf(stderr, "                    For support contact: ompss-fpga-support@bsc.es\n");
+    fprintf(stderr,
+        "**********************************************************************************************************\n");
+    fprintf(stderr,
+        "**********************************************************************************************************\n");
+
     // Handle multiple inits
     int init_cnt = __sync_fetch_and_add(&_init_cnt, 1);
     if (init_cnt > 0) return XTASKS_SUCCESS;
