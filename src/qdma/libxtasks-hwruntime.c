@@ -18,6 +18,7 @@
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +47,7 @@
 #define PCI_DEV_BASE_PATH "/sys/bus/pci/devices/"
 #define PCI_DEV "0000:02:00.0"
 #define PCI_BAR_FILE "resource2"
+#define XTASKS_PCIDEV_ENV "XTASKS_PCI_DEV"
 #define PCI_MAX_PATH_LEN 64
 #define PCI_BAR_SIZE 0x40000  // map only 256KB even if the BAR is larger
 
@@ -80,6 +82,12 @@ const char _backendName[] = "hwruntime";
 #error Installed libxdma is not supported (use >= 3.0)
 #endif
 
+static const char *getPciDevName()
+{
+    const char *dev = getenv(XTASKS_PCIDEV_ENV);
+    return dev ? dev : PCI_DEV;
+}
+
 xtasks_stat xtasksInit()
 {
     xdma_status st;
@@ -96,10 +104,16 @@ xtasks_stat xtasksInit()
     }
     // Map PCI BAR into user space
     char pciBarPath[PCI_MAX_PATH_LEN];
-    snprintf(pciBarPath, PCI_MAX_PATH_LEN, "%s/%s/%s", PCI_DEV_BASE_PATH, PCI_DEV, PCI_BAR_FILE);
+    const char *pciDevname = getPciDevName();
+    snprintf(pciBarPath, PCI_MAX_PATH_LEN, "%s/%s/%s", PCI_DEV_BASE_PATH, pciDevname, PCI_BAR_FILE);
     _pciBarFd = open(pciBarPath, O_RDWR);
     if (_pciBarFd < 0) {
         perror("XTASKS: Could not open PCIe register window");
+        if (errno == ENOENT) {
+            fprintf(stderr, "Note: Set " XTASKS_PCIDEV_ENV
+                            " to the pci device ID, in the form of\
+                    xxxx:xx:xx.x see `lspci -Dd 10ee:`");
+        }
         goto init_open_bar_err;
     }
     _pciBar = mmap(NULL, PCI_BAR_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, _pciBarFd, 0);
