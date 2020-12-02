@@ -43,7 +43,7 @@
 
 #define PRINT_ERROR(_str_) fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
 #define MIN_WRAPPER_VER 5
-#define MAX_WRAPPER_VER 10
+#define MAX_WRAPPER_VER 11
 
 #define CMD_IN_QUEUE_LEN 1024    ///< Total number of entries in the cmd_in_queue
 #define CMD_IN_SUBQUEUE_LEN 64   ///< Number of entries in the sub-queue of cmd_in_queue for one accelerator
