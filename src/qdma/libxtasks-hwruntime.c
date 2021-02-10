@@ -69,7 +69,7 @@ static uint8_t *_cmdExecTaskBuff;
 static bit_feature_t _instrAvail;
 static size_t _numInstrEvents;
 static xtasks_ins_event *_instrBuffPhy;
-static xtasks_ins_event *_instrBuff;
+static xtasks_ins_event *_invalBuffer;
 static xdma_buf_handle _instrBuffHandle;
 static uint64_t *_instrCounter;
 
@@ -247,11 +247,11 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
     _instrBuffPhy = (xtasks_ins_event *)((uintptr_t)phyAddr);
 
     // Invalidate all entries
-    _instrBuff = (xtasks_ins_event *)malloc(insBufferSize);
+    _invalBuffer = (xtasks_ins_event *)malloc(insBufferSize);
     for (int i = 0; i < _numInstrEvents * _numAccs; ++i) {
-        _instrBuff[i].eventType = XTASKS_EVENT_TYPE_INVALID;
+        _invalBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
     }
-    s = xdmaMemcpy(_instrBuff, _instrBuffHandle, insBufferSize, 0, XDMA_TO_DEVICE);
+    s = xdmaMemcpy(_invalBuffer, _instrBuffHandle, insBufferSize, 0, XDMA_TO_DEVICE);
 
     if (s != XDMA_SUCCESS) {
         PRINT_ERROR("Could not initialize instrumentation buffer");
@@ -290,22 +290,22 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
 hwins_no_pcibar:
 hwins_cmd_err:
 hwins_buff_init_err:
-    free(_instrBuff);
+    free(_invalBuffer);
     xdmaFree(_instrBuffHandle);
     _numInstrEvents = 0;
     _instrBuffPhy = NULL;
-    _instrBuff = NULL;
+    _invalBuffer = NULL;
     return ret;
 }
 
 xtasks_stat xtasksFiniHWIns()
 {
-    if (_instrBuff == NULL || _numInstrEvents == 0) return XTASKS_SUCCESS;  // Instrumentation is not initialized
-    free(_instrBuff);
+    if (_invalBuffer == NULL || _numInstrEvents == 0) return XTASKS_SUCCESS;  // Instrumentation is not initialized
+    free(_invalBuffer);
     xdmaFree(_instrBuffHandle);
     _numInstrEvents = 0;
     _instrBuffPhy = NULL;
-    _instrBuff = NULL;
+    _invalBuffer = NULL;
     return XTASKS_SUCCESS;
 }
 
@@ -566,16 +566,15 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
 xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount)
 {
     acc_t *acc = (acc_t *)(accel);
-    xtasks_ins_event *accBuffer = _instrBuff + acc->info.id * _numInstrEvents;
     size_t count, validEvents;
 
     if (events == NULL || (acc - _accs) >= _numAccs || maxCount <= 0)
         return XTASKS_EINVAL;
-    else if (_instrBuff == NULL)
+    else if (_invalBuffer == NULL)
         return XTASKS_ENOAV;
 
     count = min(maxCount, _numInstrEvents - acc->instrIdx);
-    validEvents = getAccEvents(acc, events, count, _numInstrEvents, _instrBuffHandle, accBuffer);
+    validEvents = getAccEvents(acc, events, count, _numInstrEvents, _instrBuffHandle, _invalBuffer);
     if (validEvents < 0) {
         return XTASKS_ERROR;
     }

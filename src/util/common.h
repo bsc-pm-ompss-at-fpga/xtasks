@@ -486,12 +486,10 @@ xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, ui
     return XTASKS_SUCCESS;
 }
 
-// TODO: accBuffer sems just an scratchpad to invalidate event entries
 int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numInstrEvents,
-    xdma_buf_handle instrBuffHandle, xtasks_ins_event *accBuffer)
+    xdma_buf_handle instrBuffHandle, xtasks_ins_event *invalidEv)
 {
     size_t devInstroff;
-    accBuffer += acc->instrIdx;
     devInstroff = (acc->info.id * numInstrEvents + acc->instrIdx) * sizeof(xtasks_ins_event);
 
     if (__sync_lock_test_and_set(&acc->instrLock, 1)) {
@@ -507,15 +505,12 @@ int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numI
             __sync_lock_release(&acc->instrLock);
             return -1;
         }
-        i = 0;
-        // TODO: Preinitialize invalidation event buffers
-        while (i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID) {
-            // Invalidate all read entries in the accelerator buffer
-            accBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
-            i++;
-        }
+        //Count valid events
+        for (i=0; i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID; i++);
+
+        //Push event invalidation to the device
         if (i > 0) {
-            stat = xdmaMemcpy(accBuffer, instrBuffHandle, i * sizeof(xtasks_ins_event), devInstroff, XDMA_TO_DEVICE);
+            stat = xdmaMemcpy(invalidEv, instrBuffHandle, i * sizeof(xtasks_ins_event), devInstroff, XDMA_TO_DEVICE);
             if (stat != XDMA_SUCCESS) {
                 __sync_lock_release(&acc->instrLock);
                 return -1;
