@@ -505,10 +505,11 @@ int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numI
             __sync_lock_release(&acc->instrLock);
             return -1;
         }
-        //Count valid events
-        for (i=0; i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID; i++);
+        // Count valid events
+        for (i = 0; i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID; i++)
+            ;
 
-        //Push event invalidation to the device
+        // Push event invalidation to the device
         if (i > 0) {
             stat = xdmaMemcpy(invalidEv, instrBuffHandle, i * sizeof(xtasks_ins_event), devInstroff, XDMA_TO_DEVICE);
             if (stat != XDMA_SUCCESS) {
