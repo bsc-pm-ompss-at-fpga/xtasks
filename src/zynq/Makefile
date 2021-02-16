@@ -18,7 +18,7 @@ LIBXDMA_SUPPORT_ = $(if $(and $(wildcard $(LIBXDMA_INC_DIR)/libxdma.h ), \
 ifeq ($(LIBXDMA_SUPPORT_),YES)
 	CFLAGS_  += $(LIBXDMA_INCS_)
 	LDFLAGS_ += $(LIBXDMA_LIBS_)
-	TARGETS_ += libxtasks-stream.so libxtasks-hwruntime.so
+	TARGETS_ += libxtasks-hwruntime.so
 endif
 
 .PHONY: all
@@ -28,12 +28,6 @@ libxtasks-hwruntime.o: libxtasks-hwruntime.c
 	$(CC_) $(CFLAGS_) -c $^
 
 libxtasks-hwruntime.so: libxtasks-hwruntime.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
-
-libxtasks-stream.o: libxtasks-stream.c
-	$(CC_) $(CFLAGS_) -c $^
-
-libxtasks-stream.so: libxtasks-stream.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
 
 .PHONY: libxtasks_version.h
