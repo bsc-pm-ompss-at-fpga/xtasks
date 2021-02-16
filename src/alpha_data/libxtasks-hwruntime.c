@@ -638,6 +638,23 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
     size_t tries = 0;
     size_t const MAX_WAIT_TASKS_TRIES = 0xFFFFFFFF;
 
+    static unsigned char warn = 0;
+    if (warn == 0) {
+        warn = 1;
+        fprintf(stderr,
+            "*****************************************************************************************************\n");
+        fprintf(stderr,
+            "*****************************************************************************************************\n");
+        fprintf(stderr,
+            "  [xTasks WARNING]: "
+            "The xtasksWaitTask API has been deprecated and will be removed in the following releases\n");
+        fprintf(stderr, "        For support contact: ompss-fpga-support@bsc.es\n");
+        fprintf(stderr,
+            "*****************************************************************************************************\n");
+        fprintf(stderr,
+            "*****************************************************************************************************\n");
+    }
+
     // NOTE: This implementation loses some tasks if waitTask and tryGetFinishedTask are combined.
     //      Force waiting for the first submited task?
     while (task->cmdHeader->valid == QUEUE_VALID && tries++ < MAX_WAIT_TASKS_TRIES) {
