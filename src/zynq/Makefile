@@ -52,14 +52,10 @@ endif
 install: $(TARGETS_) ../libxtasks.h libxtasks_version.h
 	mkdir -p $(PREFIX)/lib
 	cp libxtasks-*.so $(PREFIX)/lib
+	ln -s $(PREFIX)/lib/libxtasks-hwruntime.so $(PREFIX)/lib/libxtasks.so
 	mkdir -p $(PREFIX)/include
 	cp ../libxtasks.h $(PREFIX)/include
 	cp libxtasks_version.h $(PREFIX)/include
-	@echo "========================= NOTE ========================="
-	@echo "== Remember to create the symlink $(PREFIX)/lib/libxtasks.so to your desired backend!"
-	@echo "== For example:"
-	@echo "==   pushd $(PREFIX)/lib; ln -s libxtasks-hwruntime.so libxtasks.so; popd;"
-	@echo "========================================================"
 
 .PHONY: clean
 clean:
