@@ -52,7 +52,7 @@ endif
 install: $(TARGETS_) ../libxtasks.h libxtasks_version.h
 	mkdir -p $(PREFIX)/lib
 	cp libxtasks-*.so $(PREFIX)/lib
-	ln -s $(PREFIX)/lib/libxtasks-hwruntime.so $(PREFIX)/lib/libxtasks.so
+	ln -s $(PREFIX)/lib/libxtasks-hwruntime.so $(PREFIX)/lib/libxtasks.so || true
 	mkdir -p $(PREFIX)/include
 	cp ../libxtasks.h $(PREFIX)/include
 	cp libxtasks_version.h $(PREFIX)/include
