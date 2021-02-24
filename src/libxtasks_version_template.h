@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------
-  (C) Copyright 2017-2020 Barcelona Supercomputing Center
+  (C) Copyright 2017-2021 Barcelona Supercomputing Center
                           Centro Nacional de Supercomputacion
 
   This file is part of OmpSs@FPGA toolchain.
@@ -22,7 +22,7 @@
 #define __LIBXTASKS_VERSION_H__
 
 #define LIBXTASKS_VERSION_MAJOR 9
-#define LIBXTASKS_VERSION_MINOR 20
+#define LIBXTASKS_VERSION_MINOR 21
 
 // This comment should be replaced by the commit build info after the "make install" step
 

@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------
-  (C) Copyright 2017-2020 Barcelona Supercomputing Center
+  (C) Copyright 2017-2021 Barcelona Supercomputing Center
                           Centro Nacional de Supercomputacion
 
   This file is part of OmpSs@FPGA toolchain.
@@ -637,6 +637,23 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
     acc_t *acc = task->accel;
     size_t tries = 0;
     size_t const MAX_WAIT_TASKS_TRIES = 0xFFFFFFFF;
+
+    static unsigned char warn = 0;
+    if (warn == 0) {
+        warn = 1;
+        fprintf(stderr,
+            "*****************************************************************************************************\n");
+        fprintf(stderr,
+            "*****************************************************************************************************\n");
+        fprintf(stderr,
+            "  [xTasks WARNING]: "
+            "The xtasksWaitTask API has been deprecated and will be removed in the following releases\n");
+        fprintf(stderr, "        For support contact: ompss-fpga-support@bsc.es\n");
+        fprintf(stderr,
+            "*****************************************************************************************************\n");
+        fprintf(stderr,
+            "*****************************************************************************************************\n");
+    }
 
     // NOTE: This implementation loses some tasks if waitTask and tryGetFinishedTask are combined.
     //      Force waiting for the first submited task?
