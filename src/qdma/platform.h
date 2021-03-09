@@ -27,11 +27,7 @@
 
 #include "util/common.h"
 
-#define BISTREAM_INFO_ADDRESS 0x00020000
-#define BISTREAM_INFO_MIN_REV 4
-#define BISTREAM_INFO_REV_IDX 0
-#define BISTREAM_INFO_FEATURES_IDX 3
-#define BISTREAM_INFO_WRAPPER_IDX 6
+#define BITINFO_ADDRESS 0x00020000
 
 /*!
  * \brief Get the path of the configuration file
@@ -90,7 +86,7 @@ bit_feature_t checkbitstreamFeature(const char *featureName, const uint32_t *bit
         PRINT_ERROR("Invalid value in XTASKS_FEATURES_CHECK, must be 0 or 1. Ignoring it");
     }
 
-    const int i = getBitinfoOffset(BISTREAM_INFO_FEATURES_IDX, bitinfo);
+    const int i = getBitinfoOffset(BITINFO_FEATURES_IDX, bitinfo);
     if (i >= BITINFO_MAX_WORDS) return BIT_FEATURE_UNKNOWN;
 
     const uint32_t features = bitinfo[i];
@@ -123,18 +119,31 @@ bit_compatibility_t checkbitstreamCompatibility(const uint32_t *bitinfo)
     }
 
     // The bitstream info BRAM version is old
-    const int bitinfoRev = bitinfo[getBitinfoOffset(BISTREAM_INFO_REV_IDX, bitinfo)];
-    if (bitinfoRev < BISTREAM_INFO_MIN_REV) {
+    const int bitinfoRev = bitinfo[getBitinfoOffset(BITINFO_REV_IDX, bitinfo)];
+    if (bitinfoRev < BITINFO_MIN_REV) {
         return BIT_NO_COMPAT;
     }
 
-    const int i = getBitinfoOffset(BISTREAM_INFO_WRAPPER_IDX, bitinfo);
+    const unsigned int i = getBitinfoOffset(BITINFO_WRAPPER_IDX, bitinfo);
     if (i >= BITINFO_MAX_WORDS) {
-        return BIT_FEATURE_UNKNOWN;
+        return BIT_COMPAT_UNKNOWN;
     }
 
     const uint32_t version = bitinfo[i];
     return MIN_WRAPPER_VER <= version && version <= MAX_WRAPPER_VER ? BIT_COMPAT : BIT_NO_COMPAT;
+}
+
+uint32_t getBitstreamNumAccs(const uint32_t *bitinfo)
+{
+    return bitinfo[getBitinfoOffset(BITINFO_NUMACCS_IDX, bitinfo)];
+}
+
+void getBitStreamHwrIOStruct(const uint32_t *bitinfo, uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORDS])
+{
+    int offset = getBitinfoOffset(BITINFO_HWRIO_IDX, bitinfo);
+    for (int i = 0; i < BITINFO_HWRIO_STRUCT_WORDS; ++i) {
+        hwruntimeIOStruct[i] = bitinfo[offset + i];
+    }
 }
 
 #endif /* __LIBXTASKS_PLATFORM_H__ */

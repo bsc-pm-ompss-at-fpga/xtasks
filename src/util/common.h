@@ -45,13 +45,6 @@
 #define MIN_WRAPPER_VER 5
 #define MAX_WRAPPER_VER 12
 
-#define CMD_IN_QUEUE_LEN 1024    ///< Total number of entries in the cmd_in_queue
-#define CMD_IN_SUBQUEUE_LEN 64   ///< Number of entries in the sub-queue of cmd_in_queue for one accelerator
-#define CMD_OUT_QUEUE_LEN 1024   ///< Total number of entries in the cmd_out_queue
-#define CMD_OUT_SUBQUEUE_LEN 64  ///< Number of entries in the sub-queue of cmd_out_queue for one accelerator
-#define SPWN_OUT_QUEUE_LEN 1024  ///< Total number of entries in the spawn_out queue (tasks created inside the FPGA)
-#define SPWN_IN_QUEUE_LEN 1024   ///< Total number of entries in the spawn_in queue
-#define MAX_NUM_ACC (CMD_IN_QUEUE_LEN / CMD_IN_SUBQUEUE_LEN)
 #define QUEUE_VALID 0x80
 #define QUEUE_RESERVED 0x40
 #define QUEUE_INVALID 0x00
@@ -75,7 +68,6 @@
     4  ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_PS 0x1F  ///< Processing System identifier for the destId field
 #define CMD_EXEC_TASK_ARGS_DESTID_TM 0x11  ///< Task manager identifier for the destId field
-#define CMD_FINI_EXEC_ARGS_ACCID_OFFSET 0  ///< Offset of Accelerator ID field in the commandArgs array
 
 // NOTE: The value NUM_RUN_TASKS may be changed to increase the number of concurrent tasks submited into the
 // accelerators
@@ -94,6 +86,23 @@
 #define STR_BUFFER_SIZE 128
 #define BITINFO_FIELD_SEP 0xFFFFFFFF
 #define BITSTREAM_INFO_ACC_LIST 2
+#define BITINFO_MIN_REV 7
+#define BITINFO_REV_IDX 0
+#define BITINFO_NUMACCS_IDX 1
+#define BITINFO_FEATURES_IDX 3
+#define BITINFO_WRAPPER_IDX 6
+#define BITINFO_HWRIO_IDX 9
+#define CMD_IN_BITINFO_ADDR_OFFSET 0
+#define CMD_IN_BITINFO_LEN_OFFSET 2
+#define CMD_OUT_BITINFO_ADDR_OFFSET 3
+#define CMD_OUT_BITINFO_LEN_OFFSET 5
+#define SPWN_IN_BITINFO_ADDR_OFFSET 6
+#define SPWN_IN_BITINFO_LEN_OFFSET 8
+#define SPWN_OUT_BITINFO_ADDR_OFFSET 9
+#define SPWN_OUT_BITINFO_LEN_OFFSET 11
+#define RST_BITINFO_ADDR_OFFSET 12
+#define HWCOUNTER_BITINFO_ADDR_OFFSET 14
+#define BITINFO_HWRIO_STRUCT_WORDS 16
 
 #define max(a, b) \
     ({ \
@@ -272,7 +281,7 @@ int getBitinfoOffset(const int idx, const uint32_t *bitinfo)
     } else if (idx == 2) {
         return 4;
     }
-    int i = 4;
+    unsigned int i = 4;
     for (int j = 2; j < idx && i < BITINFO_MAX_WORDS; ++j) {
         while (bitinfo[i] != BITINFO_FIELD_SEP && i < BITINFO_MAX_WORDS) ++i;
         ++i;
@@ -304,7 +313,7 @@ int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo)
     return size;
 }
 
-int initAccList(acc_t *accs, const char *accInfo)
+int initAccList(acc_t *accs, const char *accInfo, uint32_t cmdInSubqueueLen)
 {
     unsigned long long int t;
     int retScanf, ret, numRead;
@@ -326,7 +335,7 @@ int initAccList(acc_t *accs, const char *accInfo)
             accs[i].info.description = accs[i].descBuffer;
             strcpy(accs[i].descBuffer, buffer);
             accs[i].cmdInWrIdx = 0;
-            accs[i].cmdInAvSlots = CMD_IN_SUBQUEUE_LEN;
+            accs[i].cmdInAvSlots = cmdInSubqueueLen;
             accs[i].cmdInRdIdx = 0;
             ticketLockInit(&accs[i].cmdInLock);
             accs[i].cmdOutIdx = 0;
@@ -338,10 +347,8 @@ int initAccList(acc_t *accs, const char *accInfo)
     if (retScanf != EOF && retScanf != 0) {
         // Looks like the configuration file doesn't match the expected format
         fprintf(stderr, "WARN: xTasks configuration file may be not well formated.\n");
-    } else if (total > MAX_NUM_ACC) {
-        ret = -1;
-        PRINT_ERROR("The maximum number of accelerators supported by the library was reached");
     }
+
     return ret;
 }
 
@@ -415,11 +422,12 @@ xtasks_stat setExtendedModeTask(task_t *task)
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue)
+xtasks_stat submitCommand(
+    acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue, uint32_t cmdInSubqueueLen)
 {
     size_t idx;
     uint64_t cmdHeader;
-    size_t const offset = acc->info.id * CMD_IN_SUBQUEUE_LEN;
+    size_t const offset = acc->info.id * cmdInSubqueueLen;
     cmd_header_t *const cmdHeaderPtr = (cmd_header_t *const) & cmdHeader;
 
     // While there is not enough space in the queue, look for already read commands
@@ -439,7 +447,7 @@ xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, ui
                 }
 #endif /* XTASKS_DEBUG */
                 size_t const cmdNumWords = getCmdLength(cmdHeaderPtr);
-                acc->cmdInRdIdx = (idx + cmdNumWords) % CMD_IN_SUBQUEUE_LEN;
+                acc->cmdInRdIdx = (idx + cmdNumWords) % cmdInSubqueueLen;
                 acc->cmdInAvSlots += cmdNumWords;
             }
         } else {
@@ -454,7 +462,7 @@ xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, ui
     if (acc->cmdInAvSlots >= length) {
     SUB_CMD_UPDATE_IDX:
         idx = acc->cmdInWrIdx;
-        acc->cmdInWrIdx = (idx + length) % CMD_IN_SUBQUEUE_LEN;
+        acc->cmdInWrIdx = (idx + length) % cmdInSubqueueLen;
         acc->cmdInAvSlots -= length;
         cmdHeader = queue[offset + idx];
         cmdHeaderPtr->valid = QUEUE_RESERVED;
@@ -466,7 +474,7 @@ xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, ui
 
         // Do no write the header (1st word pointer by command ptr) until all payload is write
         // Check if 2 writes have to be done because there is not enough space at the end of subqueue
-        const size_t count = min(CMD_IN_SUBQUEUE_LEN - idx - 1, length - 1);
+        const size_t count = min(cmdInSubqueueLen - idx - 1, length - 1);
         memcpy(&queue[offset + idx + 1], command + 1, count * sizeof(uint64_t));
         if ((length - 1) > count) {
             memcpy(&queue[offset], command + 1 + count, (length - count) * sizeof(uint64_t));
@@ -523,7 +531,7 @@ int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numI
     }
 }
 
-void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx)
+void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx, uint32_t spawnOutQueueLen)
 {
     new_task_header_t *hwTaskHeader = (new_task_header_t *)&spawnQueue[idx];
     // Extract the information from the new buffer
@@ -537,20 +545,20 @@ void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx)
     (*task)->copies = (xtasks_newtask_copy *)((*task)->deps + (*task)->numDeps);
     (*task)->numCopies = hwTaskHeader->numCopies;
 
-    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->taskID field is the 2nd word
+    idx = (idx + 1) % spawnOutQueueLen;  // NOTE: new_task_header_t->taskID field is the 2nd word
     (*task)->taskId = spawnQueue[idx];
     spawnQueue[idx] = 0;  //< Cleanup the memory position
 
-    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->parentID field is the 3th word
-    (*task)->parentId = spawnQueue[idx];   //< NOTE: We don't know what is that ID (SW or HW)
-    spawnQueue[idx] = 0;                   //< Cleanup the memory position
+    idx = (idx + 1) % spawnOutQueueLen;   // NOTE: new_task_header_t->parentID field is the 3th word
+    (*task)->parentId = spawnQueue[idx];  //< NOTE: We don't know what is that ID (SW or HW)
+    spawnQueue[idx] = 0;                  //< Cleanup the memory position
 
-    idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;  // NOTE: new_task_header_t->typeInfo field is the 4th word
+    idx = (idx + 1) % spawnOutQueueLen;  // NOTE: new_task_header_t->typeInfo field is the 4th word
     (*task)->typeInfo = spawnQueue[idx];
     spawnQueue[idx] = 0;  //< Cleanup the memory position
 
     for (size_t i = 0; i < (*task)->numDeps; ++i) {
-        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
+        idx = (idx + 1) % spawnOutQueueLen;
         new_task_dep_t *hwTaskDep = (new_task_dep_t *)(&spawnQueue[idx]);
 
         // Parse the dependence information
@@ -567,12 +575,12 @@ void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx)
         uint64_t tmp;
 
         // NOTE: new_task_copy_t->address field is the 1st word
-        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
+        idx = (idx + 1) % spawnOutQueueLen;
         (*task)->copies[i].address = (void *)((uintptr_t)spawnQueue[idx]);
         spawnQueue[idx] = 0;
 
         // NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
-        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
+        idx = (idx + 1) % spawnOutQueueLen;
         tmp = spawnQueue[idx];
         uint8_t copyFlags = tmp >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
         (*task)->copies[i].flags = copyFlags;
@@ -581,7 +589,7 @@ void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx)
         spawnQueue[idx] = 0;
 
         // NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
-        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
+        idx = (idx + 1) % spawnOutQueueLen;
         tmp = spawnQueue[idx];
         uint32_t copyOffset = tmp >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
         (*task)->copies[i].offset = copyOffset;
@@ -592,7 +600,7 @@ void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx)
 
     for (size_t i = 0; i < (*task)->numArgs; ++i) {
         // Check that arg pointer is not out of bounds
-        idx = (idx + 1) % SPWN_OUT_QUEUE_LEN;
+        idx = (idx + 1) % spawnOutQueueLen;
         (*task)->args[i] = spawnQueue[idx];
 
         // Cleanup the memory position
