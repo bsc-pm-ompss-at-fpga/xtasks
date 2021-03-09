@@ -31,6 +31,8 @@
 #define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
 #define BIT_INFO_FEATURES_PATH "/dev/ompss_fpga/bit_info/features"
 #define BIT_INFO_WRAPPER_PATH "/dev/ompss_fpga/bit_info/wrapper_version"
+#define BIT_INFO_HWRIO_RAW_PATH "/dev/ompss_fpga/bit_info/hwruntime_io/raw"
+#define BIT_INFO_NUM_ACCS_PATH "/dev/ompss_fpga/bit_info/num_accs"
 
 /*!
  * \brief Get the path of the configuration file
@@ -144,8 +146,32 @@ bit_compatibility_t checkbitstreamCompatibility()
         } else {
             compatible = BIT_COMPAT;
         }
+        fclose(infoFile);
     }
     return compatible;
+}
+
+int getBitStreamHwrIOStruct(uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORDS])
+{
+    FILE *infoFile = fopen(BIT_INFO_HWRIO_RAW_PATH, "r");
+    if (infoFile != NULL) {
+        fread(hwruntimeIOStruct, BITINFO_HWRIO_STRUCT_WORDS * sizeof(uint32_t), 1, infoFile);
+        fclose(infoFile);
+        return 0;
+    }
+    return -1;
+}
+
+int getBitStreamNumAccs()
+{
+    FILE *infoFile = fopen(BIT_INFO_NUM_ACCS_PATH, "r");
+    if (infoFile != NULL) {
+        int numAccs;
+        fscanf(infoFile, "%d", &numAccs);
+        fclose(infoFile);
+        return numAccs;
+    }
+    return -1;
 }
 
 #endif /* __LIBXTASKS_PLATFORM_H__ */

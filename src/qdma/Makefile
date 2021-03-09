@@ -1,7 +1,7 @@
 CC = $(CROSS_COMPILE)gcc
 CC_ = $(CC)
 
-CFLAGS_ = $(CFLAGS) -I../ -fPIC -g
+CFLAGS_ = $(CFLAGS) -I../ -fPIC -g -Wall
 LDFLAGS_ = $(LDFLAGS)
 
 ## Check libxdma installation

@@ -35,15 +35,6 @@
 
 #define ACC_INFO_MAX_LEN 4096
 
-#define CMD_IN_QUEUE_ADDR 0x00004000
-#define CMD_OUT_QUEUE_ADDR 0x00008000
-#define HWRUNTIME_RESET_ADDRESS 0x0000C000
-#define SPAWN_OUT_QUEUE_ADDRESS 0x00014000
-#define SPAWN_IN_QUEUE_ADDRESS 0x000018000
-#define BRAM_INFO_ADDRESS 0x00020000
-
-#define HWCOUNTER_ADDRESS 0x00010000
-
 #define PCI_DEV_BASE_PATH "/sys/bus/pci/devices/"
 #define PCI_DEV "0000:02:00.0"
 #define PCI_BAR_FILE "resource2"
@@ -53,9 +44,9 @@
 
 static int _pciBarFd;
 static uint32_t *_pciBar;
-static acc_t _accs[MAX_NUM_ACC];
+static acc_t *_accs;
 static task_t *_tasks;
-static int _numAccs;
+static unsigned int _numAccs;
 
 static uint64_t *_cmdInQueue;
 static uint64_t *_cmdOutQueue;
@@ -65,6 +56,11 @@ static uint64_t *_spawnInQueue;
 static size_t _spawnInQueueIdx;
 static uint32_t *_hwruntimeRst;
 static uint8_t *_cmdExecTaskBuff;
+static uint32_t _cmdInSubqueueLen;
+static uint32_t _cmdOutSubqueueLen;
+static uint32_t _spawnInQueueLen;
+static uint32_t _spawnOutQueueLen;
+static uint64_t _hwcounter_address;
 
 static bit_feature_t _instrAvail;
 static size_t _numInstrEvents;
@@ -123,7 +119,11 @@ xtasks_stat xtasksInit()
         goto init_map_bar_err;
     }
     uint32_t *bitInfo = malloc(BITINFO_MAX_SIZE);
-    memcpy(bitInfo, _pciBar + BRAM_INFO_ADDRESS / sizeof(*_pciBar), BITINFO_MAX_SIZE);
+    if (bitInfo == NULL) {
+        PRINT_ERROR("Could not allocate memory for the bitinfo");
+        goto init_alloc_bitinfo_err;
+    }
+    memcpy(bitInfo, _pciBar + BITINFO_ADDRESS / sizeof(*_pciBar), BITINFO_MAX_SIZE);
 
     // Check if bitstream is compatible
     //
@@ -142,19 +142,40 @@ xtasks_stat xtasksInit()
         goto init_compat_err;
     }
 
+    uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORDS];
+    getBitStreamHwrIOStruct(bitInfo, hwruntimeIOStruct);
+    uint64_t cmdInAddr = hwruntimeIOStruct[CMD_IN_BITINFO_ADDR_OFFSET] |
+                         ((uint64_t)hwruntimeIOStruct[CMD_IN_BITINFO_ADDR_OFFSET + 1] << 32);
+    _cmdInSubqueueLen = hwruntimeIOStruct[CMD_IN_BITINFO_LEN_OFFSET];
+    uint64_t cmdOutAddr = hwruntimeIOStruct[CMD_OUT_BITINFO_ADDR_OFFSET] |
+                          ((uint64_t)hwruntimeIOStruct[CMD_OUT_BITINFO_ADDR_OFFSET + 1] << 32);
+    _cmdOutSubqueueLen = hwruntimeIOStruct[CMD_OUT_BITINFO_LEN_OFFSET];
+    uint64_t hwruntime_rst_address =
+        hwruntimeIOStruct[RST_BITINFO_ADDR_OFFSET] | ((uint64_t)hwruntimeIOStruct[RST_BITINFO_ADDR_OFFSET + 1] << 32);
+    _hwcounter_address = hwruntimeIOStruct[HWCOUNTER_BITINFO_ADDR_OFFSET] |
+                         ((uint64_t)hwruntimeIOStruct[HWCOUNTER_BITINFO_ADDR_OFFSET + 1] << 32);
+    uint64_t numAccs = getBitstreamNumAccs(bitInfo);
+    _accs = malloc(numAccs * sizeof(acc_t));
+    if (_accs == NULL) {
+        PRINT_ERROR("Could not allocate accelerators array");
+        goto init_alloc_acc_err;
+    }
     char *accInfo = malloc(ACC_INFO_MAX_LEN);
+    if (accInfo == NULL) {
+        PRINT_ERROR("Could not allocate memory for accInfo");
+        goto init_alloc_accinfo_err;
+    }
     getAccRawInfo(accInfo, bitInfo);
-    _numAccs = initAccList(_accs, accInfo);
+    _numAccs = initAccList(_accs, accInfo, _cmdInSubqueueLen);
 
     // Initialize command queues
-    _cmdInQueue = (uint64_t *)(_pciBar + (CMD_IN_QUEUE_ADDR / sizeof(*_pciBar)));
-    memset(_cmdInQueue, 0, CMD_IN_QUEUE_LEN * sizeof(*_cmdInQueue));
-    _cmdOutQueue = (uint64_t *)(_pciBar + (CMD_OUT_QUEUE_ADDR / sizeof(*_pciBar)));
-    memset(_cmdOutQueue, 0, CMD_OUT_QUEUE_LEN * sizeof(*_cmdOutQueue));
-    // TODO: Implement remote queues
+    _cmdInQueue = (uint64_t *)(_pciBar + (cmdInAddr / sizeof(*_pciBar)));
+    memset(_cmdInQueue, 0, _cmdInSubqueueLen * _numAccs * sizeof(*_cmdInQueue));
+    _cmdOutQueue = (uint64_t *)(_pciBar + (cmdOutAddr / sizeof(*_pciBar)));
+    memset(_cmdOutQueue, 0, _cmdOutSubqueueLen * _numAccs * sizeof(*_cmdOutQueue));
 
     // initialize reset
-    _hwruntimeRst = (uint32_t *)(_pciBar + (HWRUNTIME_RESET_ADDRESS / sizeof(*_pciBar)));
+    _hwruntimeRst = (uint32_t *)(_pciBar + (hwruntime_rst_address / sizeof(*_pciBar)));
     resetHWRuntime(_hwruntimeRst);
 
     // Allocate tasks array
@@ -183,16 +204,22 @@ xtasks_stat xtasksInit()
         _spawnOutQueue = NULL;
         _spawnInQueue = NULL;
     } else {
-        _spawnOutQueue = (uint64_t *)(_pciBar + SPAWN_OUT_QUEUE_ADDRESS / sizeof(*_pciBar));
-        _spawnInQueue = (uint64_t *)(_pciBar + SPAWN_IN_QUEUE_ADDRESS / sizeof(*_pciBar));
+        uint64_t spawnInAddr = hwruntimeIOStruct[SPWN_IN_BITINFO_ADDR_OFFSET] |
+                               ((uint64_t)hwruntimeIOStruct[SPWN_IN_BITINFO_ADDR_OFFSET + 1] << 32);
+        _spawnInQueueLen = hwruntimeIOStruct[SPWN_IN_BITINFO_LEN_OFFSET];
+        uint64_t spawnOutAddr = hwruntimeIOStruct[SPWN_OUT_BITINFO_ADDR_OFFSET] |
+                                ((uint64_t)hwruntimeIOStruct[SPWN_OUT_BITINFO_ADDR_OFFSET + 1] << 32);
+        _spawnOutQueueLen = hwruntimeIOStruct[SPWN_OUT_BITINFO_LEN_OFFSET];
+        _spawnOutQueue = (uint64_t *)(_pciBar + spawnOutAddr / sizeof(*_pciBar));
+        _spawnInQueue = (uint64_t *)(_pciBar + spawnInAddr / sizeof(*_pciBar));
         _spawnInQueueIdx = 0;
         _spawnOutQueueIdx = 0;
 
         // Invalidate entries
-        for (int i = 0; i < SPWN_OUT_QUEUE_LEN; i++) {
+        for (unsigned int i = 0; i < _spawnOutQueueLen; i++) {
             _spawnOutQueue[i] = 0;
         }
-        for (int i = 0; i < SPWN_IN_QUEUE_LEN; i++) {
+        for (unsigned int i = 0; i < _spawnInQueueLen; i++) {
             _spawnInQueue[i] = 0;
         }
     }
@@ -209,10 +236,14 @@ xtasks_stat xtasksInit()
 init_alloc_exec_tasks_err:
     free(_tasks);
 init_alloc_tasks_err:
-init_compat_err:
-    munmap(_pciBar, PCI_BAR_SIZE);
-    free(bitInfo);
     free(accInfo);
+init_alloc_accinfo_err:
+    free(_accs);
+init_alloc_acc_err:
+init_compat_err:
+    free(bitInfo);
+init_alloc_bitinfo_err:
+    munmap(_pciBar, PCI_BAR_SIZE);
 init_map_bar_err:
     close(_pciBarFd);
 init_open_bar_err:
@@ -248,7 +279,7 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
 
     // Invalidate all entries
     _invalBuffer = (xtasks_ins_event *)malloc(insBufferSize);
-    for (int i = 0; i < _numInstrEvents * _numAccs; ++i) {
+    for (unsigned int i = 0; i < _numInstrEvents * _numAccs; ++i) {
         _invalBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
     }
     s = xdmaMemcpy(_invalBuffer, _instrBuffHandle, insBufferSize, 0, XDMA_TO_DEVICE);
@@ -266,8 +297,8 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
     for (size_t i = 0; i < _numAccs; ++i) {
         cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents * i);
 
-        xtasks_stat ret =
-            submitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t), _cmdInQueue);
+        ret = submitCommand(
+            _accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t), _cmdInQueue, _cmdInSubqueueLen);
         if (ret != XTASKS_SUCCESS) {
             PRINT_ERROR("Error setting up instrumentation");
             goto hwins_cmd_err;
@@ -283,7 +314,8 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
         PRINT_ERROR("xtasks has not been initialized");
         goto hwins_no_pcibar;
     }
-    _instrCounter = (uint64_t *)(_pciBar + HWCOUNTER_ADDRESS / sizeof(*_pciBar));
+
+    _instrCounter = (uint64_t *)(_pciBar + _hwcounter_address / sizeof(*_pciBar));
 
     return XTASKS_SUCCESS;
 
@@ -302,6 +334,7 @@ xtasks_stat xtasksFiniHWIns()
 {
     if (_invalBuffer == NULL || _numInstrEvents == 0) return XTASKS_SUCCESS;  // Instrumentation is not initialized
     free(_invalBuffer);
+    free(_accs);
     xdmaFree(_instrBuffHandle);
     _numInstrEvents = 0;
     _instrBuffPhy = NULL;
@@ -461,7 +494,7 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     uint8_t const argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
     size_t const numHeaderBytes = task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t);
     size_t const numCmdWords = (numHeaderBytes + sizeof(cmd_exec_task_arg_t) * argsCnt) / sizeof(uint64_t);
-    return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue);
+    return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue, _cmdInSubqueueLen);
 }
 
 xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
@@ -516,7 +549,7 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id 
 xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id)
 {
     acc_t *acc = (acc_t *)accel;
-    uint64_t *const subqueue = _cmdOutQueue + acc->info.id * CMD_OUT_SUBQUEUE_LEN;
+    uint64_t *const subqueue = _cmdOutQueue + acc->info.id * _cmdOutSubqueueLen;
 
     if (handle == NULL || id == NULL || acc == NULL) {
         return XTASKS_EINVAL;
@@ -538,8 +571,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
             }
 
 #ifdef XTASKS_DEBUG
-            if (cmd->commandCode != CMD_FINI_EXEC_CODE ||
-                cmd->commandArgs[CMD_FINI_EXEC_ARGS_ACCID_OFFSET] != acc->info.id) {
+            if (cmd->commandCode != CMD_FINI_EXEC_CODE) {
                 PRINT_ERROR("Found unexpected data when executing xtasksTryGetFinishedTaskAccel");
                 __sync_lock_release(&acc->cmdOutLock);
                 return XTASKS_ERROR;
@@ -547,7 +579,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
 #endif /* XTASKS_DEBUG */
 
             // Read the command payload (task identifier)
-            size_t const dataIdx = (idx + 1) % CMD_OUT_SUBQUEUE_LEN;
+            size_t const dataIdx = (idx + 1) % _cmdOutSubqueueLen;
             uint64_t const taskID = subqueue[dataIdx];
             subqueue[dataIdx] = 0;  //< Clean the buffer slot
 
@@ -556,7 +588,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
             cmd->valid = QUEUE_INVALID;
 
             // Update the read index and release the lock
-            acc->cmdOutIdx = (idx + sizeof(cmd_out_exec_task_t) / sizeof(uint64_t)) % CMD_OUT_SUBQUEUE_LEN;
+            acc->cmdOutIdx = (idx + sizeof(cmd_out_exec_task_t) / sizeof(uint64_t)) % _cmdOutSubqueueLen;
             __sync_lock_release(&acc->cmdOutLock);
 
 #ifdef XTASKS_DEBUG
@@ -620,10 +652,10 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
             (sizeof(new_task_header_t) + sizeof(uint64_t) * hwTaskHeader->numArgs +
                 sizeof(new_task_dep_t) * hwTaskHeader->numDeps + sizeof(new_task_copy_t) * hwTaskHeader->numCopies) /
             sizeof(uint64_t);
-        next = (idx + taskSize) % SPWN_OUT_QUEUE_LEN;
+        next = (idx + taskSize) % _spawnOutQueueLen;
     } while (!__sync_bool_compare_and_swap(&_spawnOutQueueIdx, idx, next));
 
-    getNewTaskFromQ(task, _spawnOutQueue, idx);
+    getNewTaskFromQ(task, _spawnOutQueue, idx, _spawnOutQueueLen);
     return XTASKS_SUCCESS;
 }
 
@@ -638,15 +670,15 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id
         if (entryHeader->valid == QUEUE_VALID) {
             return XTASKS_ENOENTRY;
         }
-        next = (idx + sizeof(rem_fini_task_t) / sizeof(uint64_t)) % SPWN_IN_QUEUE_LEN;
+        next = (idx + sizeof(rem_fini_task_t) / sizeof(uint64_t)) % _spawnInQueueLen;
     } while (!__sync_bool_compare_and_swap(&_spawnInQueueIdx, idx, next));
 
     // NOTE: rem_fini_task_t->taskId is the 1st word
-    idx = (idx + 1) % SPWN_IN_QUEUE_LEN;
+    idx = (idx + 1) % _spawnInQueueLen;
     _spawnInQueue[idx] = id;
 
     // NOTE: rem_fini_task_t->parentId is the 2nd word
-    idx = (idx + 1) % SPWN_IN_QUEUE_LEN;
+    idx = (idx + 1) % _spawnInQueueLen;
     _spawnInQueue[idx] = parent;
 
     __sync_synchronize();
