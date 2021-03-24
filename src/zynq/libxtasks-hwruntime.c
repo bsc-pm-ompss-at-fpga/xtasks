@@ -152,8 +152,12 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
 
     // Invalidate all entries
     for (size_t i = 0; i < _numInstrEvents * _numAccs; ++i) {
-        _invalBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
         _instrBuff[i].eventType = XTASKS_EVENT_TYPE_INVALID;
+    }
+
+    // Initialize invalidation buffer
+    for (size_t i = 0; i < _numInstrEvents; ++i) {
+        _invalBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
     }
 
     // Send the instrumentation buffer to each accelerator
