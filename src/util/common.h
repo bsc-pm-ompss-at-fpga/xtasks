@@ -66,8 +66,7 @@
 #define CMD_EXEC_TASK_ARGS_COMP_OFFSET 3     ///< Offset of Compute flag in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_OFFSET \
     4  ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
-#define CMD_EXEC_TASK_ARGS_DESTID_PS 0x1F  ///< Processing System identifier for the destId field
-#define CMD_EXEC_TASK_ARGS_DESTID_TM 0x11  ///< Task manager identifier for the destId field
+#define CMD_EXEC_TASK_ARGS_DESTID_HWR 0x0  ///< Hardware runtime identifier for the destId field
 
 // NOTE: The value NUM_RUN_TASKS may be changed to increase the number of concurrent tasks submited into the
 // accelerators
@@ -383,7 +382,7 @@ void initializeTask(
     cmdHeader->header.commandCode = CMD_EXEC_TASK_CODE;
     cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = 0;
     cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_COMP_OFFSET] = compute;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_TM;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_HWR;
     cmdHeader->parentID = (uintptr_t)(parent);
     cmdHeader->taskID = (uintptr_t)(task);
 }
@@ -399,7 +398,7 @@ void initializePeriodicTask(task_t *task, const xtasks_task_id id, acc_t *accel,
     cmdHeader->header.commandCode = CMD_PERI_TASK_CODE;
     cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET] = 0;
     cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_COMP_OFFSET] = compute;
-    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_TM;
+    cmdHeader->header.commandArgs[CMD_EXEC_TASK_ARGS_DESTID_OFFSET] = CMD_EXEC_TASK_ARGS_DESTID_HWR;
     cmdHeader->parentID = (uintptr_t)(parent);
     cmdHeader->taskID = (uintptr_t)(task);
     cmdHeader->numReps = numReps;
