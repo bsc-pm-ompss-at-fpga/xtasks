@@ -126,18 +126,8 @@ xtasks_stat xtasksInit()
     memcpy(bitInfo, _pciBar + BITINFO_ADDRESS / sizeof(*_pciBar), BITINFO_MAX_SIZE);
 
     // Check if bitstream is compatible
-    //
     bit_compatibility_t compat = checkbitstreamCompatibility(bitInfo);
-    if (compat == BIT_NO_COMPAT || compat == BIT_COMPAT_UNKNOWN) {
-        printErrorBitstreamCompatibility();
-        ret = XTASKS_ENOAV;
-        goto init_compat_err;
-    }
-
-    // Check if bitstream has the hwruntime feature
-    bit_feature_t feature = checkbitstreamFeature("hwruntime", bitInfo);
-    if (feature == BIT_FEATURE_NO_AVAIL) {
-        PRINT_ERROR("HW runtime not available in the loaded FPGA bitstream");
+    if (compat == BIT_NO_COMPAT) {
         ret = XTASKS_ENOAV;
         goto init_compat_err;
     }
@@ -165,7 +155,10 @@ xtasks_stat xtasksInit()
         PRINT_ERROR("Could not allocate memory for accInfo");
         goto init_alloc_accinfo_err;
     }
-    getAccRawInfo(accInfo, bitInfo);
+    if (getAccRawInfo(accInfo, bitInfo) <= 0) {
+        PRINT_ERROR("Could not get accelerator info");
+        goto init_get_acc_info_err;
+    }
     _numAccs = initAccList(_accs, accInfo, _cmdInSubqueueLen);
 
     // Initialize command queues
@@ -199,7 +192,7 @@ xtasks_stat xtasksInit()
         _tasks[idx].periTask = 0;
     }
 
-    feature = checkbitstreamFeature("hwruntime_ext", bitInfo);
+    bit_feature_t feature = checkbitstreamFeature("hwruntime_ext", bitInfo);
     if (feature == BIT_FEATURE_NO_AVAIL) {
         _spawnOutQueue = NULL;
         _spawnInQueue = NULL;
@@ -236,6 +229,7 @@ xtasks_stat xtasksInit()
 init_alloc_exec_tasks_err:
     free(_tasks);
 init_alloc_tasks_err:
+init_get_acc_info_err:
     free(accInfo);
 init_alloc_accinfo_err:
     free(_accs);

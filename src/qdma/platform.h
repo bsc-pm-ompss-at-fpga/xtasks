@@ -30,25 +30,6 @@
 #define BITINFO_ADDRESS 0x00020000
 
 /*!
- * \brief Get the path of the configuration file
- *        The function allocates a buffer that caller must delete using free()
- * \return  Configuration file path, NULL on error
- */
-char *getConfigFilePath()
-{
-    char *buffer = NULL;
-
-    // 1st -> environment var
-    const char *accMapPath = getenv("XTASKS_CONFIG_FILE");
-    if (accMapPath != NULL) {
-        buffer = malloc(sizeof(char) * strlen(accMapPath));
-        strcpy(buffer, accMapPath);
-    }
-
-    return buffer;
-}
-
-/*!
  * \brief Prints an error message in STDERR about configuration file not found
  */
 void printErrorMsgCfgFile()
@@ -58,15 +39,64 @@ void printErrorMsgCfgFile()
     fprintf(stderr, " XTASKS_CONFIG_FILE environment variable.\n");
 }
 
-/*!
- * \brief Prints an error message in STDERR about bitstream compatibility
- */
-void printErrorBitstreamCompatibility()
+int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo)
 {
-    fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
-    fprintf(stderr, "       The compatible versions are: [%d,%d]\n", MIN_WRAPPER_VER, MAX_WRAPPER_VER);
-    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting");
-    fprintf(stderr, " XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
+    char *filePath;
+
+    int size;
+    filePath = getenv("XTASKS_CONFIG_FILE");
+    if (filePath) {  // User config takes precedence over bitinfo data
+        FILE *accFile = fopen(filePath, "r");
+        if (!accFile) {
+            printErrorMsgCfgFile();
+            return -1;
+        }
+        size = fread(accInfo, sizeof(*rawBitInfo), BITINFO_MAX_SIZE, accFile);
+        fclose(accFile);
+    } else {  // Read from bit info
+        // Apply the offset directly as its returned in 32-bit words
+        rawBitInfo += BITINFO_XTASKS_IDX;
+        // Find out the size of the acc info field in
+        int idx;
+        for (idx = 0; rawBitInfo[idx] != BITINFO_FIELD_SEP; idx++)
+            ;
+        size = idx * sizeof(*rawBitInfo);
+        int accInfoOffset = 20;  // 20 header characters
+        int nTypes = idx / 11;   // 11 32-bit words per task type
+        sprintf(accInfo, "type\t#ins\tname\tfreq\n");
+
+        for (int i = 0; i < nTypes; ++i) {
+            uint32_t firstWord = rawBitInfo[0];
+            uint32_t secondWord = rawBitInfo[1];
+            uint32_t thirdWord = rawBitInfo[2];
+            rawBitInfo += 3;
+            // nInstances = firstWord[15:0]
+            int nInstances = firstWord & 0xFFFF;
+            // taskType = {secondWord[23:0], firstWord[31:16]}
+            uint64_t taskType = (firstWord >> 16) | (((uint64_t)secondWord & 0xFFFFFF) << 16);
+            // accFreq = {thirdWord[15:0], secondWord[31:24]}
+            int accFreq = (secondWord >> 24) | ((thirdWord & 0xFFFF) << 8);
+            sprintf(accInfo + accInfoOffset, "%019lu\t%03d\t", taskType, nInstances);
+            accInfoOffset += 24;
+            int charOffset = 0;
+            uint32_t curWord = *rawBitInfo;
+            ++rawBitInfo;
+            for (int j = 0; j < 31; ++j) {
+                accInfo[accInfoOffset++] = (curWord >> charOffset * 8) & 0xFF;
+                if ((j + 1) % sizeof(*rawBitInfo) == 0) {
+                    charOffset = 0;
+                    curWord = *rawBitInfo;
+                    ++rawBitInfo;
+                } else {
+                    charOffset++;
+                }
+            }
+            // bitinfo freq in KHz, xtasks_config expects MHz
+            sprintf(accInfo + accInfoOffset, "\t%03d\n", accFreq / 1000);
+            accInfoOffset += 5;
+        }
+    }
+    return size;
 }
 
 /*!
@@ -86,15 +116,10 @@ bit_feature_t checkbitstreamFeature(const char *featureName, const uint32_t *bit
         PRINT_ERROR("Invalid value in XTASKS_FEATURES_CHECK, must be 0 or 1. Ignoring it");
     }
 
-    const int i = getBitinfoOffset(BITINFO_FEATURES_IDX, bitinfo);
-    if (i >= BITINFO_MAX_WORDS) return BIT_FEATURE_UNKNOWN;
-
-    const uint32_t features = bitinfo[i];
+    const uint32_t features = bitinfo[BITINFO_FEATURES_IDX];
     bit_feature_t available = BIT_FEATURE_UNKNOWN;
     if (strcmp(featureName, "hwcounter") == 0) {
         available = features & 0x1 ? BIT_FEATURE_AVAIL : BIT_FEATURE_NO_AVAIL;
-    } else if (strcmp(featureName, "hwruntime") == 0) {
-        available = (features >> 6) & 0x1 ? BIT_FEATURE_AVAIL : BIT_FEATURE_NO_AVAIL;
     } else if (strcmp(featureName, "hwruntime_ext") == 0) {
         available = (features >> 7) & 0x1 ? BIT_FEATURE_AVAIL : BIT_FEATURE_NO_AVAIL;
     }
@@ -107,7 +132,6 @@ bit_feature_t checkbitstreamFeature(const char *featureName, const uint32_t *bit
  * \return  BIT_NO_COMPAT if the bitstream is not compatible
  *          BIT_COMPAT if the bitstream is compatible
  *          BIT_COMPAT_SKIP if the check was skipped due to user requirements
- *          BIT_COMPAT_UNKNOWN if the compatibility cannot be determined or failed
  */
 bit_compatibility_t checkbitstreamCompatibility(const uint32_t *bitinfo)
 {
@@ -118,31 +142,28 @@ bit_compatibility_t checkbitstreamCompatibility(const uint32_t *bitinfo)
         PRINT_ERROR("Invalid value in XTASKS_COMPATIBILITY_CHECK, must be 0 or 1. Ignoring it");
     }
 
+    const unsigned int bitinfoRev = bitinfo[BITINFO_REV_IDX];
     // The bitstream info BRAM version is old
-    const int bitinfoRev = bitinfo[getBitinfoOffset(BITINFO_REV_IDX, bitinfo)];
-    if (bitinfoRev < BITINFO_MIN_REV) {
+    if (bitinfoRev != BITINFO_MIN_REV) {
+        printErrorBitstreamVersionCompatibility(bitinfoRev);
         return BIT_NO_COMPAT;
     }
 
-    const unsigned int i = getBitinfoOffset(BITINFO_WRAPPER_IDX, bitinfo);
-    if (i >= BITINFO_MAX_WORDS) {
-        return BIT_COMPAT_UNKNOWN;
+    const unsigned int version = bitinfo[BITINFO_WRAPPER_IDX];
+    if (version < MIN_WRAPPER_VER || version > MAX_WRAPPER_VER) {
+        printErrorBitstreamWrapperCompatibility(version);
+        return BIT_NO_COMPAT;
     }
 
-    const uint32_t version = bitinfo[i];
-    return MIN_WRAPPER_VER <= version && version <= MAX_WRAPPER_VER ? BIT_COMPAT : BIT_NO_COMPAT;
+    return BIT_COMPAT;
 }
 
-uint32_t getBitstreamNumAccs(const uint32_t *bitinfo)
-{
-    return bitinfo[getBitinfoOffset(BITINFO_NUMACCS_IDX, bitinfo)];
-}
+uint32_t getBitstreamNumAccs(const uint32_t *bitinfo) { return bitinfo[BITINFO_NUMACCS_IDX]; }
 
 void getBitStreamHwrIOStruct(const uint32_t *bitinfo, uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORDS])
 {
-    int offset = getBitinfoOffset(BITINFO_HWRIO_IDX, bitinfo);
     for (int i = 0; i < BITINFO_HWRIO_STRUCT_WORDS; ++i) {
-        hwruntimeIOStruct[i] = bitinfo[offset + i];
+        hwruntimeIOStruct[i] = bitinfo[BITINFO_HWRIO_IDX + i];
     }
 }
 
