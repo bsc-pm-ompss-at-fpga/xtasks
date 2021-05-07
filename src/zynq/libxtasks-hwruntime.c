@@ -39,8 +39,8 @@
 
 #define CMD_IN_QUEUE_PATH "/dev/ompss_fpga/hwruntime/cmd_in_queue"
 #define CMD_OUT_QUEUE_PATH "/dev/ompss_fpga/hwruntime/cmd_out_queue"
-#define NEW_QUEUE_PATH "/dev/ompss_fpga/hwruntime/spawn_out_queue"
-#define REMFINI_QUEUE_PATH "/dev/ompss_fpga/hwruntime/spawn_in_queue"
+#define SPAWN_OUT_QUEUE_PATH "/dev/ompss_fpga/hwruntime/spawn_out_queue"
+#define SPAWN_IN_QUEUE_PATH "/dev/ompss_fpga/hwruntime/spawn_in_queue"
 #define HWRUNTIME_RST_PATH "/dev/ompss_fpga/hwruntime/ctrl"
 
 //! Check that libxdma version is compatible
@@ -222,16 +222,9 @@ xtasks_stat xtasksInit()
     xdma_status s;
 
     // Check if bitstream is compatible
-    if (checkbitstreamCompatibility() == BIT_NO_COMPAT) {
-        printErrorBitstreamCompatibility();
+    bit_compatibility_t compat = checkbitstreamCompatibility();
+    if (compat == BIT_NO_COMPAT || compat == BIT_COMPAT_UNKNOWN) {
         ret = XTASKS_ERROR;
-        goto INIT_ERR_0;
-    }
-
-    // Check if bitstream has the hwruntime feature
-    if (checkbitstreamFeature("hwruntime") == BIT_FEATURE_NO_AVAIL) {
-        PRINT_ERROR("HW runtime not available in the loaded FPGA bitstream");
-        ret = XTASKS_ENOAV;
         goto INIT_ERR_0;
     }
 
@@ -269,7 +262,7 @@ xtasks_stat xtasksInit()
     free(buffer);
     if (accMapFile == NULL) {
         ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot open FPGA configuration file");
+        printErrorMsgCfgFile();
         goto INIT_ERR_2;
     }
 
@@ -325,14 +318,14 @@ xtasks_stat xtasksInit()
     } else {
         _spawnInQueueLen = hwruntimeIOStruct[SPWN_IN_BITINFO_LEN_OFFSET];
         _spawnOutQueueLen = hwruntimeIOStruct[SPWN_OUT_BITINFO_LEN_OFFSET];
-        _spawnOutQFd = open(NEW_QUEUE_PATH, O_RDWR, (mode_t)0600);
-        if (_spawnOutQFd < 0 && errno != ENOENT) {
+        _spawnOutQFd = open(SPAWN_OUT_QUEUE_PATH, O_RDWR, (mode_t)0600);
+        if (_spawnOutQFd < 0) {
             ret = XTASKS_EFILE;
             PRINT_ERROR("Cannot open hwruntime/spawn_out_queue device file");
             goto INIT_ERR_OPEN_SPWN_OUT;
         }
-        _spawnInQFd = open(REMFINI_QUEUE_PATH, O_RDWR, (mode_t)0600);
-        if (_spawnInQFd < 0 && errno != ENOENT) {
+        _spawnInQFd = open(SPAWN_IN_QUEUE_PATH, O_RDWR, (mode_t)0600);
+        if (_spawnInQFd < 0) {
             ret = XTASKS_EFILE;
             PRINT_ERROR("Cannot open hwruntime/spawn_in_queue device file");
             goto INIT_ERR_OPEN_SPWN_IN;

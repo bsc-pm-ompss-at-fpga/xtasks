@@ -84,13 +84,13 @@
 #define BITINFO_MAX_WORDS (BITINFO_MAX_SIZE / sizeof(uint32_t))
 #define STR_BUFFER_SIZE 128
 #define BITINFO_FIELD_SEP 0xFFFFFFFF
-#define BITSTREAM_INFO_ACC_LIST 2
-#define BITINFO_MIN_REV 7
+#define BITINFO_MIN_REV 8
 #define BITINFO_REV_IDX 0
 #define BITINFO_NUMACCS_IDX 1
-#define BITINFO_FEATURES_IDX 3
-#define BITINFO_WRAPPER_IDX 6
-#define BITINFO_HWRIO_IDX 9
+#define BITINFO_FEATURES_IDX 2
+#define BITINFO_WRAPPER_IDX 4
+#define BITINFO_HWRIO_IDX 6
+#define BITINFO_XTASKS_IDX 22
 #define CMD_IN_BITINFO_ADDR_OFFSET 0
 #define CMD_IN_BITINFO_LEN_OFFSET 2
 #define CMD_OUT_BITINFO_ADDR_OFFSET 3
@@ -269,47 +269,40 @@ xtasks_stat toXtasksStat(xdma_status const status)
 }
 
 /*!
+ * \brief Prints an error message in STDERR about bitstream compatibility
+ */
+void printErrorBitstreamVersionCompatibility(unsigned int bitinfoVersion)
+{
+    fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
+    fprintf(stderr, "       The compatible bitinfo version is: %d\n", BITINFO_MIN_REV);
+    fprintf(stderr, "       Loaded FPGA bitstream bitinfo version is: %u\n", bitinfoVersion);
+    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting");
+    fprintf(stderr, " XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
+}
+
+/*!
+ * \brief Prints an error message in STDERR about bitstream compatibility
+ */
+void printErrorBitstreamWrapperCompatibility(unsigned int wrapperVersion)
+{
+    fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
+    fprintf(stderr, "       The compatible wrapper versions are: [%d, %d]\n", MIN_WRAPPER_VER, MAX_WRAPPER_VER);
+    fprintf(stderr, "       Loaded FPGA bitstream wrapper version is: %u\n", wrapperVersion);
+    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting");
+    fprintf(stderr, " XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
+}
+
+/*!
  * \brief Returns the offset in words where the "idx" information of bitinfo starts
  */
 int getBitinfoOffset(const int idx, const uint32_t *bitinfo)
 {
-    if (idx == 0) {
-        return 0;
-    } else if (idx == 1) {
-        return 2;
-    } else if (idx == 2) {
-        return 4;
-    }
-    unsigned int i = 4;
-    for (int j = 2; j < idx && i < BITINFO_MAX_WORDS; ++j) {
+    unsigned int i = 22;
+    for (int j = 22; j < idx && i < BITINFO_MAX_WORDS; ++j) {
         while (bitinfo[i] != BITINFO_FIELD_SEP && i < BITINFO_MAX_WORDS) ++i;
         ++i;
     }
     return i;
-}
-
-int getAccRawInfo(char *accInfo, const uint32_t *rawBitInfo)
-{
-    char *filePath;
-
-    int size;
-    filePath = getenv("XTASKS_CONFIG_FILE");
-    if (filePath) {  // User config takes precedence over bitinfo data
-        FILE *accFile = fopen(filePath, "r");
-        size = fread(accInfo, 1, BITINFO_MAX_SIZE * sizeof(*rawBitInfo), accFile);
-        free(filePath);
-    } else {  // Read from bit info
-        // Apply the offset directly as its returned in 32-bit words
-        rawBitInfo += getBitinfoOffset(BITSTREAM_INFO_ACC_LIST, rawBitInfo);
-        // Find out the size of the acc info field in
-        int idx;
-        for (idx = 0; rawBitInfo[idx] != BITINFO_FIELD_SEP; idx++)
-            ;
-        size = idx * sizeof(*rawBitInfo);
-        memcpy(accInfo, rawBitInfo, size);
-        accInfo[size] = '\0';  // terminate the string
-    }
-    return size;
 }
 
 int initAccList(acc_t *accs, const char *accInfo, uint32_t cmdInSubqueueLen)

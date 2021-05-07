@@ -71,15 +71,14 @@ void printErrorMsgCfgFile()
 }
 
 /*!
- * \brief Prints an error message in STDERR about bitstream compatibility
+ * \brief Prints an error message in STDERR about configuration file not found
  */
-void printErrorBitstreamCompatibility()
+void printErrorWrapperVersionFile()
 {
-    fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
-    fprintf(stderr, "       Check the wrapper version of loaded bitstream at '%s'.\n", BIT_INFO_WRAPPER_PATH);
-    fprintf(stderr, "       The compatible versions are: [%d,%d]\n", MIN_WRAPPER_VER, MAX_WRAPPER_VER);
-    fprintf(stderr, "       Alternatively, you may disable the compatibility check setting");
-    fprintf(stderr, " XTASKS_COMPATIBILITY_CHECK environment variable to 0.\n");
+    fprintf(stderr, "ERROR: xTasks Library cannot access the fpga wrapper version device file.\n");
+    fprintf(stderr, "       Ensure that file '%s' exists and it has read permissions.\n", BIT_INFO_WRAPPER_PATH);
+    fprintf(stderr, "       Alternatively, you may force the configuration file path with");
+    fprintf(stderr, " XTASKS_CONFIG_FILE environment variable.\n");
 }
 
 /*!
@@ -137,16 +136,17 @@ bit_compatibility_t checkbitstreamCompatibility()
     bit_compatibility_t compatible = BIT_COMPAT_UNKNOWN;
     FILE *infoFile = fopen(BIT_INFO_WRAPPER_PATH, "r");
     if (infoFile != NULL) {
-        int wrapperVersion;
-        if (fscanf(infoFile, "%d", &wrapperVersion) != 1 || wrapperVersion < MIN_WRAPPER_VER ||
-            wrapperVersion > MAX_WRAPPER_VER) {
-            // NOTE: If read value is not an integer, probably it is "?" which means that the
-            //      bitstream is too old
+        unsigned int wrapperVersion;
+        fscanf(infoFile, "%u", &wrapperVersion);
+        if (wrapperVersion < MIN_WRAPPER_VER || wrapperVersion > MAX_WRAPPER_VER) {
+            printErrorBitstreamWrapperCompatibility(wrapperVersion);
             compatible = BIT_NO_COMPAT;
         } else {
             compatible = BIT_COMPAT;
         }
         fclose(infoFile);
+    } else {
+        printErrorWrapperVersionFile();
     }
     return compatible;
 }
