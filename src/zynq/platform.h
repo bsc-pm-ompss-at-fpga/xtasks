@@ -107,7 +107,7 @@ bit_feature_t checkbitstreamFeature(const char *featureName)
 
     if (infoFile != NULL) {
         nRead = fread(&buffer, sizeof(char), 1, infoFile);
-        if (nRead != sizeof(char)) {
+        if (nRead != 1) {
             fprintf(stderr, "ERROR: xTasks could not read feature %s\n", featureName);
         }
         fclose(infoFile);
@@ -158,8 +158,8 @@ int getBitStreamHwrIOStruct(uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORD
     int success = -1;
 
     if (infoFile != NULL) {
-        nRead = fread(hwruntimeIOStruct, BITINFO_HWRIO_STRUCT_WORDS * sizeof(uint32_t), 1, infoFile);
-        success = nRead == (BITINFO_HWRIO_STRUCT_WORDS * sizeof(uint32_t)) ? 0 : -1;
+        nRead = fread(hwruntimeIOStruct, sizeof(uint32_t), BITINFO_HWRIO_STRUCT_WORDS, infoFile);
+        success = nRead == BITINFO_HWRIO_STRUCT_WORDS ? 0 : -1;
         fclose(infoFile);
     }
     return success;
