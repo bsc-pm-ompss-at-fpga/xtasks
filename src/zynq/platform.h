@@ -153,20 +153,23 @@ bit_compatibility_t checkbitstreamCompatibility()
 
 int getBitStreamHwrIOStruct(uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORDS])
 {
+    size_t nRead;
     FILE *infoFile = fopen(BIT_INFO_HWRIO_RAW_PATH, "r");
+    int success = -1;
+
     if (infoFile != NULL) {
-        fread(hwruntimeIOStruct, BITINFO_HWRIO_STRUCT_WORDS * sizeof(uint32_t), 1, infoFile);
+        nRead = fread(hwruntimeIOStruct, BITINFO_HWRIO_STRUCT_WORDS * sizeof(uint32_t), 1, infoFile);
+        success = nRead == (BITINFO_HWRIO_STRUCT_WORDS * sizeof(uint32_t)) ? 0 : -1;
         fclose(infoFile);
-        return 0;
     }
-    return -1;
+    return success;
 }
 
 int getBitStreamNumAccs()
 {
     FILE *infoFile = fopen(BIT_INFO_NUM_ACCS_PATH, "r");
     if (infoFile != NULL) {
-        int numAccs;
+        int numAccs = -1;
         fscanf(infoFile, "%d", &numAccs);
         fclose(infoFile);
         return numAccs;
