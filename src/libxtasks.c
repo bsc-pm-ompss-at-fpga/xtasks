@@ -63,8 +63,6 @@ xtasks_stat xtasksAddArgs(
 
 xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksWaitTask(xtasks_task_handle const handle) { return XTASKS_ENOSYS; }
-
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id) { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id)

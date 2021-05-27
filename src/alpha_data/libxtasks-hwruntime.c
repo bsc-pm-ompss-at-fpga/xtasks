@@ -631,40 +631,6 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     // return xtasksSubmitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords);
 }
 
-xtasks_stat xtasksWaitTask(xtasks_task_handle const handle)
-{
-    task_t *task = (task_t *)(handle);
-    acc_t *acc = task->accel;
-    size_t tries = 0;
-    size_t const MAX_WAIT_TASKS_TRIES = 0xFFFFFFFF;
-
-    static unsigned char warn = 0;
-    if (warn == 0) {
-        warn = 1;
-        fprintf(stderr,
-            "*****************************************************************************************************\n");
-        fprintf(stderr,
-            "*****************************************************************************************************\n");
-        fprintf(stderr,
-            "  [xTasks WARNING]: "
-            "The xtasksWaitTask API has been deprecated and will be removed in the following releases\n");
-        fprintf(stderr, "        For support contact: ompss-fpga-support@bsc.es\n");
-        fprintf(stderr,
-            "*****************************************************************************************************\n");
-        fprintf(stderr,
-            "*****************************************************************************************************\n");
-    }
-
-    // NOTE: This implementation loses some tasks if waitTask and tryGetFinishedTask are combined.
-    //      Force waiting for the first submited task?
-    while (task->cmdHeader->valid == QUEUE_VALID && tries++ < MAX_WAIT_TASKS_TRIES) {
-        xtasks_task_id id;
-        xtasks_task_handle h;
-        xtasksTryGetFinishedTaskAccel(acc, &h, &id);
-    }
-    return tries > MAX_WAIT_TASKS_TRIES ? XTASKS_PENDING : XTASKS_SUCCESS;
-}
-
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id)
 {
     if (handle == NULL || id == NULL) {
