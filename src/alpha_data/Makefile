@@ -1,4 +1,4 @@
-CC    = gcc
+CC = ${CROSS_COMPILE}gcc
 CC_   = $(CC)
 
 CFLAGS_      = $(CFLAGS) -I../ -I$(ALPHADATA_SDK)/include -std=c99 -Wall -g -fpic
