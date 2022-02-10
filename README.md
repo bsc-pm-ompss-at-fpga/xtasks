@@ -9,7 +9,7 @@ Please, refer to the platform README file for build instructions.
 xTasks Library reads the current FPGA configuration at each application launch from a formatted file.
 The library looks for this file in the following locations with the same preference order:
  1. Path provided in the `XTASKS_CONFIG_FILE` environment variable.
- 2. `/dev/ompss_fpga/bit_info/xtasks` (Only in Zynq boards).
+ 2. `/dev/ompss_fpga/bitinfo/xtasks` (Only in Zynq boards).
 
 ##### File Format
 

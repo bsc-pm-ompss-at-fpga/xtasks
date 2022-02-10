@@ -53,6 +53,6 @@ Those device files are created by the [OmpSs@FPGA kernel module](https://pm.bsc.
 
 ##### Environment variables
 
- - `XTASKS_CONFIG_FILE`. Defines the path of xtasks config file to use during library initialization. By default, the path is `/dev/ompss_fpga/bit_info/xtasks`.
- - `XTASKS_FEATURES_CHECK` Defines whether the features checking in `/dev/ompss_fpga/bit_info/features/` must be done or not. By default, the checking is done.
- - `XTASKS_COMPATIBILITY_CHECK` Defines whether the compatibility against `/dev/ompss_fpga/bit_info/wrapper_version` must be done or not. By default, the checking is done.
+ - `XTASKS_CONFIG_FILE`. Defines the path of xtasks config file to use during library initialization. By default, the path is `/dev/ompss_fpga/bitinfo/xtasks`.
+ - `XTASKS_FEATURES_CHECK` Defines whether the features checking in `/dev/ompss_fpga/bitinfo/features/` must be done or not. By default, the checking is done.
+ - `XTASKS_COMPATIBILITY_CHECK` Defines whether the compatibility against `/dev/ompss_fpga/bitinfo/wrapper_version` must be done or not. By default, the checking is done.
