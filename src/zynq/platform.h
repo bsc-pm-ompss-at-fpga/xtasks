@@ -28,11 +28,11 @@
 #include <string.h>
 
 #define STR_BUFFER_SIZE 128
-#define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bit_info/xtasks"
-#define BIT_INFO_FEATURES_PATH "/dev/ompss_fpga/bit_info/features"
-#define BIT_INFO_WRAPPER_PATH "/dev/ompss_fpga/bit_info/wrapper_version"
-#define BIT_INFO_HWRIO_RAW_PATH "/dev/ompss_fpga/bit_info/hwruntime_io/raw"
-#define BIT_INFO_NUM_ACCS_PATH "/dev/ompss_fpga/bit_info/num_accs"
+#define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bitinfo/xtasks"
+#define BITINFO_FEATURES_PATH "/dev/ompss_fpga/bitinfo/features"
+#define BITINFO_WRAPPER_PATH "/dev/ompss_fpga/bitinfo/wrapper_version"
+#define BITINFO_HWRIO_RAW_PATH "/dev/ompss_fpga/bitinfo/hwruntime_io/raw"
+#define BITINFO_NUM_ACCS_PATH "/dev/ompss_fpga/bitinfo/num_accs"
 
 /*!
  * \brief Get the path of the configuration file
@@ -50,7 +50,7 @@ char *getConfigFilePath()
         strcpy(buffer, accMapPath);
     }
 
-    // 2nd -> /dev/ompss_fpga/bit_info/xtasks
+    // 2nd -> /dev/ompss_fpga/bitinfo/xtasks
     if (buffer == NULL) {
         buffer = malloc(sizeof(char) * STR_BUFFER_SIZE);
         strcpy(buffer, XTASKS_CONFIG_FILE_PATH);
@@ -76,7 +76,7 @@ void printErrorMsgCfgFile()
 void printErrorWrapperVersionFile()
 {
     fprintf(stderr, "ERROR: xTasks Library cannot access the fpga wrapper version device file.\n");
-    fprintf(stderr, "       Ensure that file '%s' exists and it has read permissions.\n", BIT_INFO_WRAPPER_PATH);
+    fprintf(stderr, "       Ensure that file '%s' exists and it has read permissions.\n", BITINFO_WRAPPER_PATH);
     fprintf(stderr, "       Alternatively, you may force the configuration file path with");
     fprintf(stderr, " XTASKS_CONFIG_FILE environment variable.\n");
 }
@@ -98,8 +98,8 @@ bit_feature_t checkbitstreamFeature(const char *featureName)
     }
 
     bit_feature_t available = BIT_FEATURE_UNKNOWN;
-    char buffer[strlen(BIT_INFO_FEATURES_PATH) + strlen(featureName) + 1];
-    strcpy(buffer, BIT_INFO_FEATURES_PATH);
+    char buffer[strlen(BITINFO_FEATURES_PATH) + strlen(featureName) + 1];
+    strcpy(buffer, BITINFO_FEATURES_PATH);
     strcat(buffer, "/");
     strcat(buffer, featureName);
     FILE *infoFile = fopen(buffer, "r");
@@ -134,7 +134,7 @@ bit_compatibility_t checkbitstreamCompatibility()
     }
 
     bit_compatibility_t compatible = BIT_COMPAT_UNKNOWN;
-    FILE *infoFile = fopen(BIT_INFO_WRAPPER_PATH, "r");
+    FILE *infoFile = fopen(BITINFO_WRAPPER_PATH, "r");
     if (infoFile != NULL) {
         unsigned int wrapperVersion;
         fscanf(infoFile, "%u", &wrapperVersion);
@@ -154,7 +154,7 @@ bit_compatibility_t checkbitstreamCompatibility()
 int getBitStreamHwrIOStruct(uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORDS])
 {
     size_t nRead;
-    FILE *infoFile = fopen(BIT_INFO_HWRIO_RAW_PATH, "r");
+    FILE *infoFile = fopen(BITINFO_HWRIO_RAW_PATH, "r");
     int success = -1;
 
     if (infoFile != NULL) {
@@ -167,7 +167,7 @@ int getBitStreamHwrIOStruct(uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORD
 
 int getBitStreamNumAccs()
 {
-    FILE *infoFile = fopen(BIT_INFO_NUM_ACCS_PATH, "r");
+    FILE *infoFile = fopen(BITINFO_NUM_ACCS_PATH, "r");
     if (infoFile != NULL) {
         int numAccs = -1;
         fscanf(infoFile, "%d", &numAccs);
