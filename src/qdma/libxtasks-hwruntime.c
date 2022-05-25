@@ -163,9 +163,15 @@ xtasks_stat xtasksInit()
 
     // Initialize command queues
     _cmdInQueue = (uint64_t *)(_pciBar + (cmdInAddr / sizeof(*_pciBar)));
-    memset(_cmdInQueue, 0, _cmdInSubqueueLen * _numAccs * sizeof(*_cmdInQueue));
+    // memset(_cmdInQueue, 0, _cmdInSubqueueLen * _numAccs * sizeof(*_cmdInQueue));
+    for (int i = 0; i < _cmdInSubqueueLen * _numAccs; i++) {
+        _cmdInQueue[i] = 0;
+    }
     _cmdOutQueue = (uint64_t *)(_pciBar + (cmdOutAddr / sizeof(*_pciBar)));
-    memset(_cmdOutQueue, 0, _cmdOutSubqueueLen * _numAccs * sizeof(*_cmdOutQueue));
+    // memset(_cmdOutQueue, 0, _cmdOutSubqueueLen * _numAccs * sizeof(*_cmdOutQueue));
+    for (int i = 0; i < _cmdOutSubqueueLen * _numAccs; i++) {
+        _cmdOutQueue[i] = 0;
+    }
 
     // initialize reset
     _hwruntimeRst = (uint32_t *)(_pciBar + (hwruntime_rst_address / sizeof(*_pciBar)));
