@@ -35,7 +35,7 @@
 
 #define ACC_INFO_MAX_LEN 4096
 
-#define PCI_DEV_BASE_PATH "/sys/bus/pci/devices/"
+#define PCI_DEV_BASE_PATH "/sys/bus/pci/devices"
 #define PCI_DEV "0000:02:00.0"
 #define PCI_BAR_FILE "resource2"
 #define XTASKS_PCIDEV_ENV "XTASKS_PCI_DEV"
@@ -88,15 +88,10 @@ xtasks_stat xtasksInit()
 {
     xdma_status st;
     xtasks_stat ret = XTASKS_ERROR;  // Initialize DMA
-    st = xdmaOpen();
+    st = xdmaInit();
     if (st != XDMA_SUCCESS) {
         PRINT_ERROR("Could not initialize XDMA\n");
         return XTASKS_ERROR;
-    }
-    st = xdmaInitMem();
-    if (st != XDMA_SUCCESS) {
-        PRINT_ERROR("Could not initialize device memory\n");
-        goto init_mem_err;
     }
     // Map PCI BAR into user space
     char pciBarPath[PCI_MAX_PATH_LEN];
@@ -247,9 +242,7 @@ init_alloc_bitinfo_err:
 init_map_bar_err:
     close(_pciBarFd);
 init_open_bar_err:
-    xdmaFiniMem();
-init_mem_err:
-    xdmaClose();
+    xdmaFini();
     return ret;
 }
 
@@ -269,7 +262,7 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
     _numInstrEvents = nEvents;
     insBufferSize = _numInstrEvents * _numAccs * sizeof(xtasks_ins_event);
 
-    xdma_status s = xdmaAllocate(&_instrBuffHandle, insBufferSize);
+    xdma_status s = xdmaAllocate(0, &_instrBuffHandle, insBufferSize);
     if (s != XDMA_SUCCESS) {
         return XTASKS_ENOMEM;
     }
@@ -348,8 +341,7 @@ xtasks_stat xtasksFini()
     munmap(_pciBar, PCI_BAR_SIZE);
     close(_pciBarFd);
 
-    xdmaFiniMem();
-    xdmaClose();
+    xdmaFini();
     return XTASKS_SUCCESS;
 }
 
@@ -365,13 +357,19 @@ xtasks_stat xtasksGetBackend(const char **name)
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetNumAccs(size_t *count)
+xtasks_stat xtasksGetNumDevices(int *numDevices)
+{
+    *numDevices = 1;
+    return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksGetNumAccs(int devId, size_t *count)
 {
     *count = _numAccs;
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle *array, size_t *count)
+xtasks_stat xtasksGetAccs(int devId, size_t const maxCount, xtasks_acc_handle *array, size_t *count)
 {
     if (array == NULL || count == NULL) return XTASKS_EINVAL;
 
@@ -384,7 +382,6 @@ xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle *array, size_
     return XTASKS_SUCCESS;
 }
 xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *info)
-
 {
     if (info == NULL) return XTASKS_EINVAL;
 
@@ -397,13 +394,12 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *in
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId, xtasks_task_id const parent,
     xtasks_comp_flags const compute, xtasks_task_handle *handle)
 {
-    acc_t *accel = (acc_t *)accId;
     int idx = getFreeTaskEntry(_tasks);
     if (idx < 0) {
         return XTASKS_ENOENTRY;
     }
 
-    initializeTask(&_tasks[idx], id, accel, parent, compute);
+    initializeTask(&_tasks[idx], id, accId, parent, compute);
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
@@ -413,13 +409,12 @@ xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle 
     xtasks_task_id const parent, xtasks_comp_flags const compute, unsigned int const numReps, unsigned int const period,
     xtasks_task_handle *handle)
 {
-    acc_t *accel = (acc_t *)accId;
     int idx = getFreeTaskEntry(_tasks);
     if (idx < 0) {
         return XTASKS_ENOMEM;
     }
 
-    initializePeriodicTask(&_tasks[idx], id, accel, parent, compute, numReps, period);
+    initializePeriodicTask(&_tasks[idx], id, accId, parent, compute, numReps, period);
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
@@ -485,7 +480,7 @@ xtasks_stat xtasksAddArgs(
 xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 {
     task_t *task = (task_t *)(handle);
-    acc_t *acc = task->accel;
+    acc_t *acc = (acc_t *)task->accel;
 
     // Update the task/command information
     task->cmdHeader->valid = QUEUE_VALID;
@@ -653,11 +648,11 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle *handle)
+xtasks_stat xtasksMalloc(int devId, size_t len, xtasks_mem_handle *handle)
 {
     if (handle == NULL) return XTASKS_EINVAL;
 
-    xdma_status status = xdmaAllocate(handle, len);
+    xdma_status status = xdmaAllocate(0, handle, len);
     return toXtasksStat(status);
 }
 
