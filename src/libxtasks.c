@@ -28,9 +28,14 @@ xtasks_stat xtasksGetPlatform(const char **name) { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksGetBackend(const char **name) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksGetNumAccs(size_t *count) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksGetNumDevices(int *numDevices) { return XTASKS_ENOSYS; }
 
-xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle *array, size_t *count) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksGetNumAccs(int devId, size_t *count) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksGetAccs(int devId, size_t const maxCount, xtasks_acc_handle *array, size_t *count)
+{
+    return XTASKS_ENOSYS;
+}
 
 xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *info) { return XTASKS_ENOSYS; }
 
@@ -88,7 +93,7 @@ xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_ti
     return XTASKS_ENOSYS;
 }
 
-xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle *handle) { return XTASKS_ENOSYS; }
+xtasks_stat xtasksMalloc(int devId, size_t len, xtasks_mem_handle *handle) { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksFree(xtasks_mem_handle handle) { return XTASKS_ENOSYS; }
 

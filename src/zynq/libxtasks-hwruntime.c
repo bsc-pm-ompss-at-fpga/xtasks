@@ -135,7 +135,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
 
     _numInstrEvents = nEvents;
     insBufferSize = _numInstrEvents * _numAccs * sizeof(xtasks_ins_event);
-    s = xdmaAllocateHost((void **)&_instrBuff, &_instrBuffHandle, insBufferSize);
+    s = xdmaAllocateHost(0, (void **)&_instrBuff, &_instrBuffHandle, insBufferSize);
     _invalBuffer = malloc(_numInstrEvents * sizeof(*_invalBuffer));
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
@@ -229,7 +229,7 @@ xtasks_stat xtasksInit()
     }
 
     // Initialize xdma memory subsystem
-    s = xdmaInitMem();
+    s = xdmaInit();
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
         if (s == XDMA_ENOENT) {
@@ -242,19 +242,12 @@ xtasks_stat xtasksInit()
         goto INIT_ERR_0;
     }
 
-    // Open cdma device
-    s = xdmaOpen();
-    if (s != XDMA_SUCCESS) {
-        PRINT_ERROR("could not open xdma device");
-        goto INIT_ERR_1;
-    }
-
     // Generate the configuration file path
     char *buffer = getConfigFilePath();
     if (buffer == NULL) {
         ret = XTASKS_EFILE;
         printErrorMsgCfgFile();
-        goto INIT_ERR_2;
+        goto INIT_ERR_1;
     }
 
     // Open the configuration file and parse it
@@ -263,7 +256,7 @@ xtasks_stat xtasksInit()
     if (accMapFile == NULL) {
         ret = XTASKS_EFILE;
         printErrorMsgCfgFile();
-        goto INIT_ERR_2;
+        goto INIT_ERR_1;
     }
 
     char *accInfo = malloc(MAX_ACC_CONFIG_SIZE);
@@ -273,7 +266,7 @@ xtasks_stat xtasksInit()
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot read accelerator config");
         free(accInfo);
-        goto INIT_ERR_2;
+        goto INIT_ERR_1;
     }
 
     uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORDS];
@@ -281,7 +274,7 @@ xtasks_stat xtasksInit()
         ret = XTASKS_ERROR;
         PRINT_ERROR("Cannot read hwruntime io struct");
         free(accInfo);
-        goto INIT_ERR_2;
+        goto INIT_ERR_1;
     }
     _cmdInSubqueueLen = hwruntimeIOStruct[CMD_IN_BITINFO_LEN_OFFSET];
     _cmdOutSubqueueLen = hwruntimeIOStruct[CMD_OUT_BITINFO_LEN_OFFSET];
@@ -290,13 +283,13 @@ xtasks_stat xtasksInit()
         ret = XTASKS_ERROR;
         PRINT_ERROR("Cannot read number of accelerators");
         free(accInfo);
-        goto INIT_ERR_2;
+        goto INIT_ERR_1;
     }
     _accs = malloc(numAccs * sizeof(acc_t));
     if (_accs == NULL) {
         PRINT_ERROR("Could not allocate accelerators array");
         free(accInfo);
-        goto INIT_ERR_2;
+        goto INIT_ERR_1;
     }
     _numAccs = initAccList(_accs, accInfo, _cmdInSubqueueLen);
     free(accInfo);
@@ -442,10 +435,8 @@ INIT_ERR_OPEN_COMM:
     close(_cmdOutQFd);
     close(_cmdInQFd);
     _numAccs = 0;
-INIT_ERR_2:
-    xdmaClose();
 INIT_ERR_1:
-    xdmaFiniMem();
+    xdmaFini();
 INIT_ERR_0:
     __sync_sub_and_fetch(&_init_cnt, 1);
     return ret;
@@ -502,12 +493,8 @@ xtasks_stat xtasksFini()
     }
     _numAccs = 0;
 
-    if (xdmaClose() != XDMA_SUCCESS) {
-        ret = XTASKS_ERROR;
-    }
-
     // Close xdma memory management
-    if (xdmaFiniMem() != XDMA_SUCCESS) {
+    if (xdmaFini() != XDMA_SUCCESS) {
         ret = XTASKS_ERROR;
     }
 
@@ -532,7 +519,7 @@ xtasks_stat xtasksGetBackend(const char **name)
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetNumAccs(size_t *count)
+xtasks_stat xtasksGetNumAccs(int devId, size_t *count)
 {
     if (count == NULL) return XTASKS_EINVAL;
 
@@ -541,7 +528,7 @@ xtasks_stat xtasksGetNumAccs(size_t *count)
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetAccs(size_t const maxCount, xtasks_acc_handle *array, size_t *count)
+xtasks_stat xtasksGetAccs(int devId, size_t const maxCount, xtasks_acc_handle *array, size_t *count)
 {
     if (array == NULL || count == NULL) return XTASKS_EINVAL;
 
@@ -567,13 +554,12 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *in
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId, xtasks_task_id const parent,
     xtasks_comp_flags const compute, xtasks_task_handle *handle)
 {
-    acc_t *accel = (acc_t *)accId;
     int idx = getFreeTaskEntry(_tasks);
     if (idx < 0) {
         return XTASKS_ENOMEM;
     }
 
-    initializeTask(&_tasks[idx], id, accel, parent, compute);
+    initializeTask(&_tasks[idx], id, accId, parent, compute);
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
@@ -583,13 +569,12 @@ xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle 
     xtasks_task_id const parent, xtasks_comp_flags const compute, unsigned int const numReps, unsigned int const period,
     xtasks_task_handle *handle)
 {
-    acc_t *accel = (acc_t *)accId;
     int idx = getFreeTaskEntry(_tasks);
     if (idx < 0) {
         return XTASKS_ENOMEM;
     }
 
-    initializePeriodicTask(&_tasks[idx], id, accel, parent, compute, numReps, period);
+    initializePeriodicTask(&_tasks[idx], id, accId, parent, compute, numReps, period);
 
     *handle = (xtasks_task_handle)&_tasks[idx];
     return XTASKS_SUCCESS;
@@ -664,7 +649,7 @@ xtasks_stat xtasksAddArgs(
 xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 {
     task_t *task = (task_t *)(handle);
-    acc_t *acc = task->accel;
+    acc_t *acc = (acc_t *)task->accel;
 
     if (task == NULL || acc == NULL) {
         return XTASKS_EINVAL;
@@ -840,15 +825,15 @@ xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_ti
 {
     if (timestamp == NULL) return XTASKS_EINVAL;
 
-    xdma_status status = xdmaGetDeviceTime(timestamp);
+    xdma_status status = xdmaGetDeviceTime(0, timestamp);
     return toXtasksStat(status);
 }
 
-xtasks_stat xtasksMalloc(size_t len, xtasks_mem_handle *handle)
+xtasks_stat xtasksMalloc(int devId, size_t len, xtasks_mem_handle *handle)
 {
     if (handle == NULL) return XTASKS_EINVAL;
 
-    xdma_status status = xdmaAllocate(handle, len);
+    xdma_status status = xdmaAllocate(0, handle, len);
     return toXtasksStat(status);
 }
 

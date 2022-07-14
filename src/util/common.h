@@ -73,6 +73,8 @@
 #define NUM_RUN_TASKS 1024  ///< Maximum number of concurrently running tasks
 #define NEW_TASK_COPY_FLAGS_WORDOFFSET \
     0  ///< Offset of new_task_copy_t->flags field in the 2nd word forming new_task_copy_t
+#define NEW_TASK_COPY_ARGIDX_WORDOFFSET \
+    8  ///< Offset of new_task_copy_t->argIdx field in the 2nd word forming new_task_copy_t
 #define NEW_TASK_COPY_SIZE_WORDOFFSET \
     32  ///< Offset of new_task_copy_t->size field in the 2nd word forming new_task_copy_t
 #define NEW_TASK_COPY_OFFSET_WORDOFFSET \
@@ -158,7 +160,7 @@ typedef struct {
     xtasks_task_id id;                 ///< External task identifier
     cmd_header_t *cmdHeader;           ///< Pointer to the cmd_header_t struct
     cmd_exec_task_arg_t *cmdExecArgs;  ///< Pointer to the array of cmd_exec_task_arg_t structs
-    acc_t *accel;                      ///< Accelerator where the task will run
+    xtasks_acc_handle accel;           ///< Accelerator where the task will run
     uint8_t extSize : 1;               ///< Whether the space available in args is extended or not
     uint8_t periTask : 1;              ///< Whether the tasks is a periodic task or not
 } task_t;
@@ -364,8 +366,8 @@ int getFreeTaskEntry(task_t *tasks)
     return -1;
 }
 
-void initializeTask(
-    task_t *task, const xtasks_task_id id, acc_t *accel, xtasks_task_id const parent, xtasks_comp_flags const compute)
+void initializeTask(task_t *task, const xtasks_task_id id, xtasks_acc_handle const accel, xtasks_task_id const parent,
+    xtasks_comp_flags const compute)
 {
     task->id = id;
     task->accel = accel;
@@ -380,8 +382,8 @@ void initializeTask(
     cmdHeader->taskID = (uintptr_t)(task);
 }
 
-void initializePeriodicTask(task_t *task, const xtasks_task_id id, acc_t *accel, xtasks_task_id const parent,
-    xtasks_comp_flags const compute, int numReps, int period)
+void initializePeriodicTask(task_t *task, const xtasks_task_id id, xtasks_acc_handle const accel,
+    xtasks_task_id const parent, xtasks_comp_flags const compute, int numReps, int period)
 {
     task->id = id;
     task->accel = accel;
@@ -574,6 +576,8 @@ void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx, uint3
         // NOTE: new_task_copy_t->flags and new_task_copy_t->size fields are the 2nd word
         idx = (idx + 1) % spawnOutQueueLen;
         tmp = spawnQueue[idx];
+        uint8_t argIdx = tmp >> NEW_TASK_COPY_ARGIDX_WORDOFFSET;
+        (*task)->copies[i].argIdx = argIdx;
         uint8_t copyFlags = tmp >> NEW_TASK_COPY_FLAGS_WORDOFFSET;
         (*task)->copies[i].flags = copyFlags;
         uint32_t copySize = tmp >> NEW_TASK_COPY_SIZE_WORDOFFSET;
