@@ -519,6 +519,15 @@ xtasks_stat xtasksGetBackend(const char **name)
     return XTASKS_SUCCESS;
 }
 
+xtasks_stat xtasksGetNumDevices(int *numDevices)
+{
+    if (numDevices == NULL) return XTASKS_EINVAL;
+
+    *numDevices = 1;
+
+    return XTASKS_SUCCESS;
+}
+
 xtasks_stat xtasksGetNumAccs(int devId, size_t *count)
 {
     if (count == NULL) return XTASKS_EINVAL;
