@@ -84,7 +84,7 @@
 
 #define BITINFO_MAX_SIZE 4096
 #define BITINFO_MAX_WORDS (BITINFO_MAX_SIZE / sizeof(uint32_t))
-#define STR_BUFFER_SIZE 128
+#define STR_BUFFER_SIZE 129
 #define BITINFO_FIELD_SEP 0xFFFFFFFF
 #define BITINFO_MIN_REV 9
 #define BITINFO_REV_IDX 0
@@ -471,7 +471,7 @@ xtasks_stat submitCommand(
         const size_t count = min(cmdInSubqueueLen - idx - 1, length - 1);
         memcpy(&queue[offset + idx + 1], command + 1, count * sizeof(uint64_t));
         if ((length - 1) > count) {
-            memcpy(&queue[offset], command + 1 + count, (length - count) * sizeof(uint64_t));
+            memcpy(&queue[offset], command + 1 + count, (length - 1 - count) * sizeof(uint64_t));
         }
         cmdHeader = *command;
         cmdHeaderPtr->valid = QUEUE_VALID;

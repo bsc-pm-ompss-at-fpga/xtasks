@@ -27,7 +27,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define STR_BUFFER_SIZE 128
 #define XTASKS_CONFIG_FILE_PATH "/dev/ompss_fpga/bitinfo/xtasks"
 #define BITINFO_FEATURES_PATH "/dev/ompss_fpga/bitinfo/features"
 #define BITINFO_WRAPPER_PATH "/dev/ompss_fpga/bitinfo/wrapper_version"
