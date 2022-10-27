@@ -77,10 +77,6 @@
     8  ///< Offset of new_task_copy_t->argIdx field in the 2nd word forming new_task_copy_t
 #define NEW_TASK_COPY_SIZE_WORDOFFSET \
     32  ///< Offset of new_task_copy_t->size field in the 2nd word forming new_task_copy_t
-#define NEW_TASK_COPY_OFFSET_WORDOFFSET \
-    0  ///< Offset of new_task_copy_t->offset field in the 3rd word forming new_task_copy_t
-#define NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET \
-    32  ///< Offset of new_task_copy_t->accessedLen field in the 3rd word forming new_task_copy_t
 
 #define BITINFO_MAX_SIZE 4096
 #define BITINFO_MAX_WORDS (BITINFO_MAX_SIZE / sizeof(uint32_t))
@@ -216,11 +212,9 @@ typedef struct __attribute__((__packed__)) {
 
 //! \brief New task buffer representation (Only the argument part, repeated N times)
 typedef struct __attribute__((__packed__)) {
-    uint64_t address;      //[0  :63 ] Copy address
-    uint32_t flags;        //[64 :95 ] Copy flags
-    uint32_t size;         //[96 :127] Size of the copy
-    uint32_t offset;       //[128:159] Offset of accessed region in the copy
-    uint32_t accessedLen;  //[160:191] Length of accessed region in the copy
+    uint64_t address;  //[0  :63 ] Copy address
+    uint32_t flags;    //[64 :95 ] Copy flags
+    uint32_t size;     //[96 :127] Size of the copy
 } new_task_copy_t;
 
 //! \brief Remote finished task buffer representation
@@ -422,7 +416,7 @@ xtasks_stat submitCommand(
     size_t idx;
     uint64_t cmdHeader;
     size_t const offset = acc->info.id * cmdInSubqueueLen;
-    cmd_header_t *const cmdHeaderPtr = (cmd_header_t *const) & cmdHeader;
+    cmd_header_t *const cmdHeaderPtr = (cmd_header_t *const)&cmdHeader;
 
     // While there is not enough space in the queue, look for already read commands
     while (acc->cmdInAvSlots < length) {
@@ -564,7 +558,7 @@ void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx, uint3
     }
 
     for (size_t i = 0; i < (*task)->numCopies; ++i) {
-        // NOTE: Each copy uses 3 uint64_t elements in the newQueue
+        // NOTE: Each copy uses 2 uint64_t elements in the newQueue
         //      After using each memory position, we have to clean it
         uint64_t tmp;
 
@@ -582,15 +576,6 @@ void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx, uint3
         (*task)->copies[i].flags = copyFlags;
         uint32_t copySize = tmp >> NEW_TASK_COPY_SIZE_WORDOFFSET;
         (*task)->copies[i].size = copySize;
-        spawnQueue[idx] = 0;
-
-        // NOTE: new_task_copy_t->offset and new_task_copy_t->accessedLen fields are the 2nd word
-        idx = (idx + 1) % spawnOutQueueLen;
-        tmp = spawnQueue[idx];
-        uint32_t copyOffset = tmp >> NEW_TASK_COPY_OFFSET_WORDOFFSET;
-        (*task)->copies[i].offset = copyOffset;
-        uint32_t copyAccessedLen = tmp >> NEW_TASK_COPY_ACCESSEDLEN_WORDOFFSET;
-        (*task)->copies[i].accessedLen = copyAccessedLen;
         spawnQueue[idx] = 0;
     }
 

@@ -96,12 +96,10 @@ typedef struct {
 } xtasks_newtask_dep;
 
 typedef struct {
-    uint8_t flags;       ///< Copy flags
-    uint8_t argIdx;      ///< Argument Index associated to the copy
-    void *address;       ///< Copy address
-    size_t size;         ///< Size of the region to allocate (in bytes)
-    size_t offset;       ///< Offset at the region beginning not accessed (in bytes)
-    size_t accessedLen;  ///< Length of the accessed data in the region (in bytes)
+    uint8_t flags;   ///< Copy flags
+    uint8_t argIdx;  ///< Argument Index associated to the copy
+    void *address;   ///< Copy address
+    size_t size;     ///< Size of the region to allocate (in bytes)
 } xtasks_newtask_copy;
 
 typedef struct {
