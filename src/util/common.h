@@ -42,8 +42,8 @@
 #undef BSD_USED
 
 #define PRINT_ERROR(_str_) fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
-#define MIN_WRAPPER_VER 5
-#define MAX_WRAPPER_VER 12
+#define MIN_WRAPPER_VER 13
+#define MAX_WRAPPER_VER 13
 
 #define QUEUE_VALID 0x80
 #define QUEUE_RESERVED 0x40
