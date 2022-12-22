@@ -63,11 +63,11 @@ static size_t _numAccs;                   ///< Number of accelerators in the sys
 static acc_t *_accs;                      ///< Accelerators data
 static uint8_t *_cmdExecTaskBuff;         ///< Buffer to send the HW tasks
 static task_t *_tasks;                    ///< Array with internal task information
-static int _cmdInQFd;                     ///< File descriptior of command IN queue
-static int _cmdOutQFd;                    ///< File descriptior of command OUT queue
-static int _spawnOutQFd;                  ///< File descriptior of spawn OUT queue
-static int _spawnInQFd;                   ///< File descriptior of spawn IN queue
-static int _ctrlFd;                       ///< File descriptior of CTRL device
+static int _cmdInQFd;                     ///< File descriptor of command IN queue
+static int _cmdOutQFd;                    ///< File descriptor of command OUT queue
+static int _spawnOutQFd;                  ///< File descriptor of spawn OUT queue
+static int _spawnInQFd;                   ///< File descriptor of spawn IN queue
+static int _ctrlFd;                       ///< File descriptor of CTRL device
 static uint64_t *_cmdInQueue;             ///< Command IN queue
 static uint64_t *_cmdOutQueue;            ///< Command OUT queue
 static uint64_t *_spawnOutQueue;          ///< Spawn OUT queue (buffer of FPGA spawned tasks)
@@ -87,7 +87,7 @@ static xdma_buf_handle _instrBuffHandle;  ///< Handle of _instrBuff in libxdma
 static xtasks_ins_event *_invalBuffer;    ///< Invalidated event buffer used to push invalidations into device mem
 
 /*!
- * \breif Set n times the byte c in dst
+ * \brief Set n times the byte c in dst
  * \note Assuming: n is multiple of 32, dst and src are aligned to 32 bits
  * \note Avoid optimizations for the function implementation as aarch64 cannot execute
  *       some fast copy instructions over non-cacheable memory

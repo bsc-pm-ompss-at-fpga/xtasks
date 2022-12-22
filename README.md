@@ -16,7 +16,7 @@ The library looks for this file in the following locations with the same prefere
 The configuration file is expected to have the following format:
  - First line contains the headers info.
  - One line for each accelerator type with the following information separated by tabs.
-   - Accelerator type identifier (interger number).
+   - Accelerator type identifier (integer number).
    - Number of instances of such type (positive integer number).
    - Description (string, max. 128 chars).
    - Working frequency in MHz (floating point number).

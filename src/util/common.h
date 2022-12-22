@@ -48,7 +48,7 @@
 #define QUEUE_VALID 0x80
 #define QUEUE_RESERVED 0x40
 #define QUEUE_INVALID 0x00
-#define DEF_EXEC_TASK_SIZE 256  ///< Size of hw task when using the defult num. of args.
+#define DEF_EXEC_TASK_SIZE 256  ///< Size of hw task when using the default num. of args.
 #define DEF_EXEC_TASK_ARGS_LEN \
     14  // NOTE: (DEF_EXEC_TASK_SIZE - sizeof(cmd_exec_task_header_t))/sizeof(cmd_exec_task_arg_t)
 // NOTE: A task in extended mode MUST fit into the a sub-queue of cmd_in queue
@@ -68,7 +68,7 @@
     4  ///< Offset of Destination id (where accel will send finish signal) in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_HWR 0x0  ///< Hardware runtime identifier for the destId field
 
-// NOTE: The value NUM_RUN_TASKS may be changed to increase the number of concurrent tasks submited into the
+// NOTE: The value NUM_RUN_TASKS may be changed to increase the number of concurrent tasks submitted into the
 // accelerators
 #define NUM_RUN_TASKS 1024  ///< Maximum number of concurrently running tasks
 #define NEW_TASK_COPY_FLAGS_WORDOFFSET \
@@ -176,7 +176,7 @@ typedef struct __attribute__((__packed__, aligned(8))) {
     uint64_t taskID;      //[64 :127] Task identifier
     uint64_t parentID;    //[128:191] Parent task identifier (may be null)
     uint32_t numReps;     //[192:223] Number of task body repetitions
-    uint32_t period;      //[224:255] Minumum number of cycles between repetitions
+    uint32_t period;      //[224:255] Minimum number of cycles between repetitions
 } cmd_peri_task_header_t;
 
 //! \brief Setup hw instrumentation command
@@ -313,7 +313,7 @@ int initAccList(acc_t *accs, const char *accInfo, uint32_t cmdInSubqueueLen)
     // discard first line containing headers
     accInfo = index(accInfo, '\n') + 1;  // set pointer to next character after \n
     while ((retScanf = sscanf(accInfo, "%llu %zu %128s %f%n", &t, &num, buffer, &freq, &numRead)) == 4) {
-        accInfo += numRead + (*(accInfo + numRead) == '\n' ? 1 : 0);  // Advance ponter
+        accInfo += numRead + (*(accInfo + numRead) == '\n' ? 1 : 0);  // Advance pointer
         total += num;
         for (size_t i = total - num; i < total; ++i) {
             accs[i].info.id = i;
@@ -334,7 +334,7 @@ int initAccList(acc_t *accs, const char *accInfo, uint32_t cmdInSubqueueLen)
 
     if (retScanf != EOF && retScanf != 0) {
         // Looks like the configuration file doesn't match the expected format
-        fprintf(stderr, "WARN: xTasks configuration file may be not well formated.\n");
+        fprintf(stderr, "WARN: xTasks configuration file may be not well formatted.\n");
     }
 
     return ret;
@@ -589,7 +589,7 @@ void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx, uint3
     }
 
     // Free the buffer slot
-    // NOTE: This word cannot be set to 0 as the task size information must be keept
+    // NOTE: This word cannot be set to 0 as the task size information must be kept
     __sync_synchronize();
     hwTaskHeader->valid = QUEUE_INVALID;
 }
