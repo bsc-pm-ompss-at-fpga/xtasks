@@ -343,9 +343,9 @@ int initAccList(acc_t *accs, const char *accInfo, uint32_t cmdInSubqueueLen)
 inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32_t *resetReg)
 {
     // Nudge one register
-    *resetReg = 0x01;
-    usleep(1);  // Wait for the reset to propagate
     *resetReg = 0x00;
+    usleep(1);  // Wait for the reset to propagate
+    *resetReg = 0x01;
 }
 
 int getFreeTaskEntry(task_t *tasks)
