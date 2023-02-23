@@ -70,10 +70,9 @@ typedef uint64_t xtasks_newtask_arg;
 
 typedef struct {
     xtasks_acc_id id;             ///< Accelerator identifier
-    float freq;                   ///< Accelerator frequency (in MHz)
+    uint32_t freq;                ///< Accelerator frequency (in KHz)
     xtasks_acc_type type;         ///< Accelerator type identifier
     xtasks_acc_desc description;  ///< Accelerator description
-    short maxTasks;               ///< Max. number of concurrent tasks that the accelerator can manage (-1: undefined)
 } xtasks_acc_info;
 
 typedef struct {

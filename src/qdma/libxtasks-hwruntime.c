@@ -29,12 +29,12 @@
 #include "libxdma.h"
 #include "libxdma_version.h"
 #include "libxtasks.h"
-#include "platform.h"
 #include "util/common.h"
 #include "util/ticket-lock.h"
 
 #define ACC_INFO_MAX_LEN 4096
 
+#define BITINFO_ADDRESS 0x0
 #define PCI_DEV_BASE_PATH "/sys/bus/pci/devices"
 #define PCI_DEV "0000:02:00.0"
 #define PCI_BAR_FILE "resource2"
@@ -43,18 +43,19 @@
 #define PCI_BAR_SIZE 0x40000  // map only 256KB even if the BAR is larger
 
 static int _pciBarFd;
-static uint32_t *_pciBar;
+static volatile uint32_t *_pciBar;
 static acc_t *_accs;
+static bit_acc_type_t *_acc_types;
 static task_t *_tasks;
 static unsigned int _numAccs;
 
-static uint64_t *_cmdInQueue;
-static uint64_t *_cmdOutQueue;
-static uint64_t *_spawnOutQueue;
+static volatile uint64_t *_cmdInQueue;
+static volatile uint64_t *_cmdOutQueue;
+static volatile uint64_t *_spawnOutQueue;
 static size_t _spawnOutQueueIdx;
-static uint64_t *_spawnInQueue;
+static volatile uint64_t *_spawnInQueue;
 static size_t _spawnInQueueIdx;
-static uint32_t *_hwruntimeRst;
+static volatile uint32_t *_hwruntimeRst;
 static uint8_t *_cmdExecTaskBuff;
 static uint32_t _cmdInSubqueueLen;
 static uint32_t _cmdOutSubqueueLen;
@@ -62,7 +63,7 @@ static uint32_t _spawnInQueueLen;
 static uint32_t _spawnOutQueueLen;
 static uint64_t _hwcounter_address;
 
-static bit_feature_t _instrAvail;
+static bool _instrAvail;
 static size_t _numInstrEvents;
 static xtasks_ins_event *_instrBuffPhy;
 static xtasks_ins_event *_invalBuffer;
@@ -118,7 +119,7 @@ xtasks_stat xtasksInit()
         PRINT_ERROR("Could not allocate memory for the bitinfo");
         goto init_alloc_bitinfo_err;
     }
-    memcpy(bitInfo, _pciBar + BITINFO_ADDRESS / sizeof(*_pciBar), BITINFO_MAX_SIZE);
+    memcpy(bitInfo, (void *)(_pciBar + BITINFO_ADDRESS / sizeof(*_pciBar)), BITINFO_MAX_SIZE);
 
     // Check if bitstream is compatible
     bit_compatibility_t compat = checkbitstreamCompatibility(bitInfo);
@@ -127,34 +128,26 @@ xtasks_stat xtasksInit()
         goto init_compat_err;
     }
 
-    uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORDS];
-    getBitStreamHwrIOStruct(bitInfo, hwruntimeIOStruct);
-    uint64_t cmdInAddr = hwruntimeIOStruct[CMD_IN_BITINFO_ADDR_OFFSET] |
-                         ((uint64_t)hwruntimeIOStruct[CMD_IN_BITINFO_ADDR_OFFSET + 1] << 32);
-    _cmdInSubqueueLen = hwruntimeIOStruct[CMD_IN_BITINFO_LEN_OFFSET];
-    uint64_t cmdOutAddr = hwruntimeIOStruct[CMD_OUT_BITINFO_ADDR_OFFSET] |
-                          ((uint64_t)hwruntimeIOStruct[CMD_OUT_BITINFO_ADDR_OFFSET + 1] << 32);
-    _cmdOutSubqueueLen = hwruntimeIOStruct[CMD_OUT_BITINFO_LEN_OFFSET];
-    uint64_t hwruntime_rst_address =
-        hwruntimeIOStruct[RST_BITINFO_ADDR_OFFSET] | ((uint64_t)hwruntimeIOStruct[RST_BITINFO_ADDR_OFFSET + 1] << 32);
-    _hwcounter_address = hwruntimeIOStruct[HWCOUNTER_BITINFO_ADDR_OFFSET] |
-                         ((uint64_t)hwruntimeIOStruct[HWCOUNTER_BITINFO_ADDR_OFFSET + 1] << 32);
-    uint64_t numAccs = getBitstreamNumAccs(bitInfo);
-    _accs = malloc(numAccs * sizeof(acc_t));
+    uint64_t cmdInAddr = bitinfo_get_cmd_in_addr(bitInfo);
+    _cmdInSubqueueLen = bitinfo_get_cmd_in_len(bitInfo);
+    uint64_t cmdOutAddr = bitinfo_get_cmd_out_addr(bitInfo);
+    _cmdOutSubqueueLen = bitinfo_get_cmd_out_len(bitInfo);
+    uint64_t hwruntime_rst_address = bitinfo_get_managed_rstn_addr(bitInfo);
+    _hwcounter_address = bitinfo_get_hwcounter_addr(bitInfo);
+    _numAccs = bitinfo_get_acc_count(bitInfo);
+    uint32_t numAccTypes = bitinfo_get_acc_type_count(bitInfo);
+    _accs = malloc(_numAccs * sizeof(acc_t));
     if (_accs == NULL) {
         PRINT_ERROR("Could not allocate accelerators array");
         goto init_alloc_acc_err;
     }
-    char *accInfo = malloc(ACC_INFO_MAX_LEN);
-    if (accInfo == NULL) {
-        PRINT_ERROR("Could not allocate memory for accInfo");
-        goto init_alloc_accinfo_err;
+    _acc_types = malloc(numAccTypes * sizeof(bit_acc_type_t));
+    if (_acc_types == NULL) {
+        PRINT_ERROR("Could not allocate accelerator types array");
+        goto init_alloc_acctype_err;
     }
-    if (getAccRawInfo(accInfo, bitInfo) <= 0) {
-        PRINT_ERROR("Could not get accelerator info");
-        goto init_get_acc_info_err;
-    }
-    _numAccs = initAccList(_accs, accInfo, _cmdInSubqueueLen);
+    bitinfo_init_acc_types(bitInfo, _acc_types);
+    initAccList(_accs, _acc_types, numAccTypes, _cmdInSubqueueLen);
 
     // Initialize command queues
     _cmdInQueue = (uint64_t *)(_pciBar + (cmdInAddr / sizeof(*_pciBar)));
@@ -193,17 +186,15 @@ xtasks_stat xtasksInit()
         _tasks[idx].periTask = 0;
     }
 
-    bit_feature_t feature = checkbitstreamFeature("hwruntime_ext", bitInfo);
-    if (feature == BIT_FEATURE_NO_AVAIL) {
+    bool feature = bitinfo_get_feature(bitInfo, BIT_FEATURE_SPAWN_Q);
+    if (!feature) {
         _spawnOutQueue = NULL;
         _spawnInQueue = NULL;
     } else {
-        uint64_t spawnInAddr = hwruntimeIOStruct[SPWN_IN_BITINFO_ADDR_OFFSET] |
-                               ((uint64_t)hwruntimeIOStruct[SPWN_IN_BITINFO_ADDR_OFFSET + 1] << 32);
-        _spawnInQueueLen = hwruntimeIOStruct[SPWN_IN_BITINFO_LEN_OFFSET];
-        uint64_t spawnOutAddr = hwruntimeIOStruct[SPWN_OUT_BITINFO_ADDR_OFFSET] |
-                                ((uint64_t)hwruntimeIOStruct[SPWN_OUT_BITINFO_ADDR_OFFSET + 1] << 32);
-        _spawnOutQueueLen = hwruntimeIOStruct[SPWN_OUT_BITINFO_LEN_OFFSET];
+        uint64_t spawnInAddr = bitinfo_get_spawn_in_addr(bitInfo);
+        _spawnInQueueLen = bitinfo_get_spawn_in_len(bitInfo);
+        uint64_t spawnOutAddr = bitinfo_get_spawn_out_addr(bitInfo);
+        _spawnOutQueueLen = bitinfo_get_spawn_out_len(bitInfo);
         _spawnOutQueue = (uint64_t *)(_pciBar + spawnOutAddr / sizeof(*_pciBar));
         _spawnInQueue = (uint64_t *)(_pciBar + spawnInAddr / sizeof(*_pciBar));
         _spawnInQueueIdx = 0;
@@ -219,9 +210,8 @@ xtasks_stat xtasksInit()
     }
 
     // Check for instrumentation
-    _instrAvail = checkbitstreamFeature("hwcounter", bitInfo);
+    _instrAvail = bitinfo_get_feature(bitInfo, BIT_FEATURE_INST);
 
-    free(accInfo);
     free(bitInfo);
 
     return XTASKS_SUCCESS;
@@ -230,15 +220,14 @@ xtasks_stat xtasksInit()
 init_alloc_exec_tasks_err:
     free(_tasks);
 init_alloc_tasks_err:
-init_get_acc_info_err:
-    free(accInfo);
-init_alloc_accinfo_err:
+    free(_acc_types);
+init_alloc_acctype_err:
     free(_accs);
 init_alloc_acc_err:
 init_compat_err:
     free(bitInfo);
 init_alloc_bitinfo_err:
-    munmap(_pciBar, PCI_BAR_SIZE);
+    munmap((void *)_pciBar, PCI_BAR_SIZE);
 init_map_bar_err:
     close(_pciBarFd);
 init_open_bar_err:
@@ -255,7 +244,7 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
         return XTASKS_EINVAL;
     }
 
-    if (_instrAvail == BIT_FEATURE_NO_AVAIL || _instrAvail == BIT_FEATURE_UNKNOWN) {
+    if (!_instrAvail) {
         return XTASKS_ENOAV;
     }
 
@@ -327,7 +316,6 @@ xtasks_stat xtasksFiniHWIns()
 {
     if (_invalBuffer == NULL || _numInstrEvents == 0) return XTASKS_SUCCESS;  // Instrumentation is not initialized
     free(_invalBuffer);
-    free(_accs);
     xdmaFree(_instrBuffHandle);
     _numInstrEvents = 0;
     _instrBuffPhy = NULL;
@@ -338,8 +326,10 @@ xtasks_stat xtasksFiniHWIns()
 xtasks_stat xtasksFini()
 {
     free(_tasks);
-    munmap(_pciBar, PCI_BAR_SIZE);
+    munmap((void *)_pciBar, PCI_BAR_SIZE);
     close(_pciBarFd);
+    free(_acc_types);
+    free(_accs);
 
     xdmaFini();
     return XTASKS_SUCCESS;
@@ -510,7 +500,7 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id 
 xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id)
 {
     acc_t *acc = (acc_t *)accel;
-    uint64_t *const subqueue = _cmdOutQueue + acc->info.id * _cmdOutSubqueueLen;
+    volatile uint64_t *const subqueue = _cmdOutQueue + acc->info.id * _cmdOutSubqueueLen;
 
     if (handle == NULL || id == NULL || acc == NULL) {
         return XTASKS_EINVAL;

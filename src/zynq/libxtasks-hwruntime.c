@@ -21,7 +21,6 @@
 #include "../libxtasks.h"
 #include "../util/common.h"
 #include "../util/ticket-lock.h"
-#include "platform.h"
 
 #include <elf.h>
 #include <errno.h>
@@ -30,6 +29,7 @@
 #include <libxdma_version.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -41,7 +41,9 @@
 #define CMD_OUT_QUEUE_PATH "/dev/ompss_fpga/hwruntime/cmd_out_queue"
 #define SPAWN_OUT_QUEUE_PATH "/dev/ompss_fpga/hwruntime/spawn_out_queue"
 #define SPAWN_IN_QUEUE_PATH "/dev/ompss_fpga/hwruntime/spawn_in_queue"
-#define HWRUNTIME_RST_PATH "/dev/ompss_fpga/hwruntime/ctrl"
+#define HWRUNTIME_RST_PATH "/dev/ompss_fpga/hwruntime/rstn"
+#define BITINFO_PATH "/dev/ompss_fpga/bitinfo"
+#define BITINFO_GET_VERSION 13
 
 //! Check that libxdma version is compatible
 #define LIBXTASKS_MIN_MAJOR 3
@@ -58,28 +60,25 @@
 const char _platformName[] = "zynq";
 const char _backendName[] = "hwruntime";
 
-static int _init_cnt = 0;                 ///< Counter of calls to init/fini
-static size_t _numAccs;                   ///< Number of accelerators in the system
-static acc_t *_accs;                      ///< Accelerators data
-static uint8_t *_cmdExecTaskBuff;         ///< Buffer to send the HW tasks
-static task_t *_tasks;                    ///< Array with internal task information
-static int _cmdInQFd;                     ///< File descriptor of command IN queue
-static int _cmdOutQFd;                    ///< File descriptor of command OUT queue
-static int _spawnOutQFd;                  ///< File descriptor of spawn OUT queue
-static int _spawnInQFd;                   ///< File descriptor of spawn IN queue
-static int _ctrlFd;                       ///< File descriptor of CTRL device
-static uint64_t *_cmdInQueue;             ///< Command IN queue
-static uint64_t *_cmdOutQueue;            ///< Command OUT queue
-static uint64_t *_spawnOutQueue;          ///< Spawn OUT queue (buffer of FPGA spawned tasks)
-static size_t _spawnOutQueueIdx;          ///< Reading index of the _spawnOutQueue
-static uint64_t *_spawnInQueue;           ///< Spawn IN queue (buffer of finished FPGA spawned tasks)
-static size_t _spawnInQueueIdx;           ///< Writing index of the _spawnInQueue
-static uint32_t volatile *_hwruntimeRst;  ///< Register to reset the HW runtime
-static uint32_t _cmdInSubqueueLen;        ///< Size (words) of each subqueue of command IN queue
-static uint32_t _cmdOutSubqueueLen;       ///< Size (words) of each subqueue of command OUT queue
-static uint32_t _spawnInQueueLen;         ///< Size (words) of spawn IN queue
-static uint32_t _spawnOutQueueLen;        ///< Size (words) of spawn OUT queue
+static int _init_cnt = 0;                  ///< Counter of calls to init/fini
+static size_t _numAccs;                    ///< Number of accelerators in the system
+static acc_t *_accs;                       ///< Accelerators data
+static bit_acc_type_t *_acc_types;         ///< Accelerator types data
+static uint8_t *_cmdExecTaskBuff;          ///< Buffer to send the HW tasks
+static task_t *_tasks;                     ///< Array with internal task information
+static volatile uint64_t *_cmdInQueue;     ///< Command IN queue
+static volatile uint64_t *_cmdOutQueue;    ///< Command OUT queue
+static volatile uint64_t *_spawnOutQueue;  ///< Spawn OUT queue (buffer of FPGA spawned tasks)
+static size_t _spawnOutQueueIdx;           ///< Reading index of the _spawnOutQueue
+static volatile uint64_t *_spawnInQueue;   ///< Spawn IN queue (buffer of finished FPGA spawned tasks)
+static size_t _spawnInQueueIdx;            ///< Writing index of the _spawnInQueue
+static volatile uint32_t *_hwruntimeRst;   ///< Register to reset the HW runtime
+static uint32_t _cmdInSubqueueLen;         ///< Size (words) of each subqueue of command IN queue
+static uint32_t _cmdOutSubqueueLen;        ///< Size (words) of each subqueue of command OUT queue
+static uint32_t _spawnInQueueLen;          ///< Size (words) of spawn IN queue
+static uint32_t _spawnOutQueueLen;         ///< Size (words) of spawn OUT queue
 
+static bool _instrAvail;
 static size_t _numInstrEvents;            ///< Number of instrumentation events for each accelerator buffer
 static xtasks_ins_event *_instrBuff;      ///< Buffer of instrumentation events
 static xtasks_ins_event *_instrBuffPhy;   ///< Physical address of _instrBuff
@@ -92,8 +91,8 @@ static xtasks_ins_event *_invalBuffer;    ///< Invalidated event buffer used to 
  * \note Avoid optimizations for the function implementation as aarch64 cannot execute
  *       some fast copy instructions over non-cacheable memory
  */
-void _memset(void *dst, int c, size_t n);
-inline void __attribute__((optimize("O1"))) _memset(void *dst, int c, size_t n)
+void _memset(volatile void *dst, int c, size_t n);
+inline void __attribute__((optimize("O1"))) _memset(volatile void *dst, int c, size_t n)
 {
 #if __aarch64__
     uint32_t *d = (uint32_t *)dst;
@@ -107,7 +106,7 @@ inline void __attribute__((optimize("O1"))) _memset(void *dst, int c, size_t n)
         d[i] = v;
     }
 #else
-    memset(dst, c, n);
+    memset((void *)dst, c, n);
 #endif
 }
 
@@ -121,8 +120,7 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     // At least we need 1 event + last event mark
     if (nEvents <= 1) return XTASKS_EINVAL;
 
-    // Check if bitstream has the HW instrumentation feature
-    if (checkbitstreamFeature("hwcounter") == BIT_FEATURE_NO_AVAIL) {
+    if (!_instrAvail) {
         return XTASKS_ENOAV;
     }
 
@@ -221,11 +219,44 @@ xtasks_stat xtasksInit()
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
 
-    // Check if bitstream is compatible
-    bit_compatibility_t compat = checkbitstreamCompatibility();
-    if (compat == BIT_NO_COMPAT || compat == BIT_COMPAT_UNKNOWN) {
+    uint32_t *bitinfo = malloc(BITINFO_MAX_SIZE);
+    if (bitinfo == NULL) {
+        PRINT_ERROR("Unable to allocate memory for the bitinfo");
         ret = XTASKS_ERROR;
-        goto INIT_ERR_0;
+        goto err_bitinfo_malloc;
+    }
+    int bitinfo_fd = open(BITINFO_PATH, O_RDONLY);
+    if (bitinfo_fd < 0) {
+        PRINT_ERROR("Unable to open bitinfo file " BITINFO_PATH);
+        ret = XTASKS_EFILE;
+        goto err_bitinfo_open;
+    }
+    uint64_t driver_supported_version = 0;
+    if (ioctl(bitinfo_fd, BITINFO_GET_VERSION, &driver_supported_version) != 0) {
+        PRINT_ERROR("Unable to determine the driver supported version of the bitinfo");
+        ret = XTASKS_EFILE;
+        close(bitinfo_fd);
+        goto err_bitinfo_ioctl;
+    }
+    if (driver_supported_version != BITINFO_MIN_REV) {
+        PRINT_ERROR_ARGS("Driver supports version %lu but xtasks %d", driver_supported_version, BITINFO_MIN_REV);
+        ret = XTASKS_ERROR;
+        close(bitinfo_fd);
+        goto err_bitinfo_driver_version;
+    }
+    int nread = read(bitinfo_fd, bitinfo, BITINFO_MAX_SIZE);
+    close(bitinfo_fd);
+    if (nread != BITINFO_MAX_SIZE) {
+        PRINT_ERROR("Unable to read bitinfo");
+        ret = XTASKS_EFILE;
+        goto err_bitinfo_read;
+    }
+
+    // Check if bitstream is compatible
+    bit_compatibility_t compat = checkbitstreamCompatibility(bitinfo);
+    if (compat == BIT_NO_COMPAT) {
+        ret = XTASKS_ERROR;
+        goto err_bit_compat;
     }
 
     // Initialize xdma memory subsystem
@@ -239,151 +270,111 @@ xtasks_stat xtasksInit()
         } else {
             PRINT_ERROR("xdmaInitMem failed");
         }
-        goto INIT_ERR_0;
+        goto err_xdma_init;
     }
 
-    // Generate the configuration file path
-    char *buffer = getConfigFilePath();
-    if (buffer == NULL) {
-        ret = XTASKS_EFILE;
-        printErrorMsgCfgFile();
-        goto INIT_ERR_1;
-    }
-
-    // Open the configuration file and parse it
-    FILE *accMapFile = fopen(buffer, "r");
-    free(buffer);
-    if (accMapFile == NULL) {
-        ret = XTASKS_EFILE;
-        printErrorMsgCfgFile();
-        goto INIT_ERR_1;
-    }
-
-    char *accInfo = malloc(MAX_ACC_CONFIG_SIZE);
-    size_t nread = fread(accInfo, 1, MAX_ACC_CONFIG_SIZE, accMapFile);
-    fclose(accMapFile);
-    if (nread == 0) {
-        ret = XTASKS_EFILE;
-        PRINT_ERROR("Cannot read accelerator config");
-        free(accInfo);
-        goto INIT_ERR_1;
-    }
-
-    uint32_t hwruntimeIOStruct[BITINFO_HWRIO_STRUCT_WORDS];
-    if (getBitStreamHwrIOStruct(hwruntimeIOStruct) < 0) {
-        ret = XTASKS_ERROR;
-        PRINT_ERROR("Cannot read hwruntime io struct");
-        free(accInfo);
-        goto INIT_ERR_1;
-    }
-    _cmdInSubqueueLen = hwruntimeIOStruct[CMD_IN_BITINFO_LEN_OFFSET];
-    _cmdOutSubqueueLen = hwruntimeIOStruct[CMD_OUT_BITINFO_LEN_OFFSET];
-    int numAccs = getBitStreamNumAccs();
-    if (numAccs < 0) {
-        ret = XTASKS_ERROR;
-        PRINT_ERROR("Cannot read number of accelerators");
-        free(accInfo);
-        goto INIT_ERR_1;
-    }
-    _accs = malloc(numAccs * sizeof(acc_t));
+    _cmdInSubqueueLen = bitinfo_get_cmd_in_len(bitinfo);
+    _cmdOutSubqueueLen = bitinfo_get_cmd_out_len(bitinfo);
+    _numAccs = bitinfo_get_acc_count(bitinfo);
+    uint32_t numAccTypes = bitinfo_get_acc_type_count(bitinfo);
+    _accs = malloc(_numAccs * sizeof(acc_t));
     if (_accs == NULL) {
         PRINT_ERROR("Could not allocate accelerators array");
-        free(accInfo);
-        goto INIT_ERR_1;
+        goto err_accs_malloc;
     }
-    _numAccs = initAccList(_accs, accInfo, _cmdInSubqueueLen);
-    free(accInfo);
+    _acc_types = malloc(numAccTypes * sizeof(bit_acc_type_t));
+    if (_acc_types == NULL) {
+        PRINT_ERROR("Could not allocate accelerator types array");
+        goto err_acctypes_malloc;
+    }
+    bitinfo_init_acc_types(bitinfo, _acc_types);
+    initAccList(_accs, _acc_types, numAccTypes, _cmdInSubqueueLen);
 
-    // Open and map the Task Manager queues into library memory
-    _cmdInQFd = open(CMD_IN_QUEUE_PATH, O_RDWR, (mode_t)0600);
-    _cmdOutQFd = open(CMD_OUT_QUEUE_PATH, O_RDWR, (mode_t)0600);
-    _ctrlFd = open(HWRUNTIME_RST_PATH, O_RDWR, (mode_t)0600);
-    if (_cmdInQFd < 0 || _cmdOutQFd < 0 || _ctrlFd < 0) {
-        ret = XTASKS_EFILE;
+    int cmdInQFd = open(CMD_IN_QUEUE_PATH, O_RDWR, (mode_t)0600);
+    if (cmdInQFd < 0) {
         PRINT_ERROR("Cannot open basic hwruntime device files");
-        goto INIT_ERR_OPEN_COMM;
+        goto err_cmdin_open;
     }
-
-    if (checkbitstreamFeature("hwruntime_ext") == BIT_FEATURE_NO_AVAIL) {
-        // Do not try to open the extended queues as we know that are not available
-        _spawnOutQFd = -1;
-        _spawnInQFd = -1;
-    } else {
-        _spawnInQueueLen = hwruntimeIOStruct[SPWN_IN_BITINFO_LEN_OFFSET];
-        _spawnOutQueueLen = hwruntimeIOStruct[SPWN_OUT_BITINFO_LEN_OFFSET];
-        _spawnOutQFd = open(SPAWN_OUT_QUEUE_PATH, O_RDWR, (mode_t)0600);
-        if (_spawnOutQFd < 0) {
-            ret = XTASKS_EFILE;
-            PRINT_ERROR("Cannot open hwruntime/spawn_out_queue device file");
-            goto INIT_ERR_OPEN_SPWN_OUT;
-        }
-        _spawnInQFd = open(SPAWN_IN_QUEUE_PATH, O_RDWR, (mode_t)0600);
-        if (_spawnInQFd < 0) {
-            ret = XTASKS_EFILE;
-            PRINT_ERROR("Cannot open hwruntime/spawn_in_queue device file");
-            goto INIT_ERR_OPEN_SPWN_IN;
-        }
-    }
-
     _cmdInQueue = (uint64_t *)mmap(
-        NULL, _cmdInSubqueueLen * numAccs * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, _cmdInQFd, 0);
+        NULL, _cmdInSubqueueLen * _numAccs * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, cmdInQFd, 0);
+    close(cmdInQFd);
     if (_cmdInQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map hwruntime/cmd_in_queue");
-        goto INIT_ERR_MMAP_CMD_IN;
+        goto err_cmdin_mmap;
     }
 
-    // If any, invalidate commands in cmd_in_queue
-    _memset(_cmdInQueue, 0, _cmdInSubqueueLen * numAccs * sizeof(uint64_t));
-
+    int cmdOutQFd = open(CMD_OUT_QUEUE_PATH, O_RDWR, (mode_t)0600);
+    if (cmdOutQFd < 0) {
+        PRINT_ERROR("Cannot open basic hwruntime device files");
+        goto err_cmdout_open;
+    }
     _cmdOutQueue = (uint64_t *)mmap(
-        NULL, _cmdOutSubqueueLen * numAccs * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, _cmdOutQFd, 0);
+        NULL, _cmdOutSubqueueLen * _numAccs * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, cmdOutQFd, 0);
+    close(cmdOutQFd);
     if (_cmdOutQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map hwruntime/cmd_out_queue");
-        goto INIT_ERR_MMAP_CMD_OUT;
+        goto err_cmdout_mmap;
     }
 
-    // If any, invalidate commands in cmd_out_queue
-    _memset(_cmdOutQueue, 0, _cmdOutSubqueueLen * numAccs * sizeof(uint64_t));
-
-    _spawnOutQueueIdx = 0;
-    if (_spawnOutQFd == -1) {
-        _spawnOutQueue = NULL;
-    } else {
+    _instrAvail = bitinfo_get_feature(bitinfo, BIT_FEATURE_INST);
+    bool spawn_feature = bitinfo_get_feature(bitinfo, BIT_FEATURE_SPAWN_Q);
+    if (spawn_feature) {
+        _spawnInQueueLen = bitinfo_get_spawn_in_len(bitinfo);
+        _spawnOutQueueLen = bitinfo_get_spawn_out_len(bitinfo);
+        int spawnOutQFd = open(SPAWN_OUT_QUEUE_PATH, O_RDWR, (mode_t)0600);
+        if (spawnOutQFd < 0) {
+            ret = XTASKS_EFILE;
+            PRINT_ERROR("Cannot open hwruntime/spawn_out_queue device file");
+            goto err_spawnout_open;
+        }
         _spawnOutQueue = (uint64_t *)mmap(
-            NULL, _spawnOutQueueLen * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, _spawnOutQFd, 0);
+            NULL, _spawnOutQueueLen * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, spawnOutQFd, 0);
+        close(spawnOutQFd);
         if (_spawnOutQueue == MAP_FAILED) {
             ret = XTASKS_EFILE;
             PRINT_ERROR("Cannot map hwruntime/spawn_out_queue");
-            goto INIT_ERR_MAP_SPWN_OUT;
+            goto err_spawnout_mmap;
         }
 
-        // If any, invalidate tasks in spawn_out_queue
-        _memset(_spawnOutQueue, 0, _spawnOutQueueLen * sizeof(uint64_t));
-    }
-
-    _spawnInQueueIdx = 0;
-    if (_spawnInQFd == -1) {
-        _spawnInQueue = NULL;
-    } else {
+        int spawnInQFd = open(SPAWN_IN_QUEUE_PATH, O_RDWR, (mode_t)0600);
+        if (spawnInQFd < 0) {
+            ret = XTASKS_EFILE;
+            PRINT_ERROR("Cannot open hwruntime/spawn_in_queue device file");
+            goto err_spawnin_open;
+        }
         _spawnInQueue = (uint64_t *)mmap(
-            NULL, _spawnInQueueLen * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, _spawnInQFd, 0);
+            NULL, _spawnInQueueLen * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, spawnInQFd, 0);
         if (_spawnInQueue == MAP_FAILED) {
             ret = XTASKS_EFILE;
             PRINT_ERROR("Cannot map hwruntime/spawn_in_queue");
-            goto INIT_ERR_MAP_SPWN_IN;
+            goto err_spawnin_mmap;
         }
-
-        // If any, invalidate tasks in spawn_in_queue
-        _memset(_spawnInQueue, 0, _spawnInQueueLen * sizeof(uint64_t));
+    } else {
+        _spawnInQueue = NULL;
+        _spawnOutQueue = NULL;
     }
 
-    _hwruntimeRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_SHARED, _ctrlFd, 0);
+    int rstnFd = open(HWRUNTIME_RST_PATH, O_RDWR, (mode_t)0600);
+    if (rstnFd < 0) {
+        PRINT_ERROR("Cannot open hwruntime reset file");
+        goto err_rst_open;
+    }
+    _hwruntimeRst = (uint32_t *)mmap(NULL, sizeof(uint32_t), PROT_READ | PROT_WRITE, MAP_SHARED, rstnFd, 0);
     if (_hwruntimeRst == MAP_FAILED) {
         ret = XTASKS_EFILE;
         PRINT_ERROR("Cannot map hwruntime/ctrl");
-        goto INIT_ERR_MMAP_RST;
+        goto err_rst_mmap;
+    }
+
+    // If any, invalidate commands in cmd_in_queue
+    _memset(_cmdInQueue, 0, _cmdInSubqueueLen * _numAccs * sizeof(uint64_t));
+    // If any, invalidate commands in cmd_out_queue
+    _memset(_cmdOutQueue, 0, _cmdOutSubqueueLen * _numAccs * sizeof(uint64_t));
+    if (spawn_feature) {
+        _memset(_spawnInQueue, 0, _spawnInQueueLen * sizeof(uint64_t));
+        _memset(_spawnOutQueue, 0, _spawnOutQueueLen * sizeof(uint64_t));
     }
 
     resetHWRuntime(_hwruntimeRst);
@@ -393,13 +384,13 @@ xtasks_stat xtasksInit()
     if (_tasks == NULL) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate memory for tasks");
-        goto INIT_ERR_ALLOC_TASKS;
+        goto err_tasks_malloc;
     }
     _cmdExecTaskBuff = (uint8_t *)malloc(NUM_RUN_TASKS * DEF_EXEC_TASK_SIZE);
     if (_cmdExecTaskBuff == NULL) {
         ret = XTASKS_ENOMEM;
         PRINT_ERROR("Cannot allocate memory for exec. tasks buffer");
-        goto INIT_ERR_ALLOC_EXEC_TASKS_BUFF;
+        goto err_exectask_malloc;
     }
     for (size_t idx = 0; idx < NUM_RUN_TASKS; ++idx) {
         _tasks[idx].id = 0;
@@ -409,35 +400,41 @@ xtasks_stat xtasksInit()
         _tasks[idx].periTask = 0;
     }
 
+    free(bitinfo);
+
     return ret;
 
-    // Error handling code
-    free(_cmdExecTaskBuff);
-INIT_ERR_ALLOC_EXEC_TASKS_BUFF:
+err_exectask_malloc:
     free(_tasks);
-INIT_ERR_ALLOC_TASKS:
-INIT_ERR_MMAP_RST:
-    if (_spawnInQueue != NULL) munmap(_spawnInQueue, sizeof(uint64_t) * _spawnInQueueLen);
-INIT_ERR_MAP_SPWN_IN:
-    if (_spawnOutQueue != NULL) munmap(_spawnOutQueue, sizeof(uint64_t) * _spawnOutQueueLen);
-INIT_ERR_MAP_SPWN_OUT:
-    munmap(_cmdOutQueue, sizeof(uint64_t) * _cmdOutSubqueueLen * numAccs);
-INIT_ERR_MMAP_CMD_OUT:
-    munmap(_cmdInQueue, sizeof(uint64_t) * _cmdInSubqueueLen * numAccs);
-INIT_ERR_MMAP_CMD_IN:
-    if (_spawnInQFd != -1) close(_spawnInQFd);
-INIT_ERR_OPEN_SPWN_IN:
-    if (_spawnOutQFd != -1) close(_spawnOutQFd);
-INIT_ERR_OPEN_SPWN_OUT:
-INIT_ERR_OPEN_COMM:
+err_tasks_malloc:
+    munmap((void *)_hwruntimeRst, sizeof(uint32_t));
+err_rst_mmap:
+err_rst_open:
+    if (spawn_feature) munmap((void *)_spawnInQueue, _spawnInQueueLen * sizeof(uint64_t));
+err_spawnin_mmap:
+err_spawnin_open:
+    if (spawn_feature) munmap((void *)_spawnOutQueue, _spawnOutQueueLen * sizeof(uint64_t));
+err_spawnout_mmap:
+err_spawnout_open:
+    munmap((void *)_cmdOutQueue, _cmdOutSubqueueLen * _numAccs * sizeof(uint64_t));
+err_cmdout_mmap:
+err_cmdout_open:
+    munmap((void *)_cmdInQueue, _cmdInSubqueueLen * _numAccs * sizeof(uint64_t));
+err_cmdin_mmap:
+err_cmdin_open:
+    free(_acc_types);
+err_acctypes_malloc:
     free(_accs);
-    close(_ctrlFd);
-    close(_cmdOutQFd);
-    close(_cmdInQFd);
-    _numAccs = 0;
-INIT_ERR_1:
+err_accs_malloc:
     xdmaFini();
-INIT_ERR_0:
+err_xdma_init:
+err_bit_compat:
+err_bitinfo_read:
+err_bitinfo_driver_version:
+err_bitinfo_ioctl:
+err_bitinfo_open:
+    free(bitinfo);
+err_bitinfo_malloc:
     __sync_sub_and_fetch(&_init_cnt, 1);
     return ret;
 }
@@ -459,6 +456,7 @@ xtasks_stat xtasksFini()
     }
     free(_cmdExecTaskBuff);
     free(_tasks);
+    free(_acc_types);
     free(_accs);
     _tasks = NULL;
 
@@ -470,19 +468,10 @@ xtasks_stat xtasksFini()
     // Unmap the HW runtime queues
     int statusRd, statusFi, statusNw, statusRFi, statusCtrl;
     statusCtrl = munmap((void *)_hwruntimeRst, sizeof(uint32_t));
-    statusRFi = _spawnInQueue != NULL ? munmap(_spawnInQueue, sizeof(uint64_t) * _spawnInQueueLen) : 0;
-    statusNw = _spawnOutQueue != NULL ? munmap(_spawnOutQueue, sizeof(uint64_t) * _spawnOutQueueLen) : 0;
-    statusFi = munmap(_cmdOutQueue, sizeof(uint64_t) * _numAccs * _cmdOutSubqueueLen);
-    statusRd = munmap(_cmdInQueue, sizeof(uint64_t) * _numAccs * _cmdInSubqueueLen);
-    if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusRFi == -1 || statusCtrl == -1) {
-        ret = XTASKS_EFILE;
-    }
-
-    statusCtrl = close(_ctrlFd);
-    statusRFi = _spawnInQFd != -1 ? close(_spawnOutQFd) : 0;
-    statusNw = _spawnOutQFd != -1 ? close(_spawnInQFd) : 0;
-    statusFi = close(_cmdOutQFd);
-    statusRd = close(_cmdInQFd);
+    statusRFi = _spawnInQueue != NULL ? munmap((void *)_spawnInQueue, sizeof(uint64_t) * _spawnInQueueLen) : 0;
+    statusNw = _spawnOutQueue != NULL ? munmap((void *)_spawnOutQueue, sizeof(uint64_t) * _spawnOutQueueLen) : 0;
+    statusFi = munmap((void *)_cmdOutQueue, sizeof(uint64_t) * _numAccs * _cmdOutSubqueueLen);
+    statusRd = munmap((void *)_cmdInQueue, sizeof(uint64_t) * _numAccs * _cmdInSubqueueLen);
     if (statusRd == -1 || statusFi == -1 || statusNw == -1 || statusRFi == -1 || statusCtrl == -1) {
         ret = XTASKS_EFILE;
     }
@@ -691,7 +680,7 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id 
 xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id)
 {
     acc_t *acc = (acc_t *)accel;
-    uint64_t *const subqueue = _cmdOutQueue + acc->info.id * _cmdOutSubqueueLen;
+    volatile uint64_t *const subqueue = _cmdOutQueue + acc->info.id * _cmdOutSubqueueLen;
 
     if (handle == NULL || id == NULL || acc == NULL) {
         return XTASKS_EINVAL;

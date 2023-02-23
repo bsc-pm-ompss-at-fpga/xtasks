@@ -40,8 +40,10 @@
 #undef __USE_BSD
 #endif
 #undef BSD_USED
+#include "bitinfo.h"
 
 #define PRINT_ERROR(_str_) fprintf(stderr, "[xTasks ERROR]: %s\n", _str_)
+#define PRINT_ERROR_ARGS(_str_, ...) fprintf(stderr, "[xTasks ERROR]: " _str_ "\n", __VA_ARGS__)
 #define MIN_WRAPPER_VER 13
 #define MAX_WRAPPER_VER 13
 
@@ -77,29 +79,7 @@
     8  ///< Offset of new_task_copy_t->argIdx field in the 2nd word forming new_task_copy_t
 #define NEW_TASK_COPY_SIZE_WORDOFFSET \
     32  ///< Offset of new_task_copy_t->size field in the 2nd word forming new_task_copy_t
-
-#define BITINFO_MAX_SIZE 4096
-#define BITINFO_MAX_WORDS (BITINFO_MAX_SIZE / sizeof(uint32_t))
 #define STR_BUFFER_SIZE 129
-#define BITINFO_FIELD_SEP 0xFFFFFFFF
-#define BITINFO_MIN_REV 9
-#define BITINFO_REV_IDX 0
-#define BITINFO_NUMACCS_IDX 1
-#define BITINFO_FEATURES_IDX 2
-#define BITINFO_WRAPPER_IDX 4
-#define BITINFO_HWRIO_IDX 6
-#define BITINFO_XTASKS_IDX 22
-#define CMD_IN_BITINFO_ADDR_OFFSET 0
-#define CMD_IN_BITINFO_LEN_OFFSET 2
-#define CMD_OUT_BITINFO_ADDR_OFFSET 3
-#define CMD_OUT_BITINFO_LEN_OFFSET 5
-#define SPWN_IN_BITINFO_ADDR_OFFSET 6
-#define SPWN_IN_BITINFO_LEN_OFFSET 8
-#define SPWN_OUT_BITINFO_ADDR_OFFSET 9
-#define SPWN_OUT_BITINFO_LEN_OFFSET 11
-#define RST_BITINFO_ADDR_OFFSET 12
-#define HWCOUNTER_BITINFO_ADDR_OFFSET 14
-#define BITINFO_HWRIO_STRUCT_WORDS 16
 
 #define max(a, b) \
     ({ \
@@ -117,7 +97,6 @@
 
 //! \brief Internal library HW accelerator information
 typedef struct {
-    char descBuffer[STR_BUFFER_SIZE];
     xtasks_acc_info info;
     unsigned short volatile cmdInWrIdx;    ///< Writing index of the accelerator sub-queue in the cmd_in queue
     unsigned short volatile cmdInRdIdx;    ///< Reading index of the accelerator sub-queue in the cmd_in queue
@@ -161,14 +140,7 @@ typedef struct {
     uint8_t periTask : 1;              ///< Whether the tasks is a periodic task or not
 } task_t;
 
-typedef enum {
-    BIT_FEATURE_NO_AVAIL = 0,
-    BIT_FEATURE_AVAIL = 1,
-    BIT_FEATURE_UNKNOWN = 2,
-    BIT_FEATURE_SKIP = 3
-} bit_feature_t;
-
-typedef enum { BIT_NO_COMPAT = 0, BIT_COMPAT = 1, BIT_COMPAT_UNKNOWN = 2, BIT_COMPAT_SKIP = 3 } bit_compatibility_t;
+typedef enum { BIT_NO_COMPAT, BIT_COMPAT, BIT_COMPAT_SKIP } bit_compatibility_t;
 
 //! \brief Header of execute periodic task command
 typedef struct __attribute__((__packed__, aligned(8))) {
@@ -289,55 +261,54 @@ void printErrorBitstreamWrapperCompatibility(unsigned int wrapperVersion)
 }
 
 /*!
- * \brief Returns the offset in words where the "idx" information of bitinfo starts
+ * \brief Checks whether the current fpga bitstream is compatible with the libxtasks version or not.
+ * \return  BIT_NO_COMPAT if the bitstream is not compatible
+ *          BIT_COMPAT if the bitstream is compatible
+ *          BIT_COMPAT_SKIP if the check was skipped due to user requirements
  */
-int getBitinfoOffset(const int idx, const uint32_t *bitinfo)
+bit_compatibility_t checkbitstreamCompatibility(const uint32_t *bitinfo)
 {
-    unsigned int i = 22;
-    for (int j = 22; j < idx && i < BITINFO_MAX_WORDS; ++j) {
-        while (bitinfo[i] != BITINFO_FIELD_SEP && i < BITINFO_MAX_WORDS) ++i;
-        ++i;
+    const char *compatCheck = getenv("XTASKS_COMPATIBILITY_CHECK");
+    if (compatCheck != NULL && compatCheck[0] == '0') {
+        return BIT_COMPAT_SKIP;
+    } else if (compatCheck != NULL && compatCheck[0] != '1') {
+        PRINT_ERROR("Invalid value in XTASKS_COMPATIBILITY_CHECK, must be 0 or 1. Ignoring it");
     }
-    return i;
+
+    const unsigned int bitinfoRev = bitinfo_get_version(bitinfo);
+    // The bitstream info BRAM version is old
+    if (bitinfoRev != BITINFO_MIN_REV) {
+        printErrorBitstreamVersionCompatibility(bitinfoRev);
+        return BIT_NO_COMPAT;
+    }
+
+    const unsigned int version = bitinfo_get_wrapper_version(bitinfo);
+    if (version < MIN_WRAPPER_VER || version > MAX_WRAPPER_VER) {
+        printErrorBitstreamWrapperCompatibility(version);
+        return BIT_NO_COMPAT;
+    }
+
+    return BIT_COMPAT;
 }
 
-int initAccList(acc_t *accs, const char *accInfo, uint32_t cmdInSubqueueLen)
+void initAccList(acc_t *accs, const bit_acc_type_t *acc_types, int n_acc_types, uint32_t cmdInSubqueueLen)
 {
-    unsigned long long int t;
-    int retScanf, ret, numRead;
-    float freq;
-    size_t num, total;
-    total = 0;
-    char buffer[STR_BUFFER_SIZE];
-    // Parse acc information
-    // discard first line containing headers
-    accInfo = index(accInfo, '\n') + 1;  // set pointer to next character after \n
-    while ((retScanf = sscanf(accInfo, "%llu %zu %128s %f%n", &t, &num, buffer, &freq, &numRead)) == 4) {
-        accInfo += numRead + (*(accInfo + numRead) == '\n' ? 1 : 0);  // Advance pointer
-        total += num;
-        for (size_t i = total - num; i < total; ++i) {
-            accs[i].info.id = i;
-            accs[i].info.type = t;
-            accs[i].info.freq = freq;
-            accs[i].info.maxTasks = -1;
-            accs[i].info.description = accs[i].descBuffer;
-            strcpy(accs[i].descBuffer, buffer);
-            accs[i].cmdInWrIdx = 0;
-            accs[i].cmdInAvSlots = cmdInSubqueueLen;
-            accs[i].cmdInRdIdx = 0;
-            ticketLockInit(&accs[i].cmdInLock);
-            accs[i].cmdOutIdx = 0;
-            accs[i].cmdOutLock = 0;
+    int accid = 0;
+    for (int i = 0; i < n_acc_types; ++i) {
+        for (int j = 0; j < acc_types[i].count; ++j) {
+            accs[accid].info.id = accid;
+            accs[accid].info.type = acc_types[i].type;
+            accs[accid].info.freq = acc_types[i].freq;
+            accs[accid].info.description = acc_types[i].description;
+            accs[accid].cmdInWrIdx = 0;
+            accs[accid].cmdInAvSlots = cmdInSubqueueLen;
+            accs[accid].cmdInRdIdx = 0;
+            ticketLockInit(&accs[accid].cmdInLock);
+            accs[accid].cmdOutIdx = 0;
+            accs[accid].cmdOutLock = 0;
+            ++accid;
         }
     }
-    ret = total;
-
-    if (retScanf != EOF && retScanf != 0) {
-        // Looks like the configuration file doesn't match the expected format
-        fprintf(stderr, "WARN: xTasks configuration file may be not well formatted.\n");
-    }
-
-    return ret;
 }
 
 inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32_t *resetReg)
@@ -411,7 +382,7 @@ xtasks_stat setExtendedModeTask(task_t *task)
 }
 
 xtasks_stat submitCommand(
-    acc_t *acc, uint64_t *command, const size_t length, uint64_t *queue, uint32_t cmdInSubqueueLen)
+    acc_t *acc, uint64_t *command, const size_t length, volatile uint64_t *queue, uint32_t cmdInSubqueueLen)
 {
     size_t idx;
     uint64_t cmdHeader;
@@ -463,9 +434,9 @@ xtasks_stat submitCommand(
         // Do no write the header (1st word pointer by command ptr) until all payload is write
         // Check if 2 writes have to be done because there is not enough space at the end of subqueue
         const size_t count = min(cmdInSubqueueLen - idx - 1, length - 1);
-        memcpy(&queue[offset + idx + 1], command + 1, count * sizeof(uint64_t));
+        memcpy((void *)&queue[offset + idx + 1], command + 1, count * sizeof(uint64_t));
         if ((length - 1) > count) {
-            memcpy(&queue[offset], command + 1 + count, (length - 1 - count) * sizeof(uint64_t));
+            memcpy((void *)&queue[offset], command + 1 + count, (length - 1 - count) * sizeof(uint64_t));
         }
         cmdHeader = *command;
         cmdHeaderPtr->valid = QUEUE_VALID;
@@ -519,9 +490,9 @@ int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numI
     }
 }
 
-void getNewTaskFromQ(xtasks_newtask **task, uint64_t *spawnQueue, int idx, uint32_t spawnOutQueueLen)
+void getNewTaskFromQ(xtasks_newtask **task, volatile uint64_t *spawnQueue, int idx, uint32_t spawnOutQueueLen)
 {
-    new_task_header_t *hwTaskHeader = (new_task_header_t *)&spawnQueue[idx];
+    volatile new_task_header_t *hwTaskHeader = (new_task_header_t *)&spawnQueue[idx];
     // Extract the information from the new buffer
     *task = realloc(*task, sizeof(xtasks_newtask) + sizeof(xtasks_newtask_arg) * hwTaskHeader->numArgs +
                                sizeof(xtasks_newtask_dep) * hwTaskHeader->numDeps +
