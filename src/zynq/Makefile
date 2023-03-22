@@ -1,9 +1,9 @@
-CC    = gcc
-CC_   = $(CROSS_COMPILE)$(CC)
+CC  = gcc
+CC_ = $(CROSS_COMPILE)$(CC)
 
-CFLAGS_      = $(CFLAGS) -O3 -std=gnu99 -Wall -g -fpic -Werror -Wno-unused-result
-LDFLAGS_     = $(LDFLAGS)
-TARGETS_     =
+CFLAGS_  = $(CFLAGS) -O3 -std=gnu99 -Wall -g -fpic -Werror -Wno-unused-result
+LDFLAGS_ = $(LDFLAGS)
+TARGETS_ = read_bitinfo
 
 ## Check libxdma installation
 #LIBXDMA_DIR      ?= /opt/install-arm/libxdma
@@ -23,6 +23,9 @@ endif
 
 .PHONY: all
 all: $(TARGETS_)
+
+read_bitinfo: ../read_bitinfo/read_bitinfo_zynq.c ../read_bitinfo/read_bitinfo.c
+	$(CC_) $^ -o $@
 
 libxtasks-hwruntime.o: libxtasks-hwruntime.c
 	$(CC_) $(CFLAGS_) -c $^
@@ -56,7 +59,9 @@ install: $(TARGETS_) ../libxtasks.h libxtasks_version.h
 	mkdir -p $(PREFIX)/include
 	cp ../libxtasks.h $(PREFIX)/include
 	cp libxtasks_version.h $(PREFIX)/include
+	mkdir -p $(PREFIX)/bin
+	cp read_bitinfo $(PREFIX)/bin
 
 .PHONY: clean
 clean:
-	rm -f *.o *.so libxtasks_version.h
+	rm -f *.o *.so libxtasks_version.h read_bitinfo
