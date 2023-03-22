@@ -2,3 +2,8 @@
 *.so
 *.a
 libxtasks_version.h
+src/read_bitinfo/read_bitinfo_coe
+src/read_bitinfo/read_bitinfo_zynq
+src/read_bitinfo/read_bitinfo_qdma
+src/zynq/read_bitinfo
+src/qdma/read_bitinfo
