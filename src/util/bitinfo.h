@@ -6,7 +6,7 @@
 
 #define BITINFO_MAX_SIZE 4096
 #define BITINFO_MAX_WORDS (BITINFO_MAX_SIZE / sizeof(uint32_t))
-#define BITINFO_MIN_REV 10
+#define BITINFO_MIN_REV 11
 #define BITINFO_REV_IDX 0
 #define BITINFO_NUMACCS_IDX 1
 #define BITINFO_FEATURES_IDX 2
@@ -26,6 +26,7 @@
 #define HWCOUNTER_BITINFO_ADDR_OFFSET 21
 #define POM_AXILITE_BITINFO_ADDR_OFFSET 23
 #define CMS_BITINFO_ADDR_OFFSET 25
+#define SYSMON_BITINFO_ADDR_OFFSET 27
 #define BIT_FEATURES_INST_B 0
 #define BIT_FEATURE_HWCOUNTER_B 1
 #define BIT_FEATURE_INTERCONNECT_OPT_B 2
@@ -36,10 +37,10 @@
 #define BIT_FEATURE_POM_LOCK_B 7
 #define BIT_FEATURES_SPAWN_Q_B 8
 #define BIT_FEATURE_CMS_EN_B 9
-#define BIT_XTASKS_CONFIG_IDX 27
-#define BIT_AIT_CALL_IDX 28
-#define BIT_HWR_VLNV_IDX 29
-#define BIT_NOTES_IDX 30
+#define BIT_XTASKS_CONFIG_IDX 29
+#define BIT_AIT_CALL_IDX 30
+#define BIT_HWR_VLNV_IDX 31
+#define BIT_NOTES_IDX 32
 
 typedef enum {
     BIT_FEATURE_INST,
@@ -51,7 +52,8 @@ typedef enum {
     BIT_FEATURE_POM_DEPS,
     BIT_FEATURE_POM_LOCK,
     BIT_FEATURE_SPAWN_Q,
-    BIT_FEATURE_CMS_EN
+    BIT_FEATURE_CMS_EN,
+    BIT_FEATURE_SYSMON_EN
 } bit_feature_t;
 
 typedef struct {
@@ -118,6 +120,11 @@ static inline uint64_t bitinfo_get_cms_addr(const uint32_t* bitinfo)
     return bitinfo[CMS_BITINFO_ADDR_OFFSET] | ((uint64_t)bitinfo[CMS_BITINFO_ADDR_OFFSET + 1] << 32);
 }
 
+static inline uint64_t bitinfo_get_sysmon_addr(const uint32_t* bitinfo)
+{
+    return bitinfo[CMS_BITINFO_ADDR_OFFSET] | ((uint64_t)bitinfo[CMS_BITINFO_ADDR_OFFSET + 1] << 32);
+}
+
 static inline uint32_t bitinfo_get_acc_type_count(const uint32_t* bitinfo)
 {
     return (bitinfo[BIT_XTASKS_CONFIG_IDX] & 0xFFFF) / 44;  // 44 bytes per acc type
@@ -173,6 +180,8 @@ static inline int bitinfo_get_feature(const uint32_t* bitinfo, bit_feature_t fea
             return (features >> BIT_FEATURES_SPAWN_Q_B) & 0x1;
         case BIT_FEATURE_CMS_EN:
             return (features >> BIT_FEATURE_CMS_EN_B) & 0x1;
+        case BIT_FEATURE_SYSMON_EN:
+            return (features >> BIT_FEATURE_SYSMON_EN) & 0x1;
     }
     return 0;
 }

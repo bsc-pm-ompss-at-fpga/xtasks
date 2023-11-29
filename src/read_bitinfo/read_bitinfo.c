@@ -30,7 +30,8 @@ int read_bitinfo(const uint32_t* bitinfo)
     printf("[%c] POM dependencies\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_POM_DEPS) ? 'x' : ' ');
     printf("[%c] POM lock\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_POM_LOCK) ? 'x' : ' ');
     printf("[%c] POM spawn queues\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_SPAWN_Q) ? 'x' : ' ');
-    printf("[%c] CMS enabled\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_CMS_EN) ? 'x' : ' ');
+    printf("[%c] Power monitor (CMS) enabled\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_CMS_EN) ? 'x' : ' ');
+    printf("[%c] Thermal monitor (sysmon) enabled\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_SYSMON_EN) ? 'x' : ' ');
 
     printf("Cmd In addr 0x%lX len %u\n", bitinfo_get_cmd_in_addr(bitinfo), bitinfo_get_cmd_in_len(bitinfo));
     printf("Cmd Out addr 0x%lX len %u\n", bitinfo_get_cmd_out_addr(bitinfo), bitinfo_get_cmd_out_len(bitinfo));
@@ -39,7 +40,8 @@ int read_bitinfo(const uint32_t* bitinfo)
     printf("Managed rstn addr 0x%lX\n", bitinfo_get_managed_rstn_addr(bitinfo));
     printf("Hardware counter addr 0x%lX\n", bitinfo_get_hwcounter_addr(bitinfo));
     printf("POM AXI-Lite addr 0x%lX\n", bitinfo_get_pom_axilite_addr(bitinfo));
-    printf("CMS addr 0x%lX\n", bitinfo_get_cms_addr(bitinfo));
+    printf("Power monitor (CMS) addr 0x%lX\n", bitinfo_get_cms_addr(bitinfo));
+    printf("Thermal monitor (sysmon) addr 0x%lx\n", bitinfo_get_sysmon_addr(bitinfo));
 
     int nacc_types = bitinfo_get_acc_type_count(bitinfo);
     bit_acc_type_t* accs = malloc(nacc_types * sizeof(bit_acc_type_t));

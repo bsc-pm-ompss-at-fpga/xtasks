@@ -40,7 +40,7 @@
 #define PCI_BAR_FILE "resource2"
 #define XTASKS_PCIDEV_ENV "XTASKS_PCI_DEV"
 #define PCI_MAX_PATH_LEN 64
-#define PCI_BAR_SIZE 0x40000  // map only 256KB even if the BAR is larger
+#define PCI_BAR_SIZE 0x100000  // map only 1MB even if the BAR is larger
 
 static int _pciBarFd;
 static volatile uint32_t *_pciBar;
