@@ -36,32 +36,33 @@
 
 #define BITINFO_ADDRESS 0x0
 #define PCI_DEV_BASE_PATH "/sys/bus/pci/devices"
-#define PCI_DEV "0000:02:00.0"
 #define PCI_BAR_FILE "resource2"
 #define XTASKS_PCIDEV_ENV "XTASKS_PCI_DEV"
 #define PCI_MAX_PATH_LEN 64
-#define PCI_BAR_SIZE 0x100000  // map only 1MB even if the BAR is larger
+#define PCI_BAR_SIZE 0x200000  // map 2MB
 
-static int _pciBarFd;
-static volatile uint32_t *_pciBar;
-static acc_t *_accs;
-static bit_acc_type_t *_acc_types;
+#define MAX_DEVICES 16
+
+static int _ndevs = 0;
+static volatile uint32_t *_pciBar[MAX_DEVICES];
+static acc_t *_accs[MAX_DEVICES];
+static bit_acc_type_t *_acc_types[MAX_DEVICES];
 static task_t *_tasks;
-static unsigned int _numAccs;
+static unsigned int _numAccs[MAX_DEVICES];
 
-static volatile uint64_t *_cmdInQueue;
-static volatile uint64_t *_cmdOutQueue;
-static volatile uint64_t *_spawnOutQueue;
-static size_t _spawnOutQueueIdx;
-static volatile uint64_t *_spawnInQueue;
-static size_t _spawnInQueueIdx;
-static volatile uint32_t *_hwruntimeRst;
+static volatile uint64_t *_cmdInQueue[MAX_DEVICES];
+static volatile uint64_t *_cmdOutQueue[MAX_DEVICES];
+static volatile uint64_t *_spawnOutQueue[MAX_DEVICES];
+static size_t _spawnOutQueueIdx[MAX_DEVICES];
+static volatile uint64_t *_spawnInQueue[MAX_DEVICES];
+static size_t _spawnInQueueIdx[MAX_DEVICES];
+static volatile uint32_t *_hwruntimeRst[MAX_DEVICES];
 static uint8_t *_cmdExecTaskBuff;
-static uint32_t _cmdInSubqueueLen;
-static uint32_t _cmdOutSubqueueLen;
-static uint32_t _spawnInQueueLen;
-static uint32_t _spawnOutQueueLen;
-static uint64_t _hwcounter_address;
+static uint32_t _cmdInSubqueueLen[MAX_DEVICES];
+static uint32_t _cmdOutSubqueueLen[MAX_DEVICES];
+static uint32_t _spawnInQueueLen[MAX_DEVICES];
+static uint32_t _spawnOutQueueLen[MAX_DEVICES];
+static uint64_t _hwcounter_address[MAX_DEVICES];
 
 static bool _instrAvail;
 static size_t _numInstrEvents;
@@ -79,91 +80,144 @@ const char _backendName[] = "hwruntime";
 #error Installed libxdma is not supported (use >= 3.0)
 #endif
 
-static const char *getPciDevName()
+static const char *getPciDevList()
 {
-    const char *dev = getenv(XTASKS_PCIDEV_ENV);
-    return dev ? dev : PCI_DEV;
+    const char *devList = getenv(XTASKS_PCIDEV_ENV);
+    if (devList == NULL) {
+        PRINT_ERROR("Environment variable " XTASKS_PCIDEV_ENV
+                    " not found, set it to the pci device ID list,"
+                    " in the form of xxxx:xx:xx.x see `lspci -Dd 10ee:`\n");
+    }
+    return devList;
 }
 
 xtasks_stat xtasksInit()
 {
     xdma_status st;
     xtasks_stat ret = XTASKS_ERROR;  // Initialize DMA
+    const char *pciDevListEnv = getPciDevList();
+    if (pciDevListEnv == NULL) {
+        return XTASKS_ERROR;
+    }
     st = xdmaInit();
     if (st != XDMA_SUCCESS) {
         PRINT_ERROR("Could not initialize XDMA\n");
         return XTASKS_ERROR;
     }
     // Map PCI BAR into user space
-    char pciBarPath[PCI_MAX_PATH_LEN];
-    const char *pciDevname = getPciDevName();
-    snprintf(pciBarPath, PCI_MAX_PATH_LEN, "%s/%s/%s", PCI_DEV_BASE_PATH, pciDevname, PCI_BAR_FILE);
-    _pciBarFd = open(pciBarPath, O_RDWR);
-    if (_pciBarFd < 0) {
-        perror("XTASKS: Could not open PCIe register window");
-        if (errno == ENOENT) {
-            fprintf(stderr, "Note: Set " XTASKS_PCIDEV_ENV
-                            " to the pci device ID, in the form of\
-                    xxxx:xx:xx.x see `lspci -Dd 10ee:`");
+    int ndevs = 0;
+    _ndevs = 0;
+    char *pciDevName;
+    char *pciDevList = malloc(strlen(pciDevListEnv) + 1);
+    strcpy(pciDevList, pciDevListEnv);
+    pciDevName = strtok(pciDevList, " ");
+    while (pciDevName != NULL) {
+        if (ndevs == MAX_DEVICES) {
+            fprintf(stderr, "Found too many devices\n");
+            goto init_maxdev_err;
         }
-        goto init_open_bar_err;
+        char pciBarPath[PCI_MAX_PATH_LEN];
+        snprintf(pciBarPath, PCI_MAX_PATH_LEN, "%s/%s/%s", PCI_DEV_BASE_PATH, pciDevName, PCI_BAR_FILE);
+        int pciBarFd = open(pciBarPath, O_RDWR);
+        if (pciBarFd < 0) {
+            perror("XTASKS: Could not open PCIe register window");
+            if (errno == ENOENT) {
+                fprintf(stderr, "Cound not open %s\n", pciBarPath);
+            }
+            goto init_open_bar_err;
+        }
+        _pciBar[ndevs] = mmap(NULL, PCI_BAR_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, pciBarFd, 0);
+        close(pciBarFd);
+        if (_pciBar == MAP_FAILED) {
+            ret = XTASKS_ERROR;
+            perror("XTASKS: Could not map BAR into process memory space");
+            goto init_map_bar_err;
+        }
+
+        fprintf(stderr, "[XTASKS] Found device %s\n", pciDevName);
+
+        ++ndevs;
+        pciDevName = strtok(NULL, " ");
     }
-    _pciBar = mmap(NULL, PCI_BAR_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, _pciBarFd, 0);
-    if (_pciBar == MAP_FAILED) {
-        ret = XTASKS_ERROR;
-        perror("XTASKS: Could not map BAR into process memory space");
-        goto init_map_bar_err;
-    }
+    _ndevs = ndevs;
+
     uint32_t *bitInfo = malloc(BITINFO_MAX_SIZE);
     if (bitInfo == NULL) {
         PRINT_ERROR("Could not allocate memory for the bitinfo");
         goto init_alloc_bitinfo_err;
     }
-    memcpy(bitInfo, (void *)(_pciBar + BITINFO_ADDRESS / sizeof(*_pciBar)), BITINFO_MAX_SIZE);
 
-    // Check if bitstream is compatible
-    bit_compatibility_t compat = checkbitstreamCompatibility(bitInfo);
-    if (compat == BIT_NO_COMPAT) {
-        ret = XTASKS_ENOAV;
-        goto init_compat_err;
-    }
+    int curdev = 0;
+    for (int d = 0; d < ndevs; ++d, ++curdev) {
+        memcpy(bitInfo, (void *)(_pciBar[d] + BITINFO_ADDRESS / sizeof(*_pciBar[0])), BITINFO_MAX_SIZE);
 
-    uint64_t cmdInAddr = bitinfo_get_cmd_in_addr(bitInfo);
-    _cmdInSubqueueLen = bitinfo_get_cmd_in_len(bitInfo);
-    uint64_t cmdOutAddr = bitinfo_get_cmd_out_addr(bitInfo);
-    _cmdOutSubqueueLen = bitinfo_get_cmd_out_len(bitInfo);
-    uint64_t hwruntime_rst_address = bitinfo_get_managed_rstn_addr(bitInfo);
-    _hwcounter_address = bitinfo_get_hwcounter_addr(bitInfo);
-    _numAccs = bitinfo_get_acc_count(bitInfo);
-    uint32_t numAccTypes = bitinfo_get_acc_type_count(bitInfo);
-    _accs = malloc(_numAccs * sizeof(acc_t));
-    if (_accs == NULL) {
-        PRINT_ERROR("Could not allocate accelerators array");
-        goto init_alloc_acc_err;
-    }
-    _acc_types = malloc(numAccTypes * sizeof(bit_acc_type_t));
-    if (_acc_types == NULL) {
-        PRINT_ERROR("Could not allocate accelerator types array");
-        goto init_alloc_acctype_err;
-    }
-    bitinfo_init_acc_types(bitInfo, _acc_types);
-    initAccList(_accs, _acc_types, numAccTypes, _cmdInSubqueueLen);
+        // Check if bitstream is compatible
+        bit_compatibility_t compat = checkbitstreamCompatibility(bitInfo);
+        if (compat == BIT_NO_COMPAT) {
+            ret = XTASKS_ENOAV;
+            goto init_compat_err;
+        }
 
-    // Initialize command queues
-    _cmdInQueue = (uint64_t *)(_pciBar + (cmdInAddr / sizeof(*_pciBar)));
-    // memset(_cmdInQueue, 0, _cmdInSubqueueLen * _numAccs * sizeof(*_cmdInQueue));
-    for (int i = 0; i < _cmdInSubqueueLen * _numAccs; i++) {
-        _cmdInQueue[i] = 0;
-    }
-    _cmdOutQueue = (uint64_t *)(_pciBar + (cmdOutAddr / sizeof(*_pciBar)));
-    // memset(_cmdOutQueue, 0, _cmdOutSubqueueLen * _numAccs * sizeof(*_cmdOutQueue));
-    for (int i = 0; i < _cmdOutSubqueueLen * _numAccs; i++) {
-        _cmdOutQueue[i] = 0;
-    }
+        uint64_t cmdInAddr = bitinfo_get_cmd_in_addr(bitInfo);
+        _cmdInSubqueueLen[d] = bitinfo_get_cmd_in_len(bitInfo);
+        uint64_t cmdOutAddr = bitinfo_get_cmd_out_addr(bitInfo);
+        _cmdOutSubqueueLen[d] = bitinfo_get_cmd_out_len(bitInfo);
+        uint64_t hwruntime_rst_address = bitinfo_get_managed_rstn_addr(bitInfo);
+        _hwcounter_address[d] = bitinfo_get_hwcounter_addr(bitInfo);
+        _numAccs[d] = bitinfo_get_acc_count(bitInfo);
+        uint32_t numAccTypes = bitinfo_get_acc_type_count(bitInfo);
+        _accs[d] = malloc(_numAccs[d] * sizeof(acc_t));
+        if (_accs[d] == NULL) {
+            PRINT_ERROR("Could not allocate accelerators array");
+            goto init_alloc_acc_err;
+        }
+        _acc_types[d] = malloc(numAccTypes * sizeof(bit_acc_type_t));
+        if (_acc_types[d] == NULL) {
+            PRINT_ERROR("Could not allocate accelerator types array");
+            goto init_alloc_acctype_err;
+        }
 
-    // initialize reset
-    _hwruntimeRst = (uint32_t *)(_pciBar + (hwruntime_rst_address / sizeof(*_pciBar)));
-    resetHWRuntime(_hwruntimeRst);
+        bitinfo_init_acc_types(bitInfo, _acc_types[d]);
+        initAccList(d, _accs[d], _acc_types[d], numAccTypes, _cmdInSubqueueLen[d]);
+
+        // Initialize command queues
+        _cmdInQueue[d] = (uint64_t *)(_pciBar[d] + (cmdInAddr / sizeof(*_pciBar[0])));
+        // memset(_cmdInQueue, 0, _cmdInSubqueueLen * _numAccs * sizeof(*_cmdInQueue));
+        for (int i = 0; i < _cmdInSubqueueLen[d] * _numAccs[d]; i++) {
+            _cmdInQueue[d][i] = 0;
+        }
+        _cmdOutQueue[d] = (uint64_t *)(_pciBar[d] + (cmdOutAddr / sizeof(*_pciBar[0])));
+        // memset(_cmdOutQueue, 0, _cmdOutSubqueueLen * _numAccs * sizeof(*_cmdOutQueue));
+        for (int i = 0; i < _cmdOutSubqueueLen[d] * _numAccs[d]; i++) {
+            _cmdOutQueue[d][i] = 0;
+        }
+        // initialize reset
+        _hwruntimeRst[d] = (uint32_t *)(_pciBar[d] + (hwruntime_rst_address / sizeof(*_pciBar[0])));
+        resetHWRuntime(_hwruntimeRst[d]);
+
+        bool feature = bitinfo_get_feature(bitInfo, BIT_FEATURE_SPAWN_Q);
+        if (!feature) {
+            _spawnOutQueue[d] = NULL;
+            _spawnInQueue[d] = NULL;
+        } else {
+            uint64_t spawnInAddr = bitinfo_get_spawn_in_addr(bitInfo);
+            _spawnInQueueLen[d] = bitinfo_get_spawn_in_len(bitInfo);
+            uint64_t spawnOutAddr = bitinfo_get_spawn_out_addr(bitInfo);
+            _spawnOutQueueLen[d] = bitinfo_get_spawn_out_len(bitInfo);
+            _spawnOutQueue[d] = (uint64_t *)(_pciBar[d] + spawnOutAddr / sizeof(*_pciBar[0]));
+            _spawnInQueue[d] = (uint64_t *)(_pciBar[d] + spawnInAddr / sizeof(*_pciBar[0]));
+            _spawnInQueueIdx[d] = 0;
+            _spawnOutQueueIdx[d] = 0;
+
+            // Invalidate entries
+            for (unsigned int i = 0; i < _spawnOutQueueLen[d]; i++) {
+                _spawnOutQueue[d][i] = 0;
+            }
+            for (unsigned int i = 0; i < _spawnInQueueLen[d]; i++) {
+                _spawnInQueue[d][i] = 0;
+            }
+        }
+    }
 
     // Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS * sizeof(task_t));
@@ -186,32 +240,10 @@ xtasks_stat xtasksInit()
         _tasks[idx].periTask = 0;
     }
 
-    bool feature = bitinfo_get_feature(bitInfo, BIT_FEATURE_SPAWN_Q);
-    if (!feature) {
-        _spawnOutQueue = NULL;
-        _spawnInQueue = NULL;
-    } else {
-        uint64_t spawnInAddr = bitinfo_get_spawn_in_addr(bitInfo);
-        _spawnInQueueLen = bitinfo_get_spawn_in_len(bitInfo);
-        uint64_t spawnOutAddr = bitinfo_get_spawn_out_addr(bitInfo);
-        _spawnOutQueueLen = bitinfo_get_spawn_out_len(bitInfo);
-        _spawnOutQueue = (uint64_t *)(_pciBar + spawnOutAddr / sizeof(*_pciBar));
-        _spawnInQueue = (uint64_t *)(_pciBar + spawnInAddr / sizeof(*_pciBar));
-        _spawnInQueueIdx = 0;
-        _spawnOutQueueIdx = 0;
-
-        // Invalidate entries
-        for (unsigned int i = 0; i < _spawnOutQueueLen; i++) {
-            _spawnOutQueue[i] = 0;
-        }
-        for (unsigned int i = 0; i < _spawnInQueueLen; i++) {
-            _spawnInQueue[i] = 0;
-        }
-    }
-
     // Check for instrumentation
     _instrAvail = bitinfo_get_feature(bitInfo, BIT_FEATURE_INST);
 
+    free(pciDevList);
     free(bitInfo);
 
     return XTASKS_SUCCESS;
@@ -220,17 +252,21 @@ xtasks_stat xtasksInit()
 init_alloc_exec_tasks_err:
     free(_tasks);
 init_alloc_tasks_err:
-    free(_acc_types);
 init_alloc_acctype_err:
-    free(_accs);
+    if (curdev < ndevs) free(_accs[curdev]);
 init_alloc_acc_err:
 init_compat_err:
+    for (int d = 0; d < curdev; ++d) {
+        free(_accs[d]);
+        free(_acc_types[d]);
+    }
     free(bitInfo);
 init_alloc_bitinfo_err:
-    munmap((void *)_pciBar, PCI_BAR_SIZE);
 init_map_bar_err:
-    close(_pciBarFd);
 init_open_bar_err:
+init_maxdev_err:
+    free(pciDevList);
+    for (int d = 0; d < ndevs; ++d) munmap((void *)_pciBar[d], PCI_BAR_SIZE);
     xdmaFini();
     return ret;
 }
@@ -249,7 +285,7 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
     }
 
     _numInstrEvents = nEvents;
-    insBufferSize = _numInstrEvents * _numAccs * sizeof(xtasks_ins_event);
+    insBufferSize = _numInstrEvents * _numAccs[0] * sizeof(xtasks_ins_event);
 
     xdma_status s = xdmaAllocate(0, &_instrBuffHandle, insBufferSize);
     if (s != XDMA_SUCCESS) {
@@ -261,7 +297,7 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
 
     // Invalidate all entries
     _invalBuffer = (xtasks_ins_event *)malloc(insBufferSize);
-    for (unsigned int i = 0; i < _numInstrEvents * _numAccs; ++i) {
+    for (unsigned int i = 0; i < _numInstrEvents * _numAccs[0]; ++i) {
         _invalBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
     }
     s = xdmaMemcpy(_invalBuffer, _instrBuffHandle, insBufferSize, 0, XDMA_TO_DEVICE);
@@ -276,28 +312,28 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
     cmd_setup_hw_ins_t cmd;
     cmd.header.commandCode = CMD_SETUP_INS_CODE;
     memcpy((void *)cmd.header.commandArgs, (void *)&_numInstrEvents, CMD_SETUP_INS_ARGS_NUMEVS_BYTES);
-    for (size_t i = 0; i < _numAccs; ++i) {
+    for (size_t i = 0; i < _numAccs[0]; ++i) {
         cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents * i);
 
-        ret = submitCommand(
-            _accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t), _cmdInQueue, _cmdInSubqueueLen);
+        ret = submitCommand(_accs[0] + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t),
+            _cmdInQueue[0], _cmdInSubqueueLen[0]);
         if (ret != XTASKS_SUCCESS) {
             PRINT_ERROR("Error setting up instrumentation");
             goto hwins_cmd_err;
         }
 
-        _accs[i].instrIdx = 0;
-        _accs[i].instrLock = 0;
+        _accs[0][i].instrIdx = 0;
+        _accs[0][i].instrLock = 0;
     }
 
     // Init HW counter
-    if (_pciBar == NULL) {
+    if (_pciBar[0] == NULL) {
         ret = XTASKS_ERROR;
         PRINT_ERROR("xtasks has not been initialized");
         goto hwins_no_pcibar;
     }
 
-    _instrCounter = (uint64_t *)(_pciBar + _hwcounter_address / sizeof(*_pciBar));
+    _instrCounter = (uint64_t *)(_pciBar[0] + _hwcounter_address[0] / sizeof(*_pciBar));
 
     return XTASKS_SUCCESS;
 
@@ -326,10 +362,11 @@ xtasks_stat xtasksFiniHWIns()
 xtasks_stat xtasksFini()
 {
     free(_tasks);
-    munmap((void *)_pciBar, PCI_BAR_SIZE);
-    close(_pciBarFd);
-    free(_acc_types);
-    free(_accs);
+    for (int d = 0; d < _ndevs; ++d) {
+        munmap((void *)_pciBar, PCI_BAR_SIZE);
+        free(_acc_types[d]);
+        free(_accs[d]);
+    }
 
     xdmaFini();
     return XTASKS_SUCCESS;
@@ -349,13 +386,13 @@ xtasks_stat xtasksGetBackend(const char **name)
 
 xtasks_stat xtasksGetNumDevices(int *numDevices)
 {
-    *numDevices = 1;
+    *numDevices = _ndevs;
     return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetNumAccs(int devId, size_t *count)
 {
-    *count = _numAccs;
+    *count = _numAccs[devId];
     return XTASKS_SUCCESS;
 }
 
@@ -363,9 +400,9 @@ xtasks_stat xtasksGetAccs(int devId, size_t const maxCount, xtasks_acc_handle *a
 {
     if (array == NULL || count == NULL) return XTASKS_EINVAL;
 
-    size_t tmp = maxCount > _numAccs ? _numAccs : maxCount;
+    size_t tmp = maxCount > _numAccs[devId] ? _numAccs[devId] : maxCount;
     for (size_t i = 0; i < tmp; ++i) {
-        array[i] = (xtasks_acc_handle)(&_accs[i]);
+        array[i] = (xtasks_acc_handle)(&_accs[devId][i]);
     }
     *count = tmp;
 
@@ -424,12 +461,9 @@ xtasks_stat xtasksAddArg(
 {
     task_t *task = (task_t *)(handle);
     uint8_t argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
-    if (argsCnt >= EXT_HW_TASK_ARGS_LEN) {
+    if (argsCnt + 1 > DEF_EXEC_TASK_ARGS_LEN) {
         // Unsupported number of arguments
         return XTASKS_ENOSYS;
-    } else if (argsCnt == DEF_EXEC_TASK_ARGS_LEN) {
-        // Entering in extended mode
-        setExtendedModeTask(task);
     }
 
     argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET]++;
@@ -445,16 +479,9 @@ xtasks_stat xtasksAddArgs(
 {
     task_t *task = (task_t *)(handle);
     uint8_t argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
-    if (argsCnt >= EXT_HW_TASK_ARGS_LEN) {
+    if (argsCnt + num > DEF_EXEC_TASK_ARGS_LEN) {
         // Unsupported number of arguments
         return XTASKS_ENOSYS;
-    } else if (argsCnt == DEF_EXEC_TASK_ARGS_LEN) {
-        // Entering in extended mode
-        xtasks_stat rv;
-        rv = setExtendedModeTask(task);
-        if (rv != XTASKS_SUCCESS) {
-            return rv;
-        }
     }
 
     for (size_t i = 0, idx = argsCnt; i < num; ++i, ++idx) {
@@ -471,6 +498,7 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 {
     task_t *task = (task_t *)(handle);
     acc_t *acc = (acc_t *)task->accel;
+    int devId = acc->devId;
 
     // Update the task/command information
     task->cmdHeader->valid = QUEUE_VALID;
@@ -479,7 +507,7 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     uint8_t const argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
     size_t const numHeaderBytes = task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t);
     size_t const numCmdWords = (numHeaderBytes + sizeof(cmd_exec_task_arg_t) * argsCnt) / sizeof(uint64_t);
-    return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue, _cmdInSubqueueLen);
+    return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue[devId], _cmdInSubqueueLen[devId]);
 }
 
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id)
@@ -489,10 +517,28 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id 
     }
 
     xtasks_stat ret = XTASKS_PENDING;
+    for (int d = 0; d < _ndevs; ++d) {
+        size_t i = 0;
+        do {
+            ret = xtasksTryGetFinishedTaskAccel(&_accs[d][i], handle, id);
+        } while (++i < _numAccs[d] && ret == XTASKS_PENDING);
+        if (ret != XTASKS_PENDING) return ret;
+    }
+
+    return ret;
+}
+
+xtasks_stat xtasksTryGetFinishedTaskDev(int devId, xtasks_task_handle *handle, xtasks_task_id *id)
+{
+    if (handle == NULL || id == NULL) {
+        return XTASKS_EINVAL;
+    }
+
+    xtasks_stat ret = XTASKS_PENDING;
     size_t i = 0;
     do {
-        ret = xtasksTryGetFinishedTaskAccel(&_accs[i], handle, id);
-    } while (++i < _numAccs && ret == XTASKS_PENDING);
+        ret = xtasksTryGetFinishedTaskAccel(&_accs[devId][i], handle, id);
+    } while (++i < _numAccs[devId] && ret == XTASKS_PENDING);
 
     return ret;
 }
@@ -500,7 +546,8 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id 
 xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id)
 {
     acc_t *acc = (acc_t *)accel;
-    volatile uint64_t *const subqueue = _cmdOutQueue + acc->info.id * _cmdOutSubqueueLen;
+    int devId = acc->devId;
+    volatile uint64_t *const subqueue = _cmdOutQueue[devId] + acc->info.id * _cmdOutSubqueueLen[devId];
 
     if (handle == NULL || id == NULL || acc == NULL) {
         return XTASKS_EINVAL;
@@ -530,7 +577,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
 #endif /* XTASKS_DEBUG */
 
             // Read the command payload (task identifier)
-            size_t const dataIdx = (idx + 1) % _cmdOutSubqueueLen;
+            size_t const dataIdx = (idx + 1) % _cmdOutSubqueueLen[devId];
             uint64_t const taskID = subqueue[dataIdx];
             subqueue[dataIdx] = 0;  //< Clean the buffer slot
 
@@ -539,7 +586,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
             cmd->valid = QUEUE_INVALID;
 
             // Update the read index and release the lock
-            acc->cmdOutIdx = (idx + sizeof(cmd_out_exec_task_t) / sizeof(uint64_t)) % _cmdOutSubqueueLen;
+            acc->cmdOutIdx = (idx + sizeof(cmd_out_exec_task_t) / sizeof(uint64_t)) % _cmdOutSubqueueLen[devId];
             __sync_lock_release(&acc->cmdOutLock);
 
 #ifdef XTASKS_DEBUG
@@ -567,8 +614,9 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
 {
     acc_t *acc = (acc_t *)(accel);
     size_t count, validEvents;
+    int devId = acc->devId;
 
-    if (events == NULL || (acc - _accs) >= _numAccs || maxCount <= 0)
+    if (events == NULL || (acc - _accs[devId]) >= _numAccs[devId] || maxCount <= 0)
         return XTASKS_EINVAL;
     else if (_invalBuffer == NULL)
         return XTASKS_ENOAV;
@@ -588,14 +636,15 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
 
 xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
 {
-    if (_spawnOutQueue == NULL) return XTASKS_PENDING;
+    int devId = 0;
+    if (_spawnOutQueue[devId] == NULL) return XTASKS_PENDING;
 
     // Get a non-empty slot into the spawn out queue
     size_t idx, next, taskSize;
     new_task_header_t *hwTaskHeader;
     do {
-        idx = _spawnOutQueueIdx;
-        hwTaskHeader = (new_task_header_t *)(&_spawnOutQueue[idx]);
+        idx = _spawnOutQueueIdx[devId];
+        hwTaskHeader = (new_task_header_t *)(&_spawnOutQueue[devId][idx]);
         if (hwTaskHeader->valid != QUEUE_VALID) {
             return XTASKS_PENDING;
         }
@@ -603,34 +652,35 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
             (sizeof(new_task_header_t) + sizeof(uint64_t) * hwTaskHeader->numArgs +
                 sizeof(new_task_dep_t) * hwTaskHeader->numDeps + sizeof(new_task_copy_t) * hwTaskHeader->numCopies) /
             sizeof(uint64_t);
-        next = (idx + taskSize) % _spawnOutQueueLen;
-    } while (!__sync_bool_compare_and_swap(&_spawnOutQueueIdx, idx, next));
+        next = (idx + taskSize) % _spawnOutQueueLen[devId];
+    } while (!__sync_bool_compare_and_swap(&_spawnOutQueueIdx[devId], idx, next));
 
-    getNewTaskFromQ(task, _spawnOutQueue, idx, _spawnOutQueueLen);
+    getNewTaskFromQ(task, _spawnOutQueue[devId], idx, _spawnOutQueueLen[devId]);
     return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
 {
+    int devId = 0;
     // Get an empty slot into the TM remote finished queue
     size_t idx, next;
     rem_fini_task_t *entryHeader;
     do {
-        idx = _spawnInQueueIdx;
-        entryHeader = (rem_fini_task_t *)(&_spawnInQueue[idx]);
+        idx = _spawnInQueueIdx[devId];
+        entryHeader = (rem_fini_task_t *)(&_spawnInQueue[devId][idx]);
         if (entryHeader->valid == QUEUE_VALID) {
             return XTASKS_ENOENTRY;
         }
-        next = (idx + sizeof(rem_fini_task_t) / sizeof(uint64_t)) % _spawnInQueueLen;
-    } while (!__sync_bool_compare_and_swap(&_spawnInQueueIdx, idx, next));
+        next = (idx + sizeof(rem_fini_task_t) / sizeof(uint64_t)) % _spawnInQueueLen[devId];
+    } while (!__sync_bool_compare_and_swap(&_spawnInQueueIdx[devId], idx, next));
 
     // NOTE: rem_fini_task_t->taskId is the 1st word
-    idx = (idx + 1) % _spawnInQueueLen;
-    _spawnInQueue[idx] = id;
+    idx = (idx + 1) % _spawnInQueueLen[devId];
+    _spawnInQueue[devId][idx] = id;
 
     // NOTE: rem_fini_task_t->parentId is the 2nd word
-    idx = (idx + 1) % _spawnInQueueLen;
-    _spawnInQueue[idx] = parent;
+    idx = (idx + 1) % _spawnInQueueLen[devId];
+    _spawnInQueue[devId][idx] = parent;
 
     __sync_synchronize();
     entryHeader->valid = QUEUE_VALID;
@@ -642,7 +692,7 @@ xtasks_stat xtasksMalloc(int devId, size_t len, xtasks_mem_handle *handle)
 {
     if (handle == NULL) return XTASKS_EINVAL;
 
-    xdma_status status = xdmaAllocate(0, handle, len);
+    xdma_status status = xdmaAllocate(devId, handle, len);
     return toXtasksStat(status);
 }
 

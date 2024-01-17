@@ -97,6 +97,7 @@
 
 //! \brief Internal library HW accelerator information
 typedef struct {
+    int devId;
     xtasks_acc_info info;
     unsigned short volatile cmdInWrIdx;    ///< Writing index of the accelerator sub-queue in the cmd_in queue
     unsigned short volatile cmdInRdIdx;    ///< Reading index of the accelerator sub-queue in the cmd_in queue
@@ -291,11 +292,12 @@ bit_compatibility_t checkbitstreamCompatibility(const uint32_t *bitinfo)
     return BIT_COMPAT;
 }
 
-void initAccList(acc_t *accs, const bit_acc_type_t *acc_types, int n_acc_types, uint32_t cmdInSubqueueLen)
+void initAccList(int devId, acc_t *accs, const bit_acc_type_t *acc_types, int n_acc_types, uint32_t cmdInSubqueueLen)
 {
     int accid = 0;
     for (int i = 0; i < n_acc_types; ++i) {
         for (int j = 0; j < acc_types[i].count; ++j) {
+            accs[accid].devId = devId;
             accs[accid].info.id = accid;
             accs[accid].info.type = acc_types[i].type;
             accs[accid].info.freq = acc_types[i].freq;

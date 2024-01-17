@@ -288,7 +288,7 @@ xtasks_stat xtasksInit()
         goto err_acctypes_malloc;
     }
     bitinfo_init_acc_types(bitinfo, _acc_types);
-    initAccList(_accs, _acc_types, numAccTypes, _cmdInSubqueueLen);
+    initAccList(0, _accs, _acc_types, numAccTypes, _cmdInSubqueueLen);
 
     int cmdInQFd = open(CMD_IN_QUEUE_PATH, O_RDWR, (mode_t)0600);
     if (cmdInQFd < 0) {

@@ -236,6 +236,16 @@ xtasks_stat xtasksWaitTask(xtasks_task_handle const handle);
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id);
 
 /*!
+ * \brief Try to get a task which execution finished in a specific device
+ * \param[in]  devId      Device id
+ * \param[out] handle     Pointer to a valid xtasks_task_handle where the task handle may be set
+ * \param[out] id         Pointer to a valid xtasks_task_id where the task identifier may be set
+ * \returns    XTASKS_PENDING if no task has been synchronized,
+ *             XTASKS_SUCCESS if a task has been synchronized and output parameter have been set
+ */
+xtasks_stat xtasksTryGetFinishedTaskDev(int devId, xtasks_task_handle *handle, xtasks_task_id *id);
+
+/*!
  * \brief Try to get a task which execution finished for an accelerator
  * \param[in]  accel      Accelerator handle that will be used to retrieve a task from
  * \param[out] handle     Pointer to a valid xtasks_task_handle where the task handle may be set
