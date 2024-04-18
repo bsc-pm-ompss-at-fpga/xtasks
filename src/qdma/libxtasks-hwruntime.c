@@ -29,8 +29,8 @@
 #include "libxdma.h"
 #include "libxdma_version.h"
 #include "libxtasks.h"
-#include "util/common.h"
-#include "util/ticket-lock.h"
+#include "common/common.h"
+#include "common/ticket-lock.h"
 
 #define ACC_INFO_MAX_LEN 4096
 

@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "../util/bitinfo.h"
+#include "../../common/bitinfo.h"
 
 int read_bitinfo(const uint32_t* bitinfo)
 {

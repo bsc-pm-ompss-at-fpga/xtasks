@@ -19,8 +19,8 @@
 --------------------------------------------------------------------*/
 
 #include "../libxtasks.h"
-#include "../util/common.h"
-#include "../util/ticket-lock.h"
+#include "../common/common.h"
+#include "../common/ticket-lock.h"
 
 #include <elf.h>
 #include <errno.h>

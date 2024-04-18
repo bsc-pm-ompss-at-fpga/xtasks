@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "../util/bitinfo.h"
+#include "../../common/bitinfo.h"
 
 #define BITINFO_PATH "/dev/ompss_fpga/bitinfo"
 
