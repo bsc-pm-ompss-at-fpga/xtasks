@@ -122,7 +122,7 @@ static inline uint64_t bitinfo_get_cms_addr(const uint32_t* bitinfo)
 
 static inline uint64_t bitinfo_get_sysmon_addr(const uint32_t* bitinfo)
 {
-    return bitinfo[CMS_BITINFO_ADDR_OFFSET] | ((uint64_t)bitinfo[CMS_BITINFO_ADDR_OFFSET + 1] << 32);
+    return bitinfo[SYSMON_BITINFO_ADDR_OFFSET] | ((uint64_t)bitinfo[SYSMON_BITINFO_ADDR_OFFSET + 1] << 32);
 }
 
 static inline uint32_t bitinfo_get_acc_type_count(const uint32_t* bitinfo)
