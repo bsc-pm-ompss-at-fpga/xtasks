@@ -31,15 +31,11 @@
 #include "libxtasks.h"
 #include "common/common.h"
 #include "common/ticket-lock.h"
+#include "pci_dev.h"
 
 #define ACC_INFO_MAX_LEN 4096
 
 #define BITINFO_ADDRESS 0x0
-#define PCI_DEV_BASE_PATH "/sys/bus/pci/devices"
-#define PCI_BAR_FILE "resource2"
-#define XTASKS_PCIDEV_ENV "XTASKS_PCI_DEV"
-#define PCI_MAX_PATH_LEN 64
-#define PCI_BAR_SIZE 0x200000  // map 2MB
 
 #define MAX_DEVICES 16
 
@@ -80,65 +76,35 @@ const char _backendName[] = "hwruntime";
 #error Installed libxdma is not supported (use >= 3.0)
 #endif
 
-static const char *getPciDevList()
-{
-    const char *devList = getenv(XTASKS_PCIDEV_ENV);
-    if (devList == NULL) {
-        PRINT_ERROR("Environment variable " XTASKS_PCIDEV_ENV
-                    " not found, set it to the pci device ID list,"
-                    " in the form of xxxx:xx:xx.x see `lspci -Dd 10ee:`\n");
-    }
-    return devList;
-}
-
 xtasks_stat xtasksInit()
 {
     xdma_status st;
     xtasks_stat ret = XTASKS_ERROR;  // Initialize DMA
-    const char *pciDevListEnv = getPciDevList();
-    if (pciDevListEnv == NULL) {
-        return XTASKS_ERROR;
-    }
+    int ndevs;
+    char **devNames;
+    _ndevs = 0;
+
     st = xdmaInit();
     if (st != XDMA_SUCCESS) {
         PRINT_ERROR("Could not initialize XDMA\n");
         return XTASKS_ERROR;
     }
-    // Map PCI BAR into user space
-    int ndevs = 0;
-    _ndevs = 0;
-    char *pciDevName;
-    char *pciDevList = malloc(strlen(pciDevListEnv) + 1);
-    strcpy(pciDevList, pciDevListEnv);
-    pciDevName = strtok(pciDevList, " ");
-    while (pciDevName != NULL) {
-        if (ndevs == MAX_DEVICES) {
-            fprintf(stderr, "Found too many devices\n");
-            goto init_maxdev_err;
-        }
-        char pciBarPath[PCI_MAX_PATH_LEN];
-        snprintf(pciBarPath, PCI_MAX_PATH_LEN, "%s/%s/%s", PCI_DEV_BASE_PATH, pciDevName, PCI_BAR_FILE);
-        int pciBarFd = open(pciBarPath, O_RDWR);
-        if (pciBarFd < 0) {
-            perror("XTASKS: Could not open PCIe register window");
-            if (errno == ENOENT) {
-                fprintf(stderr, "Cound not open %s\n", pciBarPath);
-            }
-            goto init_open_bar_err;
-        }
-        _pciBar[ndevs] = mmap(NULL, PCI_BAR_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, pciBarFd, 0);
-        close(pciBarFd);
-        if (_pciBar == MAP_FAILED) {
-            ret = XTASKS_ERROR;
-            perror("XTASKS: Could not map BAR into process memory space");
+
+    ret = getPciDevList(&ndevs, &devNames);
+    if (ret != XTASKS_SUCCESS) {
+        return ret;
+    }
+
+    for (int i=0; i<ndevs; i++) {
+        uint32_t *pciBar;
+        ret = mapPciDevice(devNames[i], &pciBar);
+        if (ret != XTASKS_SUCCESS) {
+            //TODO: Proper error handling/cleanup
             goto init_map_bar_err;
         }
-
-        fprintf(stderr, "[XTASKS] Found device %s\n", pciDevName);
-
-        ++ndevs;
-        pciDevName = strtok(NULL, " ");
+        _pciBar[i] = pciBar;
     }
+
     _ndevs = ndevs;
 
     uint32_t *bitInfo = malloc(BITINFO_MAX_SIZE);
@@ -243,7 +209,7 @@ xtasks_stat xtasksInit()
     // Check for instrumentation
     _instrAvail = bitinfo_get_feature(bitInfo, BIT_FEATURE_INST);
 
-    free(pciDevList);
+    free(devNames);
     free(bitInfo);
 
     return XTASKS_SUCCESS;
@@ -263,10 +229,8 @@ init_compat_err:
     free(bitInfo);
 init_alloc_bitinfo_err:
 init_map_bar_err:
-init_open_bar_err:
-init_maxdev_err:
-    free(pciDevList);
-    for (int d = 0; d < ndevs; ++d) munmap((void *)_pciBar[d], PCI_BAR_SIZE);
+    free(devNames);
+    for (int d = 0; d < ndevs; ++d) unmapPciDev((uint32_t*)_pciBar[d]);
     xdmaFini();
     return ret;
 }
@@ -363,7 +327,7 @@ xtasks_stat xtasksFini()
 {
     free(_tasks);
     for (int d = 0; d < _ndevs; ++d) {
-        munmap((void *)_pciBar, PCI_BAR_SIZE);
+        unmapPciDev((uint32_t*)_pciBar[d]); //Need the cast to drop volatile qualifier
         free(_acc_types[d]);
         free(_accs[d]);
     }

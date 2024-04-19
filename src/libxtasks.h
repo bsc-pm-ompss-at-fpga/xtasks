@@ -38,6 +38,7 @@ typedef enum {
     XTASKS_ENOENTRY,     ///< Operation failed because no entry could be reserved
     XTASKS_PENDING,      ///< Operation not finished yet
     XTASKS_ENOAV,        ///< Function/operation not available
+    XTASKS_ENODEV,       ///< No such device/no devices found
     XTASKS_ERROR         ///< Operation finished with some error
 } xtasks_stat;
 

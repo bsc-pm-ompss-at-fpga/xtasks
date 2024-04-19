@@ -1,7 +1,7 @@
 CC  = gcc
 CC_ = $(CROSS_COMPILE)$(CC)
 
-CFLAGS_  = $(CFLAGS) -I../ -fPIC -g -Wall
+CFLAGS_  = $(CFLAGS) -I../ -I../common/ -fPIC -g -Wall
 LDFLAGS_ = $(LDFLAGS)
 TARGETS_ = read_bitinfo
 
