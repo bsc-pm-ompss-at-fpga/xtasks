@@ -25,6 +25,7 @@
 #include <elf.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <libxdma.h>
 #include <libxdma_version.h>
 #include <stddef.h>
@@ -239,7 +240,7 @@ xtasks_stat xtasksInit()
         goto err_bitinfo_ioctl;
     }
     if (driver_supported_version != BITINFO_MIN_REV) {
-        PRINT_ERROR_ARGS("Driver supports version %lu but xtasks %d", driver_supported_version, BITINFO_MIN_REV);
+        PRINT_ERROR_ARGS("Driver supports version %" PRIu64 "but xtasks %d", driver_supported_version, BITINFO_MIN_REV);
         ret = XTASKS_ERROR;
         close(bitinfo_fd);
         goto err_bitinfo_driver_version;
