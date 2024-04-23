@@ -40,14 +40,14 @@ void handle_quit(int signal) {
 
 int cms_enable_power_monitor(uint32_t *cms) {
     // Get the cms out of reset status
-    pcie_write(cms, MB_RESETN_REG, 0x01);
+    pci_write(cms, MB_RESETN_REG, 0x01);
 
     // Wait until REG_MAP (bit 0) is set in the HOST_STATUS2_REG
-    uint32_t host_status_reg = pcie_read(cms, CMS_REG_MAP + HOST_STATUS2_REG);
+    uint32_t host_status_reg = pci_read(cms, CMS_REG_MAP + HOST_STATUS2_REG);
     int attempts=0;
     while( (!(host_status_reg & 0x0001)) && (attempts<10) ) {
         usleep(100000);
-        host_status_reg = pcie_read(cms, CMS_REG_MAP + HOST_STATUS2_REG);
+        host_status_reg = pci_read(cms, CMS_REG_MAP + HOST_STATUS2_REG);
         attempts++;
     }
     if (attempts==10) {
@@ -58,7 +58,7 @@ int cms_enable_power_monitor(uint32_t *cms) {
 }
 
 void cms_disable_power_monitor(uint32_t *cms) {
-    pcie_write(cms, MB_RESETN_REG, 0x00);
+    pci_write(cms, MB_RESETN_REG, 0x00);
 }
 
 int cms_reset_power_monitor(uint32_t *cms) {
@@ -69,7 +69,7 @@ int cms_reset_power_monitor(uint32_t *cms) {
 int cms_start_power_monitor(uint32_t *cms) {
 
     // Get card model (actually, software profile)
-    uint32_t software_profile = pcie_read(cms, CMS_REG_MAP + 0x0014);
+    uint32_t software_profile = pci_read(cms, CMS_REG_MAP + 0x0014);
     return cms_enable_power_monitor(cms);
 }
 
@@ -80,23 +80,23 @@ void cms_stop_power_monitor(uint32_t *cms) {
 
 
 float cms_read_power(uint32_t *cms_addr) {
-    //instant_voltage_12V_PEX = pcie_read(REG_MAP + 0x0028);
-    //instant_current_12V_PEX = pcie_read(REG_MAP + 0x00D0);
-    //instant_voltage_3V3_PEX = pcie_read(REG_MAP + 0x0034);
-    //instant_current_3V3_PEX = pcie_read(REG_MAP + 0x0280);
-    //instant_voltage_3V3_AUX = pcie_read(REG_MAP + 0x0040);
-    //instant_current_3V3_AUX = pcie_read(REG_MAP + 0x02F8);
-    //instant_voltage_12V_AUX = pcie_read(REG_MAP + 0x004C);
-    //instant_current_12V_AUX = pcie_read(REG_MAP + 0x00DC);
+    //instant_voltage_12V_PEX = pci_read(REG_MAP + 0x0028);
+    //instant_current_12V_PEX = pci_read(REG_MAP + 0x00D0);
+    //instant_voltage_3V3_PEX = pci_read(REG_MAP + 0x0034);
+    //instant_current_3V3_PEX = pci_read(REG_MAP + 0x0280);
+    //instant_voltage_3V3_AUX = pci_read(REG_MAP + 0x0040);
+    //instant_current_3V3_AUX = pci_read(REG_MAP + 0x02F8);
+    //instant_voltage_12V_AUX = pci_read(REG_MAP + 0x004C);
+    //instant_current_12V_AUX = pci_read(REG_MAP + 0x00DC);
 
-    float power_12v_pex = (pcie_read(cms_addr, CMS_REG_MAP + PEX_12V_INS_REG) *
-            pcie_read(cms_addr, CMS_REG_MAP + PEX_12V_I_IN_INS_REG))/1000000.0;
-    float power_3v3_pex = (pcie_read(cms_addr, CMS_REG_MAP + PEX_3V3_INS_REG) *
-         pcie_read(cms_addr, CMS_REG_MAP + PEX_3V3_I_IN_INS_REG))/1000000.0;
-    float power_3v3_aux = (pcie_read(cms_addr, CMS_REG_MAP + AUX_3V3_INS_REG) *
-            pcie_read(cms_addr, CMS_REG_MAP + AUX_3V3_I_INS_REG))/1000000.0;
-    float power_12v_aux = (pcie_read(cms_addr, CMS_REG_MAP + AUX_12V_INS_REG) *
-            pcie_read(cms_addr, CMS_REG_MAP + AUX_12V_I_IN_INS_REG))/1000000.0;
+    float power_12v_pex = (pci_read(cms_addr, CMS_REG_MAP + PEX_12V_INS_REG) *
+            pci_read(cms_addr, CMS_REG_MAP + PEX_12V_I_IN_INS_REG))/1000000.0;
+    float power_3v3_pex = (pci_read(cms_addr, CMS_REG_MAP + PEX_3V3_INS_REG) *
+         pci_read(cms_addr, CMS_REG_MAP + PEX_3V3_I_IN_INS_REG))/1000000.0;
+    float power_3v3_aux = (pci_read(cms_addr, CMS_REG_MAP + AUX_3V3_INS_REG) *
+            pci_read(cms_addr, CMS_REG_MAP + AUX_3V3_I_INS_REG))/1000000.0;
+    float power_12v_aux = (pci_read(cms_addr, CMS_REG_MAP + AUX_12V_INS_REG) *
+            pci_read(cms_addr, CMS_REG_MAP + AUX_12V_I_IN_INS_REG))/1000000.0;
 
     return power_12v_pex + power_12v_aux + power_3v3_pex + power_3v3_aux;
 }
@@ -177,13 +177,13 @@ int main(int argc, char *argv[]) {
         printf("%ld.%06ld", tv.tv_sec, tv.tv_usec);
         for (int i=0; i<nDevs; i++) {
             if (sysmonAddr[i]) {
-                sysmon_temp = get_sysmon_temp(pcie_read(sysmonAddr[i], SYSMON_T_REG));
+                sysmon_temp = get_sysmon_temp(pci_read(sysmonAddr[i], SYSMON_T_REG));
                 printf(",%f", sysmon_temp);
             }
             if (cmsAddr[i]) {
-                cms_temp = (float)pcie_read(cmsAddr[i], CMS_REG_MAP + CMS_T_REG);
+                cms_temp = (float)pci_read(cmsAddr[i], CMS_REG_MAP + CMS_T_REG);
                 //Not reading fan speed
-                float cms_fan = (float)pcie_read(cmsAddr[i], CMS_REG_MAP + CMS_FAN_REG);
+                float cms_fan = (float)pci_read(cmsAddr[i], CMS_REG_MAP + CMS_FAN_REG);
                 cms_power = cms_read_power(cmsAddr[i]);
                 printf(",%f,%f", cms_temp, cms_power);
             }

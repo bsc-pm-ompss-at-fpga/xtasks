@@ -112,12 +112,12 @@ static xtasks_stat unmapPciDev(uint32_t *pciBar) {
 }
 
 
-uint32_t pcie_read(uint32_t *bar, off_t offset) {
+uint32_t pci_read(uint32_t *bar, off_t offset) {
     uint32_t val = bar[offset/sizeof(*bar)];
     return val;
 }
 
-void pcie_write(uint32_t *bar, off_t offset, uint32_t val) {
+void pci_write(uint32_t *bar, off_t offset, uint32_t val) {
     bar[offset/sizeof(*bar)] = val;
 }
 
