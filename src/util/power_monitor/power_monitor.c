@@ -32,14 +32,6 @@
 uintptr_t _baseAddr;
 volatile int _done;
 
-uint32_t pcie_read(uint32_t *bar, off_t offset) {
-    uint32_t val = bar[offset/sizeof(*bar)];
-    return val;
-}
-
-void pcie_write(uint32_t *bar, off_t offset, uint32_t val) {
-    bar[offset/sizeof(*bar)] = val;
-}
 
 void handle_quit(int signal) {
     _done = 1;

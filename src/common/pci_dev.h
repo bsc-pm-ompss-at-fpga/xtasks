@@ -111,4 +111,14 @@ static xtasks_stat unmapPciDev(uint32_t *pciBar) {
         return XTASKS_SUCCESS;
 }
 
+
+uint32_t pcie_read(uint32_t *bar, off_t offset) {
+    uint32_t val = bar[offset/sizeof(*bar)];
+    return val;
+}
+
+void pcie_write(uint32_t *bar, off_t offset, uint32_t val) {
+    bar[offset/sizeof(*bar)] = val;
+}
+
 #endif //DMA_PCI_DEV_H__
