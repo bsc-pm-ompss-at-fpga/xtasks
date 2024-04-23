@@ -13,9 +13,6 @@
 #include "common/pci_dev.h"
 #include "common/bitinfo.h"
 
-#define CMS_REG_MAP         0x028000
-#define MB_RESETN_REG       0x020000
-#define HOST_STATUS2_REG    0x030C
 #define SYSMON_T_REG        0x400
 #define CMS_T_REG           0x100
 #define CMS_FAN_REG         0x016C
@@ -36,48 +33,6 @@ volatile int _done;
 void handle_quit(int signal) {
     _done = 1;
 }
-
-
-int cms_enable_power_monitor(uint32_t *cms) {
-    // Get the cms out of reset status
-    pci_write(cms, MB_RESETN_REG, 0x01);
-
-    // Wait until REG_MAP (bit 0) is set in the HOST_STATUS2_REG
-    uint32_t host_status_reg = pci_read(cms, CMS_REG_MAP + HOST_STATUS2_REG);
-    int attempts=0;
-    while( (!(host_status_reg & 0x0001)) && (attempts<10) ) {
-        usleep(100000);
-        host_status_reg = pci_read(cms, CMS_REG_MAP + HOST_STATUS2_REG);
-        attempts++;
-    }
-    if (attempts==10) {
-        fprintf(stderr,"CMS did not respond after 10 retries\n");
-        return 1;
-    }
-    return 0;
-}
-
-void cms_disable_power_monitor(uint32_t *cms) {
-    pci_write(cms, MB_RESETN_REG, 0x00);
-}
-
-int cms_reset_power_monitor(uint32_t *cms) {
-    cms_disable_power_monitor(cms);
-    return cms_enable_power_monitor(cms);
-}
-
-int cms_start_power_monitor(uint32_t *cms) {
-
-    // Get card model (actually, software profile)
-    uint32_t software_profile = pci_read(cms, CMS_REG_MAP + 0x0014);
-    return cms_enable_power_monitor(cms);
-}
-
-void cms_stop_power_monitor(uint32_t *cms) {
-    cms_disable_power_monitor(cms);
-}
-
-
 
 float cms_read_power(uint32_t *cms_addr) {
     //instant_voltage_12V_PEX = pci_read(REG_MAP + 0x0028);

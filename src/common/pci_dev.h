@@ -19,6 +19,10 @@
 #define PCI_MAX_PATH_LEN 64
 #define PCI_BAR_SIZE 0x200000  // map 2MB
 
+#define CMS_REG_MAP         0x028000
+#define MB_RESETN_REG       0x020000
+#define HOST_STATUS2_REG    0x030C
+
 /*!
  * Gets the list of pci device names from the XTASKS_PCI_DEV
  * environment variable
@@ -120,5 +124,46 @@ uint32_t pci_read(uint32_t *bar, off_t offset) {
 void pci_write(uint32_t *bar, off_t offset, uint32_t val) {
     bar[offset/sizeof(*bar)] = val;
 }
+
+static int cms_enable_power_monitor(uint32_t *cms) {
+    // Get the cms out of reset status
+    pci_write(cms, MB_RESETN_REG, 0x01);
+
+    // Wait until REG_MAP (bit 0) is set in the HOST_STATUS2_REG
+    uint32_t host_status_reg = pci_read(cms, CMS_REG_MAP + HOST_STATUS2_REG);
+    int attempts=0;
+    while( (!(host_status_reg & 0x0001)) && (attempts<10) ) {
+        usleep(100000);
+        host_status_reg = pci_read(cms, CMS_REG_MAP + HOST_STATUS2_REG);
+        attempts++;
+    }
+    if (attempts==10) {
+        fprintf(stderr,"CMS did not respond after 10 retries\n");
+        return 1;
+    }
+    return 0;
+}
+
+static void cms_disable_power_monitor(uint32_t *cms) {
+    pci_write(cms, MB_RESETN_REG, 0x00);
+}
+
+static int cms_reset_power_monitor(uint32_t *cms) {
+    cms_disable_power_monitor(cms);
+    return cms_enable_power_monitor(cms);
+}
+
+static int cms_start_power_monitor(uint32_t *cms) {
+
+    // Get card model (actually, software profile)
+    uint32_t software_profile = pci_read(cms, CMS_REG_MAP + 0x0014);
+    return cms_enable_power_monitor(cms);
+}
+
+static void cms_stop_power_monitor(uint32_t *cms) {
+    cms_disable_power_monitor(cms);
+}
+
+
 
 #endif //DMA_PCI_DEV_H__
