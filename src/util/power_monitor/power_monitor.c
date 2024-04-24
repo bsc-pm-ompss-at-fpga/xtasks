@@ -97,7 +97,7 @@ int main(int argc, char *argv[]) {
             cmsAddr[i] = pciBar[i] + (addr/sizeof(*pciBar[i]));
             //We can start monitor here, we're not interested in max/avg values
             //TODO: Error handling if CMS does not wake up from reset
-            cms_start_power_monitor(cmsAddr[i]);
+            cms_enable_power_monitor(cmsAddr[i]);
         } else {
             cmsAddr[i] = NULL;
             fprintf(stderr, "  Sysmon not enabled\n");

@@ -910,4 +910,12 @@ void accelPrintInstrBuffer(size_t const aIdx)
     }
 }
 
+xtasks_stat xtasksStartMonitor(int devId) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksStopMonitor(int devId) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksResetMonitor(int devId) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksGetMonitorData(int devId, xtasks_monitor_info *info) { return XTASKS_ENOSYS; }
+
 #endif

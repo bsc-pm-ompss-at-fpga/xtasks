@@ -23,6 +23,10 @@
 #define MB_RESETN_REG       0x020000
 #define HOST_STATUS2_REG    0x030C
 
+#define CMS_FPGA_T_REG  0x100
+#define CMS_FAN_T_REG   0x10C
+#define CMS_FAN_S_REG   0x16C
+
 /*!
  * Gets the list of pci device names from the XTASKS_PCI_DEV
  * environment variable
@@ -126,10 +130,12 @@ void pci_write(uint32_t *bar, off_t offset, uint32_t val) {
 }
 
 static int cms_enable_power_monitor(uint32_t *cms) {
+    //TODO: Check for a proper software profile (board code + sw version)
+    //uint32_t software_profile = pci_read(cms, CMS_REG_MAP + 0x0014);
     // Get the cms out of reset status
     pci_write(cms, MB_RESETN_REG, 0x01);
 
-    // Wait until REG_MAP (bit 0) is set in the HOST_STATUS2_REG
+    // Wait until CMS_REG_MAP (bit 0) is set in the HOST_STATUS2_REG
     uint32_t host_status_reg = pci_read(cms, CMS_REG_MAP + HOST_STATUS2_REG);
     int attempts=0;
     while( (!(host_status_reg & 0x0001)) && (attempts<10) ) {
@@ -153,17 +159,66 @@ static int cms_reset_power_monitor(uint32_t *cms) {
     return cms_enable_power_monitor(cms);
 }
 
-static int cms_start_power_monitor(uint32_t *cms) {
-
-    // Get card model (actually, software profile)
-    uint32_t software_profile = pci_read(cms, CMS_REG_MAP + 0x0014);
-    return cms_enable_power_monitor(cms);
-}
-
 static void cms_stop_power_monitor(uint32_t *cms) {
     cms_disable_power_monitor(cms);
 }
 
+static int cms_power_monitor_read_values(uint32_t *cmsAddr, xtasks_monitor_info *info) {
+	// XXX TODO u200/u280/... logic
+	// XXX TODO move hex values to constats
+
+	bzero(info,sizeof(*info));
+
+	info->average_voltage_12V_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x0024);
+	info->instant_voltage_12V_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x0028);
+	info->average_current_12V_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x00CC);
+	info->instant_current_12V_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x00D0);
+	info->computed_average_power_12V_PEX = (info->average_voltage_12V_PEX * info->average_current_12V_PEX)/1000000.0;
+	info->computed_instant_power_12V_PEX = (info->instant_voltage_12V_PEX * info->instant_current_12V_PEX)/1000000.0;
+
+	info->average_voltage_3V3_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x0030);
+	info->instant_voltage_3V3_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x0034);
+	info->average_current_3V3_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x027C);
+	info->instant_current_3V3_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x0280);
+	info->computed_average_power_3V3_PEX = (info->average_voltage_3V3_PEX * info->average_current_3V3_PEX)/1000000.0;
+	info->computed_instant_power_3V3_PEX = (info->instant_voltage_3V3_PEX * info->instant_current_3V3_PEX)/1000000.0;
+
+	info->average_voltage_3V3_AUX = pci_read(cmsAddr, CMS_REG_MAP + 0x003C);
+	info->instant_voltage_3V3_AUX = pci_read(cmsAddr, CMS_REG_MAP + 0x0040);
+	info->average_current_3V3_AUX = pci_read(cmsAddr, CMS_REG_MAP + 0x02F4);
+	info->instant_current_3V3_AUX = pci_read(cmsAddr, CMS_REG_MAP + 0x02F8);
+	info->computed_average_power_3V3_AUX = (info->average_voltage_3V3_AUX * info->average_current_3V3_AUX)/1000000.0;
+	info->computed_instant_power_3V3_AUX = (info->instant_voltage_3V3_AUX * info->instant_current_3V3_AUX)/1000000.0;
+
+	info->average_voltage_12V_AUX = pci_read(cmsAddr, CMS_REG_MAP + 0x0048);
+	info->instant_voltage_12V_AUX = pci_read(cmsAddr, CMS_REG_MAP + 0x004C);
+	info->average_current_12V_AUX = pci_read(cmsAddr, CMS_REG_MAP + 0x00D8);
+	info->instant_current_12V_AUX = pci_read(cmsAddr, CMS_REG_MAP + 0x00DC);
+	info->computed_average_power_12V_AUX = (info->average_voltage_12V_AUX * info->average_current_12V_AUX)/1000000.0;
+	info->computed_instant_power_12V_AUX = (info->instant_voltage_12V_AUX * info->instant_current_12V_AUX)/1000000.0;
+
+	info->average_power_12V_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x02DC);
+	info->instant_power_12V_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x02E0);
+	info->average_power_3V3_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x02E8);
+	info->instant_power_3V3_PEX = pci_read(cmsAddr, CMS_REG_MAP + 0x02EC);
+	info->average_power_VCCINT = pci_read(cmsAddr, CMS_REG_MAP + 0x0378);
+	info->instant_power_VCCINT = pci_read(cmsAddr, CMS_REG_MAP + 0x037C);
+
+	info->computed_average_power_total = info->computed_average_power_12V_PEX +
+																			 info->computed_average_power_3V3_PEX +
+																			 info->computed_average_power_3V3_AUX + 
+																			 info->computed_average_power_12V_AUX;
+
+	info->computed_instant_power_total = info->computed_instant_power_12V_PEX +
+																			 info->computed_instant_power_3V3_PEX + 
+																			 info->computed_instant_power_3V3_AUX +
+																			 info->computed_instant_power_12V_AUX;
+
+    info->instant_fpga_temp = pci_read(cmsAddr, CMS_REG_MAP + CMS_FPGA_T_REG);
+    info->instant_fan_temp =  pci_read(cmsAddr, CMS_REG_MAP + CMS_FAN_T_REG);
+    info->instant_fan_speed = pci_read(cmsAddr, CMS_REG_MAP + CMS_FAN_S_REG);
+    return 0;
+}
 
 
 #endif //DMA_PCI_DEV_H__

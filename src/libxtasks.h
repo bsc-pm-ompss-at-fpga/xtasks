@@ -114,6 +114,53 @@ typedef struct {
     xtasks_newtask_copy *copies;  ///< Copies array
 } xtasks_newtask;
 
+
+typedef struct {
+    // Total Power = 12V_AUX Power + 12V_PEX Power + 3V3_PEX Power + 3V3_AUX Power
+    float computed_instant_power_total;
+    float computed_average_power_total;
+
+    float computed_instant_power_12V_AUX;
+    float computed_average_power_12V_AUX;
+    uint32_t instant_voltage_12V_AUX;
+    uint32_t instant_current_12V_AUX;
+    uint32_t average_voltage_12V_AUX;
+    uint32_t average_current_12V_AUX;
+
+    float computed_instant_power_12V_PEX;
+    float computed_average_power_12V_PEX;
+    uint32_t instant_voltage_12V_PEX;
+    uint32_t instant_current_12V_PEX;
+    uint32_t average_voltage_12V_PEX;
+    uint32_t average_current_12V_PEX;
+
+    float computed_instant_power_3V3_AUX;
+    float computed_average_power_3V3_AUX;
+    uint32_t instant_voltage_3V3_AUX;
+    uint32_t instant_current_3V3_AUX;
+    uint32_t average_voltage_3V3_AUX;
+    uint32_t average_current_3V3_AUX;
+
+    float computed_instant_power_3V3_PEX;
+    float computed_average_power_3V3_PEX;
+    uint32_t instant_voltage_3V3_PEX;
+    uint32_t instant_current_3V3_PEX;
+    uint32_t average_voltage_3V3_PEX;
+    uint32_t average_current_3V3_PEX;
+
+    uint32_t average_power_12V_PEX;
+    uint32_t instant_power_12V_PEX;
+    uint32_t average_power_3V3_PEX;
+    uint32_t instant_power_3V3_PEX;
+    uint32_t average_power_VCCINT;
+    uint32_t instant_power_VCCINT;
+
+    uint32_t instant_fpga_temp;
+    uint32_t instant_fan_temp;
+
+    uint32_t instant_fan_speed;
+} xtasks_monitor_info;
+
 /*!
  * \brief Initialize the library
  */
@@ -362,6 +409,32 @@ xtasks_stat xtasksTestCopy(xtasks_memcpy_handle *handle);
  * \param[in]  handle     Copy operation handle that will be synchronized
  */
 xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle *handle);
+
+/*!
+ * \brief   Start device power/thermal monitor (CMS)
+ * \param[in]   devId   Device ID to enable monitoring
+ */
+xtasks_stat xtasksStartMonitor(int devId);
+
+/*!
+ * \brief   Stop device power/thermal monitor (CMS)
+ * \param[in]   devId   Device ID to enable monitoring
+ */
+xtasks_stat xtasksStopMonitor(int devId);
+
+/*!
+ * \brief   Reset device power/thermal monitor (CMS)
+ *          This resets average and max counters
+ * \param[in]   devId   Device ID to enable monitoring
+ */
+xtasks_stat xtasksResetMonitor(int devId);
+
+/*!
+ * \brief   Dump all registers from the power monitor for a given device
+ * \param[in]   devId   Device ID to dump monitor data
+ * \param[out]  info    Device monitor stats
+ */
+xtasks_stat xtasksGetMonitorData(int devId, xtasks_monitor_info *info);
 
 #ifdef __cplusplus
 }

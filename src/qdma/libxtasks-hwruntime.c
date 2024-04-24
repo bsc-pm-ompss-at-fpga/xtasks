@@ -59,6 +59,8 @@ static uint32_t _cmdOutSubqueueLen[MAX_DEVICES];
 static uint32_t _spawnInQueueLen[MAX_DEVICES];
 static uint32_t _spawnOutQueueLen[MAX_DEVICES];
 static uint64_t _hwcounter_address[MAX_DEVICES];
+static uint32_t *_sysmonAddr[MAX_DEVICES];
+static uint32_t *_cmsAddr[MAX_DEVICES];
 
 static bool _instrAvail;
 static size_t _numInstrEvents;
@@ -160,6 +162,20 @@ xtasks_stat xtasksInit()
         // initialize reset
         _hwruntimeRst[d] = (uint32_t *)(_pciBar[d] + (hwruntime_rst_address / sizeof(*_pciBar[0])));
         resetHWRuntime(_hwruntimeRst[d]);
+
+        //Initialize power/thermal monitor if enabled
+        if (bitinfo_get_feature(bitInfo, BIT_FEATURE_SYSMON_EN)) {
+            _sysmonAddr[d] = (uint32_t*)_pciBar[d] +
+                (bitinfo_get_sysmon_addr(bitInfo)/sizeof(*_pciBar[d])) ;
+        } else {
+            _sysmonAddr[d] = NULL;
+        }
+        if (bitinfo_get_feature(bitInfo, BIT_FEATURE_CMS_EN)) {
+            _cmsAddr[d] = (uint32_t*)_pciBar[d] +
+                (bitinfo_get_cms_addr(bitInfo)/sizeof(*_pciBar[d]));
+        } else {
+            _cmsAddr[d] = NULL;
+        }
 
         bool feature = bitinfo_get_feature(bitInfo, BIT_FEATURE_SPAWN_Q);
         if (!feature) {
@@ -713,4 +729,44 @@ xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_ti
 {
     *timestamp = *_instrCounter;
     return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksStartMonitor(int devId) {
+    xtasks_stat ret = XTASKS_SUCCESS;
+    if (_cmsAddr[devId]) {
+        int err;
+        err = cms_enable_power_monitor(_cmsAddr[devId]);
+        if (err) {
+            ret = XTASKS_ERROR;
+        }
+    } else {
+        ret = XTASKS_ENOENTRY;
+    }
+    return ret;
+}
+
+xtasks_stat xtasksStopMonitor(int devId) {
+    if (_cmsAddr[devId]) {
+        cms_stop_power_monitor(_cmsAddr[devId]);
+    }
+
+    return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksResetMonitor(int devId) {
+    int err;
+    xtasks_stat ret = XTASKS_SUCCESS;
+    if (_cmsAddr[devId]) {
+        err = cms_reset_power_monitor(_cmsAddr[devId]);
+        if (err) {
+            ret = XTASKS_ENOENTRY;
+        }
+    }
+    return ret;
+}
+
+xtasks_stat xtasksGetMonitorData(int devId, xtasks_monitor_info *info) {
+    cms_power_monitor_read_values(_cmsAddr[devId], info);
+    return XTASKS_SUCCESS;
+
 }

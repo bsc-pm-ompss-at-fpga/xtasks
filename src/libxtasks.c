@@ -114,3 +114,12 @@ xtasks_stat xtasksMemcpyAsync(xtasks_mem_handle const handle, size_t offset, siz
 xtasks_stat xtasksTestCopy(xtasks_memcpy_handle *handle) { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle *handle) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksStartMonitor(int devId) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksStopMonitor(int devId) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksResetMonitor(int devId) { return XTASKS_ENOSYS; }
+
+xtasks_stat xtasksGetMonitorData(int devId, xtasks_monitor_info *info) { return XTASKS_ENOSYS; }
+
