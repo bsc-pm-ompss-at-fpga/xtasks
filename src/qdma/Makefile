@@ -25,7 +25,7 @@ endif
 all: $(TARGETS_)
 
 read_bitinfo: ../util/read_bitinfo/read_bitinfo_qdma.c ../util/read_bitinfo/read_bitinfo.c
-	$(CC_) $^ -o $@
+	$(CC_) $^ -I../common/ -I../ -o $@
 
 libxtasks-hwruntime.o: libxtasks-hwruntime.c
 	$(CC_) $(CFLAGS_) -c $^

@@ -24,7 +24,7 @@ endif
 .PHONY: all
 all: $(TARGETS_)
 
-read_bitinfo: ../read_bitinfo/read_bitinfo_zynq.c ../read_bitinfo/read_bitinfo.c
+read_bitinfo: ../util/read_bitinfo/read_bitinfo_zynq.c ../util/read_bitinfo/read_bitinfo.c
 	$(CC_) $^ -o $@
 
 libxtasks-hwruntime.o: libxtasks-hwruntime.c
