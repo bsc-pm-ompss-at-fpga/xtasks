@@ -26,11 +26,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "common/common.h"
+#include "common/ticket-lock.h"
 #include "libxdma.h"
 #include "libxdma_version.h"
 #include "libxtasks.h"
-#include "common/common.h"
-#include "common/ticket-lock.h"
 #include "pci_dev.h"
 
 #define ACC_INFO_MAX_LEN 4096
@@ -97,11 +97,11 @@ xtasks_stat xtasksInit()
         return ret;
     }
 
-    for (int i=0; i<ndevs; i++) {
+    for (int i = 0; i < ndevs; i++) {
         uint32_t *pciBar;
         ret = mapPciDevice(devNames[i], &pciBar);
         if (ret != XTASKS_SUCCESS) {
-            //TODO: Proper error handling/cleanup
+            // TODO: Proper error handling/cleanup
             goto init_map_bar_err;
         }
         _pciBar[i] = pciBar;
@@ -163,16 +163,14 @@ xtasks_stat xtasksInit()
         _hwruntimeRst[d] = (uint32_t *)(_pciBar[d] + (hwruntime_rst_address / sizeof(*_pciBar[0])));
         resetHWRuntime(_hwruntimeRst[d]);
 
-        //Initialize power/thermal monitor if enabled
+        // Initialize power/thermal monitor if enabled
         if (bitinfo_get_feature(bitInfo, BIT_FEATURE_SYSMON_EN)) {
-            _sysmonAddr[d] = (uint32_t*)_pciBar[d] +
-                (bitinfo_get_sysmon_addr(bitInfo)/sizeof(*_pciBar[d])) ;
+            _sysmonAddr[d] = (uint32_t *)_pciBar[d] + (bitinfo_get_sysmon_addr(bitInfo) / sizeof(*_pciBar[d]));
         } else {
             _sysmonAddr[d] = NULL;
         }
         if (bitinfo_get_feature(bitInfo, BIT_FEATURE_CMS_EN)) {
-            _cmsAddr[d] = (uint32_t*)_pciBar[d] +
-                (bitinfo_get_cms_addr(bitInfo)/sizeof(*_pciBar[d]));
+            _cmsAddr[d] = (uint32_t *)_pciBar[d] + (bitinfo_get_cms_addr(bitInfo) / sizeof(*_pciBar[d]));
         } else {
             _cmsAddr[d] = NULL;
         }
@@ -246,7 +244,7 @@ init_compat_err:
 init_alloc_bitinfo_err:
 init_map_bar_err:
     free(devNames);
-    for (int d = 0; d < ndevs; ++d) unmapPciDev((uint32_t*)_pciBar[d]);
+    for (int d = 0; d < ndevs; ++d) unmapPciDev((uint32_t *)_pciBar[d]);
     xdmaFini();
     return ret;
 }
@@ -343,7 +341,7 @@ xtasks_stat xtasksFini()
 {
     free(_tasks);
     for (int d = 0; d < _ndevs; ++d) {
-        unmapPciDev((uint32_t*)_pciBar[d]); //Need the cast to drop volatile qualifier
+        unmapPciDev((uint32_t *)_pciBar[d]);  // Need the cast to drop volatile qualifier
         free(_acc_types[d]);
         free(_accs[d]);
     }
@@ -731,7 +729,8 @@ xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_ti
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksStartMonitor(int devId) {
+xtasks_stat xtasksStartMonitor(int devId)
+{
     xtasks_stat ret = XTASKS_SUCCESS;
     if (_cmsAddr[devId]) {
         int err;
@@ -745,7 +744,8 @@ xtasks_stat xtasksStartMonitor(int devId) {
     return ret;
 }
 
-xtasks_stat xtasksStopMonitor(int devId) {
+xtasks_stat xtasksStopMonitor(int devId)
+{
     if (_cmsAddr[devId]) {
         cms_stop_power_monitor(_cmsAddr[devId]);
     }
@@ -753,7 +753,8 @@ xtasks_stat xtasksStopMonitor(int devId) {
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksResetMonitor(int devId) {
+xtasks_stat xtasksResetMonitor(int devId)
+{
     int err;
     xtasks_stat ret = XTASKS_SUCCESS;
     if (_cmsAddr[devId]) {
@@ -765,8 +766,8 @@ xtasks_stat xtasksResetMonitor(int devId) {
     return ret;
 }
 
-xtasks_stat xtasksGetMonitorData(int devId, xtasks_monitor_info *info) {
+xtasks_stat xtasksGetMonitorData(int devId, xtasks_monitor_info *info)
+{
     cms_power_monitor_read_values(_cmsAddr[devId], info);
     return XTASKS_SUCCESS;
-
 }

@@ -114,7 +114,6 @@ typedef struct {
     xtasks_newtask_copy *copies;  ///< Copies array
 } xtasks_newtask;
 
-
 typedef struct {
     // Total Power = 12V_AUX Power + 12V_PEX Power + 3V3_PEX Power + 3V3_AUX Power
     float computed_instant_power_total;

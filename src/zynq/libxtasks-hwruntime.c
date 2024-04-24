@@ -18,9 +18,9 @@
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
-#include "../libxtasks.h"
 #include "../common/common.h"
 #include "../common/ticket-lock.h"
+#include "../libxtasks.h"
 
 #include <elf.h>
 #include <errno.h>

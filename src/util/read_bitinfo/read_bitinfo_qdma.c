@@ -19,17 +19,16 @@ char **_pciDevNames;
 
 int read_bitinfo(const uint32_t *bitinfo);
 
-//Open devices and copy bitinfo data
+// Open devices and copy bitinfo data
 int init()
 {
-
     xtasks_stat stat;
     stat = getPciDevList(&_ndevs, &_pciDevNames);
     if (stat != XTASKS_SUCCESS) {
         return -1;
     }
 
-    for (int i=0; i<_ndevs; i++) {
+    for (int i = 0; i < _ndevs; i++) {
         int fd;
         uint32_t *pciBar;
         stat = mapPciDevice(_pciDevNames[i], &pciBar);
@@ -38,8 +37,7 @@ int init()
         }
 
         bitinfo[i] = malloc(BITINFO_MAX_SIZE);
-        memcpy(bitinfo[i], (void *)(pciBar + BITINFO_ADDRESS / sizeof(*pciBar)),
-                BITINFO_MAX_SIZE);
+        memcpy(bitinfo[i], (void *)(pciBar + BITINFO_ADDRESS / sizeof(*pciBar)), BITINFO_MAX_SIZE);
         unmapPciDev(pciBar);
     }
 

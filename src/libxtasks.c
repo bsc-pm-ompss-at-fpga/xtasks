@@ -122,4 +122,3 @@ xtasks_stat xtasksStopMonitor(int devId) { return XTASKS_ENOSYS; }
 xtasks_stat xtasksResetMonitor(int devId) { return XTASKS_ENOSYS; }
 
 xtasks_stat xtasksGetMonitorData(int devId, xtasks_monitor_info *info) { return XTASKS_ENOSYS; }
-
