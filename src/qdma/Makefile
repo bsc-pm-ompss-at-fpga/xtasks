@@ -3,7 +3,7 @@ CC_ = $(CROSS_COMPILE)$(CC)
 
 CFLAGS_  = $(CFLAGS) -I../ -I../common/ -fPIC -g -Wall
 LDFLAGS_ = $(LDFLAGS)
-TARGETS_ = read_bitinfo
+TARGETS_ = read_bitinfo power_monitor
 
 ## Check libxdma installation
 #LIBXDMA_DIR      ?= /opt/install-arm/libxdma
@@ -25,10 +25,16 @@ endif
 all: $(TARGETS_)
 
 read_bitinfo: ../util/read_bitinfo/read_bitinfo_qdma.c ../util/read_bitinfo/read_bitinfo.c
-	$(CC_) $^ -I../common/ -I../ -o $@
+	$(MAKE) -C ../util/read_bitinfo read_bitinfo_qdma
+	mv ../util/read_bitinfo/read_bitinfo_qdma $@
+
+power_monitor: ../util/power_monitor/power_monitor.c
+	$(MAKE) -C ../util/power_monitor
+	mv ../util/power_monitor/power_monitor $@
 
 libxtasks-hwruntime.o: libxtasks-hwruntime.c
 	$(CC_) $(CFLAGS_) -c $^
+
 
 libxtasks-hwruntime.so: libxtasks-hwruntime.o
 	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
@@ -61,7 +67,8 @@ install: $(TARGETS_) ../libxtasks.h libxtasks_version.h
 	cp libxtasks_version.h $(PREFIX)/include
 	mkdir -p $(PREFIX)/bin
 	cp read_bitinfo $(PREFIX)/bin
+	cp power_monitor $(PREFIX)/bin/fpga_power_monitor
 
 .PHONY: clean
 clean:
-	rm -f *.o *.so libxtasks_version.h read_bitinfo
+	rm -f *.o *.so libxtasks_version.h read_bitinfo power_monitor
