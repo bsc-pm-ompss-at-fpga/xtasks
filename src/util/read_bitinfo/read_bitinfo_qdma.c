@@ -61,7 +61,6 @@ int main()
         printf("Bitinfo of FPGA %s:\n", _pciDevNames[ndev]);
         read_bitinfo(bitinfo[ndev]);
         free(bitinfo[ndev]);
-        free(_pciDevNames[ndev]);
     }
 
     return 0;
