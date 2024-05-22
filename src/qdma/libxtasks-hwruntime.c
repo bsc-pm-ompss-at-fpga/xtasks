@@ -67,7 +67,7 @@ static size_t _numInstrEvents;
 static xtasks_ins_event *_instrBuffPhy;
 static xtasks_ins_event *_invalBuffer;
 static xdma_buf_handle _instrBuffHandle;
-static uint64_t *_instrCounter;
+static volatile uint64_t *_instrCounter;
 
 //! \brief Platform and Backend strings
 const char _platformName[] = "qdma";
@@ -311,7 +311,7 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
         goto hwins_no_pcibar;
     }
 
-    _instrCounter = (uint64_t *)(_pciBar[0] + _hwcounter_address[0] / sizeof(*_pciBar));
+    _instrCounter = (uint64_t *)(_pciBar[0] + _hwcounter_address[0] / sizeof(*_pciBar[0]));
 
     return XTASKS_SUCCESS;
 
@@ -339,6 +339,7 @@ xtasks_stat xtasksFiniHWIns()
 
 xtasks_stat xtasksFini()
 {
+    free(_cmdExecTaskBuff);
     free(_tasks);
     for (int d = 0; d < _ndevs; ++d) {
         unmapPciDev((uint32_t *)_pciBar[d]);  // Need the cast to drop volatile qualifier
