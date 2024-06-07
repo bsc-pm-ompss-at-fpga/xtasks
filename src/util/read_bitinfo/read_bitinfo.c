@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "../../common/bitinfo.h"
@@ -18,7 +19,9 @@ int read_bitinfo(const uint32_t* bitinfo)
     printf("AIT version:\t%d.%d.%d\n", major, minor, patch);
     printf("Wrapper version\t%u\n", bitinfo_get_wrapper_version(bitinfo));
     printf("Board base frequency (Hz)\t%u\n", bitinfo_get_board_base_freq(bitinfo));
-    printf("Interleaving stride\t%u\n", bitinfo_get_interleaving_stride(bitinfo));
+    printf("Interleaving ");
+    bitinfo_get_interleaving_stride(bitinfo) ? printf("stride\t%u\n", bitinfo_get_interleaving_stride(bitinfo))
+                                             : printf("not enabled\n");
     printf("Features:\n");
     printf("[%c] Instrumentation\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_INST) ? 'x' : ' ');
     printf("[%c] Hardware counter\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_HWCOUNTER) ? 'x' : ' ');
@@ -33,15 +36,25 @@ int read_bitinfo(const uint32_t* bitinfo)
     printf("[%c] Power monitor (CMS) enabled\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_CMS_EN) ? 'x' : ' ');
     printf("[%c] Thermal monitor (sysmon) enabled\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_SYSMON_EN) ? 'x' : ' ');
 
-    printf("Cmd In addr 0x%lX len %u\n", bitinfo_get_cmd_in_addr(bitinfo), bitinfo_get_cmd_in_len(bitinfo));
-    printf("Cmd Out addr 0x%lX len %u\n", bitinfo_get_cmd_out_addr(bitinfo), bitinfo_get_cmd_out_len(bitinfo));
-    printf("Spawn In addr 0x%lX len %u\n", bitinfo_get_spawn_in_addr(bitinfo), bitinfo_get_spawn_in_len(bitinfo));
-    printf("Spawn Out addr 0x%lX len %u\n", bitinfo_get_spawn_out_addr(bitinfo), bitinfo_get_spawn_out_len(bitinfo));
-    printf("Managed rstn addr 0x%lX\n", bitinfo_get_managed_rstn_addr(bitinfo));
-    printf("Hardware counter addr 0x%lX\n", bitinfo_get_hwcounter_addr(bitinfo));
-    printf("POM AXI-Lite addr 0x%lX\n", bitinfo_get_pom_axilite_addr(bitinfo));
-    printf("Power monitor (CMS) addr 0x%lX\n", bitinfo_get_cms_addr(bitinfo));
-    printf("Thermal monitor (sysmon) addr 0x%lx\n", bitinfo_get_sysmon_addr(bitinfo));
+    printf("Cmd In addr 0x%" PRIX64 " len %u\n", bitinfo_get_cmd_in_addr(bitinfo), bitinfo_get_cmd_in_len(bitinfo));
+    printf("Cmd Out addr 0x%" PRIX64 " len %u\n", bitinfo_get_cmd_out_addr(bitinfo), bitinfo_get_cmd_out_len(bitinfo));
+    printf(
+        "Spawn In addr 0x%" PRIX64 " len %u\n", bitinfo_get_spawn_in_addr(bitinfo), bitinfo_get_spawn_in_len(bitinfo));
+    printf("Spawn Out addr 0x%" PRIX64 " len %u\n", bitinfo_get_spawn_out_addr(bitinfo),
+        bitinfo_get_spawn_out_len(bitinfo));
+    printf("Managed rstn addr 0x%" PRIX64 "\n", bitinfo_get_managed_rstn_addr(bitinfo));
+    printf("Hardware counter ");
+    bitinfo_get_hwcounter_addr(bitinfo) ? printf("addr 0x%" PRIX64 "\n", bitinfo_get_hwcounter_addr(bitinfo))
+                                        : printf("not enabled\n");
+    printf("POM AXI-Lite ");
+    bitinfo_get_pom_axilite_addr(bitinfo) ? printf("addr 0x%" PRIX64 "\n", bitinfo_get_pom_axilite_addr(bitinfo))
+                                          : printf("not enabled\n");
+    printf("Power monitor (CMS) ");
+    bitinfo_get_cms_addr(bitinfo) ? printf("addr 0x%" PRIX64 "\n", bitinfo_get_cms_addr(bitinfo))
+                                  : printf("not enabled\n");
+    printf("Thermal monitor (sysmon) ");
+    bitinfo_get_sysmon_addr(bitinfo) ? printf("addr 0x%" PRIX64 "\n", bitinfo_get_sysmon_addr(bitinfo))
+                                     : printf("not enabled\n");
 
     int nacc_types = bitinfo_get_acc_type_count(bitinfo);
     bit_acc_type_t* accs = malloc(nacc_types * sizeof(bit_acc_type_t));
@@ -50,7 +63,7 @@ int read_bitinfo(const uint32_t* bitinfo)
     printf("xtasks accelerator config:\n");
     printf("type\t\tcount\tfreq(KHz)\tdescription\n");
     for (int i = 0; i < nacc_types; ++i) {
-        printf("%lu\t%u\t%u\t\t%s\n", accs[i].type, accs[i].count, accs[i].freq, accs[i].description);
+        printf("%" PRIu64 "\t%u\t%u\t\t%s\n", accs[i].type, accs[i].count, accs[i].freq, accs[i].description);
     }
     printf("\n");
 

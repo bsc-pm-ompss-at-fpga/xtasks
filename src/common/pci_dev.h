@@ -37,7 +37,7 @@
  */
 static xtasks_stat getPciDevList(int *nDevices, char ***devNames)
 {
-    const char *pciDevListEnv = getenv(XTASKS_PCIDEV_ENV);
+    char *pciDevListEnv = getenv(XTASKS_PCIDEV_ENV);
     if (pciDevListEnv == NULL) {
         fprintf(stderr,
             "Environment variable XTASKS_PCIDEV_ENV"
@@ -50,16 +50,12 @@ static xtasks_stat getPciDevList(int *nDevices, char ***devNames)
     char *pciDevName;
     char **names;
     names = malloc(MAX_PCI_DEVS * sizeof(*devNames));
-    //*devNames = malloc(MAX_PCI_DEVS * sizeof(*devNames));
 
-    // Need a string copy as strtok will destroy the original string
-    char *pciDevList = malloc(strlen(pciDevListEnv) + 1);
-    strcpy(pciDevList, pciDevListEnv);
-    pciDevName = strtok(pciDevList, " ");
+    pciDevName = strsep(&pciDevListEnv, " ");
     while (pciDevName != NULL && ndevs != MAX_PCI_DEVS) {
-        names[ndevs] = strdup(pciDevName);
+        names[ndevs] = pciDevName;
         ++ndevs;
-        pciDevName = strtok(NULL, " ");
+        pciDevName = strsep(&pciDevListEnv, " ");
     }
 
     if (ndevs == 0) {
