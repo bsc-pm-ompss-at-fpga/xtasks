@@ -27,15 +27,14 @@
 #define CMS_FAN_S_REG 0x16C
 
 /*!
- * Gets the list of pci device names from the XTASKS_PCI_DEV
+ * Gets the list of pci device names string from the XTASKS_PCI_DEV
  * environment variable
  *
- * \param[out]  nDevices    Number of devices in the device list
- * \param[out]  devNames    Reference to an array of device names, allocated by this function
- * \returns     XTASKS_SUCCESS on success, error code otherwise
- *
+ * \param[out]  pciDevListStr    String allocated by this funcion containing a copy of the XTASKS_PCI_DEV environment
+ *                               variable
+ * \returns     XTASKS_SUCCESS on success, XTASKS_ENODEV if XTASKS_PCI_DEV is not defined
  */
-static xtasks_stat getPciDevList(int *nDevices, char ***devNames)
+static xtasks_stat getPciDevListStr(char **pciDevListStr)
 {
     char *pciDevListEnv = getenv(XTASKS_PCIDEV_ENV);
     if (pciDevListEnv == NULL) {
@@ -45,17 +44,33 @@ static xtasks_stat getPciDevList(int *nDevices, char ***devNames)
             " in the form of xxxx:xx:xx.x see `lspci -Dd 10ee:`\n");
         return XTASKS_ENODEV;
     }
+    size_t envlen = strlen(pciDevListEnv);
+    *pciDevListStr = (char *)malloc(envlen + 1);  // We have to add the terminating NULL character
+    strcpy(*pciDevListStr, pciDevListEnv);
+    return XTASKS_SUCCESS;
+}
 
+/*!
+ * Gets the list of pci device names from the pciDevListStr string
+ *
+ * \param[in]   pciDevListStr    String with the list of PCI names separated by spaces
+ * \param[out]  nDevices         Number of devices in the device list
+ * \param[out]  devNames         Reference to an array of device names, allocated by this function
+ * \returns     XTASKS_SUCCESS on success, error code otherwise
+ */
+static xtasks_stat getPciDevList(char *pciDevListStr, int *nDevices, char ***devNames)
+{
     int ndevs = 0;
     char *pciDevName;
     char **names;
     names = malloc(MAX_PCI_DEVS * sizeof(*devNames));
+    *devNames = names;
 
-    pciDevName = strsep(&pciDevListEnv, " ");
+    pciDevName = strsep(&pciDevListStr, " ");
     while (pciDevName != NULL && ndevs != MAX_PCI_DEVS) {
         names[ndevs] = pciDevName;
         ++ndevs;
-        pciDevName = strsep(&pciDevListEnv, " ");
+        pciDevName = strsep(&pciDevListStr, " ");
     }
 
     if (ndevs == 0) {
@@ -64,10 +79,10 @@ static xtasks_stat getPciDevList(int *nDevices, char ***devNames)
     }
 
     if (ndevs == MAX_PCI_DEVS && pciDevName != NULL) {
-        fprintf(stderr, "Warning: Too many devices found, using first %d devices\n", MAX_PCI_DEVS);
+        fprintf(stderr, "Found too many devices, limit is %d\n", MAX_PCI_DEVS);
+        return XTASKS_ERROR;
     }
     *nDevices = ndevs;
-    *devNames = names;
     return XTASKS_SUCCESS;
 }
 

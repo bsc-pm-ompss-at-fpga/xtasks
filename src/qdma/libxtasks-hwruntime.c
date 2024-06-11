@@ -81,20 +81,26 @@ const char _backendName[] = "hwruntime";
 xtasks_stat xtasksInit()
 {
     xdma_status st;
-    xtasks_stat ret = XTASKS_ERROR;  // Initialize DMA
+    xtasks_stat ret;
     int ndevs;
     char **devNames;
+    char *pciDevListStr;
     _ndevs = 0;
+
+    ret = getPciDevListStr(&pciDevListStr);
+    if (ret != XTASKS_SUCCESS) {
+        return ret;
+    }
+    ret = getPciDevList(pciDevListStr, &ndevs, &devNames);
+    if (ret != XTASKS_SUCCESS) {
+        goto init_pci_dev_list_err;
+    }
 
     st = xdmaInit();
     if (st != XDMA_SUCCESS) {
         PRINT_ERROR("Could not initialize XDMA\n");
-        return XTASKS_ERROR;
-    }
-
-    ret = getPciDevList(&ndevs, &devNames);
-    if (ret != XTASKS_SUCCESS) {
-        return ret;
+        ret = XTASKS_ERROR;
+        goto init_xdma_err;
     }
 
     int curdevMap = 0;
@@ -102,7 +108,6 @@ xtasks_stat xtasksInit()
         uint32_t *pciBar;
         ret = mapPciDevice(devNames[i], &pciBar);
         if (ret != XTASKS_SUCCESS) {
-            // TODO: Proper error handling/cleanup
             goto init_map_bar_err;
         }
         _pciBar[i] = pciBar;
@@ -224,8 +229,9 @@ xtasks_stat xtasksInit()
     // Check for instrumentation
     _instrAvail = bitinfo_get_feature(bitInfo, BIT_FEATURE_INST);
 
-    free(devNames);
     free(bitInfo);
+    free(devNames);
+    free(pciDevListStr);
 
     return XTASKS_SUCCESS;
 
@@ -244,9 +250,12 @@ init_compat_err:
     free(bitInfo);
 init_alloc_bitinfo_err:
 init_map_bar_err:
-    free(devNames);
     for (int d = 0; d < curdevMap; ++d) unmapPciDev((uint32_t *)_pciBar[d]);
     xdmaFini();
+init_xdma_err:
+    free(devNames);
+init_pci_dev_list_err:
+    free(pciDevListStr);
     return ret;
 }
 

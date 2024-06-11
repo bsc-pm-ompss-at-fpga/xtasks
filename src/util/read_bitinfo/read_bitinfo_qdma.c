@@ -23,9 +23,13 @@ int read_bitinfo(const uint32_t *bitinfo);
 int init()
 {
     xtasks_stat stat;
-    stat = getPciDevList(&_ndevs, &_pciDevNames);
+
+    char *pciDevListStr;
+    stat = getPciDevListStr(&pciDevListStr);
+    if (stat != XTASKS_SUCCESS) return 1;
+    stat = getPciDevList(pciDevListStr, &_ndevs, &_pciDevNames);
     if (stat != XTASKS_SUCCESS) {
-        return -1;
+        return 1;
     }
 
     for (int i = 0; i < _ndevs; i++) {
@@ -33,7 +37,7 @@ int init()
         uint32_t *pciBar;
         stat = mapPciDevice(_pciDevNames[i], &pciBar);
         if (stat != XTASKS_SUCCESS) {
-            return -1;
+            return 1;
         }
 
         bitinfo[i] = malloc(BITINFO_MAX_SIZE);
@@ -42,12 +46,6 @@ int init()
     }
 
     return 0;
-
-init_devlist_err:
-init_maxdev_err:
-init_open_bar_err:
-init_map_bar_err:
-    return 1;
 }
 
 int main()
@@ -56,8 +54,7 @@ int main()
         return 1;
     }
 
-    unsigned ndev;
-    for (ndev = 0; ndev < _ndevs; ndev++) {
+    for (unsigned ndev = 0; ndev < _ndevs; ndev++) {
         printf("Bitinfo of FPGA %s:\n", _pciDevNames[ndev]);
         read_bitinfo(bitinfo[ndev]);
         free(bitinfo[ndev]);

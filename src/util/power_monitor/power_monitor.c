@@ -70,11 +70,13 @@ int main(int argc, char *argv[])
     uint32_t **pciBar, **cmsAddr, **sysmonAddr;
     int nDevs;
     char **devList;
+    char *devListStr;
     xtasks_stat stat;
 
-    stat = getPciDevList(&nDevs, &devList);
+    stat = getPciDevListStr(&devListStr);
+    if (stat != XTASKS_SUCCESS) return 1;
+    stat = getPciDevList(devListStr, &nDevs, &devList);
     if (stat != XTASKS_SUCCESS) {
-        fprintf(stderr, "No devices found\n");
         return 1;
     }
 
