@@ -306,7 +306,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(
 /*!
  * \brief Get instrumentation events buffer for an accelerator
  *        Events will be set in the events array until an XTASKS_EVENT_TYPE_INVALID is reached or maxCount
- *        events are wrote into the buffer.
+ *        events are wrote into the buffer. Calls to this function are not thread safe for the same accelerator handle.
  * \param[in]  accel      Accelerator handle of the accelerator which data will be retrieved
  * \param[out] events     Pointer to an xtasks_ins_event array that can fit at least maxCount elements
  * \param[in]  maxCount   Number of events the event array can hold
