@@ -1,7 +1,7 @@
 CC  = gcc
 CC_ = $(CROSS_COMPILE)$(CC)
 
-CFLAGS_  = $(CFLAGS) -I../ -I../common/ -fPIC -g -Wall
+CFLAGS_  = $(CFLAGS) -I../ -I../common/ -fPIC -g -Wall -O3
 LDFLAGS_ = $(LDFLAGS)
 TARGETS_ = read_bitinfo power_monitor
 

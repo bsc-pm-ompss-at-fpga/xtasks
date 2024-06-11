@@ -97,7 +97,8 @@ xtasks_stat xtasksInit()
         return ret;
     }
 
-    for (int i = 0; i < ndevs; i++) {
+    int curdevMap = 0;
+    for (int i = 0; i < ndevs; ++i, ++curdevMap) {
         uint32_t *pciBar;
         ret = mapPciDevice(devNames[i], &pciBar);
         if (ret != XTASKS_SUCCESS) {
@@ -115,8 +116,8 @@ xtasks_stat xtasksInit()
         goto init_alloc_bitinfo_err;
     }
 
-    int curdev = 0;
-    for (int d = 0; d < ndevs; ++d, ++curdev) {
+    int curdevBitinfo = 0;
+    for (int d = 0; d < ndevs; ++d, ++curdevBitinfo) {
         memcpy(bitInfo, (void *)(_pciBar[d] + BITINFO_ADDRESS / sizeof(*_pciBar[0])), BITINFO_MAX_SIZE);
 
         // Check if bitstream is compatible
@@ -233,10 +234,10 @@ init_alloc_exec_tasks_err:
     free(_tasks);
 init_alloc_tasks_err:
 init_alloc_acctype_err:
-    if (curdev < ndevs) free(_accs[curdev]);
+    if (curdevBitinfo < ndevs) free(_accs[curdevBitinfo]);
 init_alloc_acc_err:
 init_compat_err:
-    for (int d = 0; d < curdev; ++d) {
+    for (int d = 0; d < curdevBitinfo; ++d) {
         free(_accs[d]);
         free(_acc_types[d]);
     }
@@ -244,7 +245,7 @@ init_compat_err:
 init_alloc_bitinfo_err:
 init_map_bar_err:
     free(devNames);
-    for (int d = 0; d < ndevs; ++d) unmapPciDev((uint32_t *)_pciBar[d]);
+    for (int d = 0; d < curdevMap; ++d) unmapPciDev((uint32_t *)_pciBar[d]);
     xdmaFini();
     return ret;
 }
