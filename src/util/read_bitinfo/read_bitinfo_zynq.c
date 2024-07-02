@@ -10,6 +10,7 @@
 static uint32_t *bitinfo;
 
 int read_bitinfo(const uint32_t *bitinfo);
+int read_bitstream_userid(const uint32_t *bitinfo);
 
 int init()
 {
@@ -38,13 +39,31 @@ err_bitinfo_read:
     return 1;
 }
 
-int main()
+int main(int argc, char **argv)
 {
+    int opt;
+    int ret = 0;
+    int read_userid = 0;
+
     if (init()) {
         return 1;
     }
 
-    int ret = read_bitinfo(bitinfo);
+    while ((opt = getopt(argc, argv, "u")) != -1) {
+        switch (opt) {
+            case 'u':
+                read_userid = 1;
+                break;
+            default:
+                abort();
+        }
+    }
+
+    if (read_userid) {
+        ret = read_bitstream_userid(bitinfo);
+    } else {
+        ret = read_bitinfo(bitinfo);
+    }
 
     free(bitinfo);
 

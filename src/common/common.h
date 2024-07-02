@@ -278,7 +278,7 @@ bit_compatibility_t checkbitstreamCompatibility(const uint32_t *bitinfo)
 
     const unsigned int bitinfoRev = bitinfo_get_version(bitinfo);
     // The bitstream info BRAM version is old
-    if (bitinfoRev != BITINFO_MIN_REV) {
+    if (bitinfoRev < BITINFO_MIN_REV) {
         printErrorBitstreamVersionCompatibility(bitinfoRev);
         return BIT_NO_COMPAT;
     }

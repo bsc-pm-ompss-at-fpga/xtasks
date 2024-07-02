@@ -1,19 +1,40 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 int read_bitinfo(const uint32_t* bitinfo);
+int read_bitstream_userid(const uint32_t* bitinfo);
 
 int main(int argc, char* argv[])
 {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <coe file>\n", argv[0]);
+    int opt;
+    int read_userid = 0;
+    char* coe_file;
+    while ((opt = getopt(argc, argv, "f:u")) != -1) {
+        switch (opt) {
+            case 'u':
+                read_userid = 1;
+                break;
+            case 'f':
+                coe_file = optarg;
+                break;
+            case '?':
+                if (optopt == 'f') fprintf(stderr, "Option -%c requires a valid coe file.\n", optopt);
+                return 1;
+            default:
+                abort();
+        }
+    }
+
+    if (coe_file == NULL) {
+        fprintf(stderr, "Usage: %s -f <coe file> [-u]\n", argv[0]);
         return 1;
     }
 
-    FILE* fp = fopen(argv[1], "r");
+    FILE* fp = fopen(coe_file, "r");
     if (fp == NULL) {
-        fprintf(stderr, "Error opening file %s\n", argv[1]);
+        fprintf(stderr, "Error opening file %s\n", coe_file);
         perror("errno");
         return 1;
     }
@@ -38,7 +59,12 @@ int main(int argc, char* argv[])
         bitinfo[i++] = val;
     }
 
-    int ret = read_bitinfo(bitinfo);
+    int ret;
+    if (read_userid) {
+        ret = read_bitstream_userid(bitinfo);
+    } else {
+        ret = read_bitinfo(bitinfo);
+    }
 
     fclose(fp);
     return ret;

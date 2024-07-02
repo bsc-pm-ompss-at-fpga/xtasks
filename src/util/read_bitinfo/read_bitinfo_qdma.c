@@ -18,6 +18,7 @@ static uint32_t *bitinfo[MAX_DEVICES];
 char **_pciDevNames;
 
 int read_bitinfo(const uint32_t *bitinfo);
+int read_bitstream_userid(const uint32_t *bitinfo);
 
 // Open devices and copy bitinfo data
 int init()
@@ -48,15 +49,32 @@ int init()
     return 0;
 }
 
-int main()
+int main(int argc, char **argv)
 {
+    int opt;
+    int read_userid = 0;
+
     if (init()) {
         return 1;
     }
 
+    while ((opt = getopt(argc, argv, "u")) != -1) {
+        switch (opt) {
+            case 'u':
+                read_userid = 1;
+                break;
+            default:
+                abort();
+        }
+    }
+
     for (unsigned ndev = 0; ndev < _ndevs; ndev++) {
-        printf("Bitinfo of FPGA %s:\n", _pciDevNames[ndev]);
-        read_bitinfo(bitinfo[ndev]);
+        if (read_userid) {
+            read_bitstream_userid(bitinfo[ndev]);
+        } else {
+            printf("Bitinfo of FPGA %s:\n", _pciDevNames[ndev]);
+            read_bitinfo(bitinfo[ndev]);
+        }
         free(bitinfo[ndev]);
     }
 
