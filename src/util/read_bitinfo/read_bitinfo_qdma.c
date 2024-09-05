@@ -58,23 +58,33 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    while ((opt = getopt(argc, argv, "u")) != -1) {
+    int dev_idx_min = 0;
+    int dev_idx_max = _ndevs;
+    while ((opt = getopt(argc, argv, "ui:")) != -1) {
         switch (opt) {
             case 'u':
                 read_userid = 1;
+                break;
+            case 'i':
+                dev_idx_min = dev_idx_max = (int)atol(optarg);
                 break;
             default:
                 abort();
         }
     }
 
-    for (unsigned ndev = 0; ndev < _ndevs; ndev++) {
+    unsigned ndev = dev_idx_min;
+    do {
         if (read_userid) {
             read_bitstream_userid(bitinfo[ndev]);
         } else {
             printf("Bitinfo of FPGA %s:\n", _pciDevNames[ndev]);
             read_bitinfo(bitinfo[ndev]);
         }
+        ndev++;
+    } while (ndev < dev_idx_max);
+
+    for (unsigned ndev = 0; ndev < _ndevs; ndev++) {
         free(bitinfo[ndev]);
     }
 
