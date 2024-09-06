@@ -37,6 +37,7 @@ int read_bitinfo(const uint32_t* bitinfo)
     printf("[%c] POM spawn queues\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_SPAWN_Q) ? 'x' : ' ');
     printf("[%c] Power monitor (CMS)\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_CMS_EN) ? 'x' : ' ');
     printf("[%c] Thermal monitor (sysmon)\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_SYSMON_EN) ? 'x' : ' ');
+    printf("[%c] OMPIF\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_OMPIF) ? 'x' : ' ');
     printf("\n");
     printf("Managed rstn addr 0x%" PRIX64 "\n", bitinfo_get_managed_rstn_addr(bitinfo));
     printf("Cmd In addr 0x%" PRIX64 " len %u\n", bitinfo_get_cmd_in_addr(bitinfo), bitinfo_get_cmd_in_len(bitinfo));

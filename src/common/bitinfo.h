@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define BITINFO_MIN_REV 11
+#define BITINFO_MIN_REV 13
 #define BITINFO_MAX_SIZE 4096
 #define BITINFO_MAX_WORDS (BITINFO_MAX_SIZE / sizeof(uint32_t))
 
@@ -46,7 +46,8 @@ typedef enum {
     BIT_FEATURE_POM_LOCK,
     BIT_FEATURE_SPAWN_Q,
     BIT_FEATURE_CMS_EN,
-    BIT_FEATURE_SYSMON_EN
+    BIT_FEATURE_SYSMON_EN,
+    BIT_FEATURE_OMPIF
 } bit_feature_t;
 
 typedef struct {

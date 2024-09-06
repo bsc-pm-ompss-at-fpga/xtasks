@@ -239,8 +239,10 @@ xtasks_stat xtasksInit()
         close(bitinfo_fd);
         goto err_bitinfo_ioctl;
     }
-    if (driver_supported_version != BITINFO_MIN_REV) {
-        PRINT_ERROR_ARGS("Driver supports version %" PRIu64 "but xtasks %d", driver_supported_version, BITINFO_MIN_REV);
+    if (driver_supported_version > BITINFO_MIN_REV) {
+        PRINT_ERROR_ARGS("Found bitinfo version %" PRIu64
+                         " which is older than the driver minimum supported version %u\n",
+            driver_supported_version, BITINFO_MIN_REV);
         ret = XTASKS_ERROR;
         close(bitinfo_fd);
         goto err_bitinfo_driver_version;
