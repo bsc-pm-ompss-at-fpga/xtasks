@@ -363,24 +363,28 @@ xtasks_stat xtasksFini()
 
 xtasks_stat xtasksGetPlatform(const char **name)
 {
+    if (name == NULL) return XTASKS_EINVAL;
     *name = _platformName;
     return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetBackend(const char **name)
 {
+    if (name == NULL) return XTASKS_EINVAL;
     *name = _backendName;
     return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetNumDevices(int *numDevices)
 {
+    if (numDevices == NULL) return XTASKS_EINVAL;
     *numDevices = _ndevs;
     return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetNumAccs(int devId, size_t *count)
 {
+    if (devId >= _ndevs || count == NULL) return XTASKS_EINVAL;
     *count = _numAccs[devId];
     return XTASKS_SUCCESS;
 }
@@ -507,10 +511,7 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id 
 
     xtasks_stat ret = XTASKS_PENDING;
     for (int d = 0; d < _ndevs; ++d) {
-        size_t i = 0;
-        do {
-            ret = xtasksTryGetFinishedTaskAccel(&_accs[d][i], handle, id);
-        } while (++i < _numAccs[d] && ret == XTASKS_PENDING);
+        ret = xtasksTryGetFinishedTaskDev(d, handle, id);
         if (ret != XTASKS_PENDING) return ret;
     }
 

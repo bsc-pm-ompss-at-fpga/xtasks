@@ -61,6 +61,7 @@
 const char _platformName[] = "zynq";
 const char _backendName[] = "hwruntime";
 
+static size_t _ndevs = 0;                  ///< Number of FPGA devices in the system
 static int _init_cnt = 0;                  ///< Counter of calls to init/fini
 static size_t _numAccs;                    ///< Number of accelerators in the system
 static acc_t *_accs;                       ///< Accelerators data
@@ -403,6 +404,8 @@ xtasks_stat xtasksInit()
         _tasks[idx].periTask = 0;
     }
 
+    _ndevs = 1;
+
     free(bitinfo);
 
     return ret;
@@ -496,36 +499,28 @@ xtasks_stat xtasksFini()
 xtasks_stat xtasksGetPlatform(const char **name)
 {
     if (name == NULL) return XTASKS_EINVAL;
-
     *name = _platformName;
-
     return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetBackend(const char **name)
 {
     if (name == NULL) return XTASKS_EINVAL;
-
     *name = _backendName;
-
     return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetNumDevices(int *numDevices)
 {
     if (numDevices == NULL) return XTASKS_EINVAL;
-
-    *numDevices = 1;
-
+    *numDevices = _ndevs;
     return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetNumAccs(int devId, size_t *count)
 {
-    if (count == NULL) return XTASKS_EINVAL;
-
+    if (devId >= _ndevs || count == NULL) return XTASKS_EINVAL;
     *count = _numAccs;
-
     return XTASKS_SUCCESS;
 }
 
@@ -668,6 +663,21 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id)
 {
     if (handle == NULL || id == NULL) {
+        return XTASKS_EINVAL;
+    }
+
+    xtasks_stat ret = XTASKS_PENDING;
+    for (int d = 0; d < _ndevs; ++d) {
+        ret = xtasksTryGetFinishedTaskDev(d, handle, id);
+        if (ret != XTASKS_PENDING) return ret;
+    }
+
+    return ret;
+}
+
+xtasks_stat xtasksTryGetFinishedTaskDev(int devId, xtasks_task_handle *handle, xtasks_task_id *id)
+{
+    if (handle == NULL || id == NULL || devId >= _ndevs) {
         return XTASKS_EINVAL;
     }
 
