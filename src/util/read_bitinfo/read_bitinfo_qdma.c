@@ -66,7 +66,12 @@ int main(int argc, char **argv)
                 read_userid = 1;
                 break;
             case 'i':
-                dev_idx_min = dev_idx_max = (int)atol(optarg);
+                if ((int)atol(optarg) >= _ndevs) {
+                    printf("Index provided is out of range (0-%u)\n", _ndevs - 1);
+                    return 1;
+                } else {
+                    dev_idx_min = dev_idx_max = (int)atol(optarg);
+                }
                 break;
             default:
                 abort();
