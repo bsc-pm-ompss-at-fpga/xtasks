@@ -3,7 +3,6 @@ CC_ = $(CROSS_COMPILE)$(CC)
 
 CFLAGS_  = $(CFLAGS) -I../ -I../common/ -fPIC -g -Wall -O3
 LDFLAGS_ = $(LDFLAGS)
-TARGETS_ = read_bitinfo power_monitor
 
 ## Check libxdma installation
 #LIBXDMA_DIR      ?= /opt/install-arm/libxdma
@@ -18,11 +17,12 @@ LIBXDMA_SUPPORT_ = $(if $(and $(wildcard $(LIBXDMA_INC_DIR)/libxdma.h ), \
 ifeq ($(LIBXDMA_SUPPORT_),YES)
 	CFLAGS_  += $(LIBXDMA_INCS_)
 	LDFLAGS_ += $(LIBXDMA_LIBS_)
-	TARGETS_ += libxtasks-hwruntime.so
+else
+    $(error No XDMA library detected)
 endif
 
 .PHONY: all
-all: $(TARGETS_)
+all: libxtasks-hwruntime.so read_bitinfo power_monitor
 
 read_bitinfo: ../util/read_bitinfo/read_bitinfo_qdma.c ../util/read_bitinfo/read_bitinfo.c
 	$(MAKE) -C ../util/read_bitinfo read_bitinfo_qdma
@@ -31,6 +31,10 @@ read_bitinfo: ../util/read_bitinfo/read_bitinfo_qdma.c ../util/read_bitinfo/read
 power_monitor: ../util/power_monitor/power_monitor.c
 	$(MAKE) -C ../util/power_monitor
 	mv ../util/power_monitor/power_monitor $@
+
+xtasks_server: ../util/xtasks_server/xtasks_server.c
+	$(MAKE) -C ../util/xtasks_server XTASKS_INSTALL=$(PREFIX)
+	mv ../util/xtasks_server/xtasks_server $@
 
 libxtasks-hwruntime.o: libxtasks-hwruntime.c
 	$(CC_) $(CFLAGS_) -c $^
@@ -58,14 +62,19 @@ else
 endif
 	@tail -n 2 $^ >>$@
 
-install: $(TARGETS_) ../libxtasks.h libxtasks_version.h
+install-xtasks: libxtasks-hwruntime.so ../libxtasks.h libxtasks_version.h
 	mkdir -p $(PREFIX)/lib
 	cp libxtasks-*.so $(PREFIX)/lib
 	ln -s $(PREFIX)/lib/libxtasks-hwruntime.so $(PREFIX)/lib/libxtasks.so || true
 	mkdir -p $(PREFIX)/include
 	cp ../libxtasks.h $(PREFIX)/include
 	cp libxtasks_version.h $(PREFIX)/include
+
+install-server: install-xtasks xtasks_server
 	mkdir -p $(PREFIX)/bin
+	cp xtasks_server $(PREFIX)/bin
+
+install: install-xtasks install-server read_bitinfo power_monitor
 	cp read_bitinfo $(PREFIX)/bin
 	cp power_monitor $(PREFIX)/bin/fpga_power_monitor
 

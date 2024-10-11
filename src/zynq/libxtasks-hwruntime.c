@@ -482,10 +482,6 @@ xtasks_stat xtasksFini()
         ret = XTASKS_EFILE;
     }
 
-    // Free the accelerators array
-    for (size_t idx = 0; idx < _numAccs; ++idx) {
-        ticketLockFini(&_accs[idx].cmdInLock);
-    }
     _numAccs = 0;
 
     // Close xdma memory management

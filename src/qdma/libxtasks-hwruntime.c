@@ -18,6 +18,7 @@
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -37,14 +38,26 @@
 
 #define BITINFO_ADDRESS 0x0
 
-#define MAX_DEVICES 16
+#define MAX_DEVICES 8
+#define MAX_NODES 16
+#define MAX_CLUSTER (MAX_NODES * MAX_DEVICES)
 
 static int _ndevs = 0;
+static int _cluster_size = 0;
+static int _nnodes = 0;
 static volatile uint32_t *_pciBar[MAX_DEVICES];
-static acc_t *_accs[MAX_DEVICES];
-static bit_acc_type_t *_acc_types[MAX_DEVICES];
+static acc_t *_accs[MAX_CLUSTER];
+static bit_acc_type_t *_acc_types[MAX_CLUSTER];
 static task_t *_tasks;
-static unsigned int _numAccs[MAX_DEVICES];
+static unsigned int _numAccs[MAX_CLUSTER];
+
+static int _sockfd[MAX_NODES];
+static int _nodeid;
+static int _client_node;
+static int _fpgaid2localid[MAX_CLUSTER];
+static int _fpgaid2nodeid[MAX_CLUSTER];
+static int _nodeid2port[MAX_NODES];
+static struct in_addr _nodeid2ip[MAX_NODES];
 
 static volatile uint64_t *_cmdInQueue[MAX_DEVICES];
 static volatile uint64_t *_cmdOutQueue[MAX_DEVICES];
@@ -78,6 +91,111 @@ const char _backendName[] = "hwruntime";
 #error Installed libxdma is not supported (use >= 3.0)
 #endif
 
+static int read_cluster_config()
+{
+    const char *filename = getenv("XTASKS_CLUSTER_FILE");
+    if (filename == NULL) {
+        filename = "xtasks.cluster";
+    }
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {  // Assuming we are in single-node mode
+        _nnodes = 0;
+        _cluster_size = 0;
+        _nodeid = 0;
+        _client_node = 0;
+        return 0;
+    }
+
+    int r;
+    r = fscanf(file, "%d %d %d", &_cluster_size, &_nnodes, &_client_node);
+    if (r != 3) {
+        fprintf(stderr, "xtasks.cluster format not recognized\n");
+        fclose(file);
+        return 1;
+    }
+    for (int i = 0; i < _cluster_size; ++i) {
+        r = fscanf(file, "%d %d", &_fpgaid2localid[i], &_fpgaid2nodeid[i]);
+        if (r != 2) {
+            fprintf(stderr, "xtasks.cluster format not recognized\n");
+            fclose(file);
+            return 1;
+        }
+    }
+    char myhostname[32];
+    if (gethostname(myhostname, 31)) {
+        perror("gethostname with 31 len errno");
+        return 1;
+    }
+    _nodeid = -1;
+    for (int i = 0; i < _nnodes; ++i) {
+        char ip[16];  // Longest IP string is 15 char (255.255.255.255)
+        char fhostname[32];
+        r = fscanf(file, "%15s %d %31s", ip, &_nodeid2port[i], fhostname);
+        if (r != 3) {
+            fprintf(stderr, "xtasks.cluster format not recognized\n");
+            fclose(file);
+            return 1;
+        }
+        if (inet_pton(AF_INET, ip, &_nodeid2ip[i]) != 1) {
+            fprintf(stderr, "Invalid IP address %s\n", ip);
+            fclose(file);
+            return 1;
+        }
+        if (strcmp(fhostname, myhostname) == 0) {
+            if (_nodeid == -1) {
+                _nodeid = i;
+            } else {
+                fprintf(stderr, "Found duplicated hostname %s in xtasks.cluster\n", fhostname);
+                fclose(file);
+                return 1;
+            }
+        }
+    }
+    fclose(file);
+    if (_nodeid == -1) {
+        fprintf(stderr, "Could not find hostname %s in xtasks.cluster\n", myhostname);
+        return 1;
+    }
+
+    return 0;
+}
+
+static int init_sockets()
+{
+    struct sockaddr_in servaddr;
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+
+    int curnode = 0;
+    for (int n = 0; n < _nnodes; ++n) {
+        if (n == _nodeid) continue;
+
+        _sockfd[n] = socket(AF_INET, SOCK_STREAM, 0);
+        if (_sockfd[n] < 0) {
+            perror("Could not open socket");
+            goto err;
+        }
+        ++curnode;
+
+        servaddr.sin_addr = _nodeid2ip[n];
+        servaddr.sin_port = htons(_nodeid2port[n]);
+
+        if (connect(_sockfd[n], (const struct sockaddr *)&servaddr, sizeof(servaddr)) != 0) {
+            perror("Error connecting");
+            goto err;
+        }
+    }
+
+    return 0;
+
+err:
+    for (int n = 0; n < curnode; ++n) {
+        if (n != _nodeid) close(_sockfd[n]);
+    }
+    return 1;
+}
+
 xtasks_stat xtasksInit()
 {
     xdma_status st;
@@ -96,11 +214,20 @@ xtasks_stat xtasksInit()
         goto init_pci_dev_list_err;
     }
 
+    if (read_cluster_config()) {
+        goto init_read_cluster_config_err;
+    }
+
     st = xdmaInit();
     if (st != XDMA_SUCCESS) {
         PRINT_ERROR("Could not initialize XDMA\n");
         ret = XTASKS_ERROR;
         goto init_xdma_err;
+    }
+
+    // Init sockets if I'm the client node
+    if (_nodeid == _client_node && init_sockets()) {
+        goto init_sockets_err;
     }
 
     int curdevMap = 0;
@@ -139,20 +266,23 @@ xtasks_stat xtasksInit()
         uint64_t hwruntime_rst_address = bitinfo_get_managed_rstn_addr(bitInfo);
         _hwcounter_address[d] = bitinfo_get_hwcounter_addr(bitInfo);
         _numAccs[d] = bitinfo_get_acc_count(bitInfo);
-        uint32_t numAccTypes = bitinfo_get_acc_type_count(bitInfo);
-        _accs[d] = malloc(_numAccs[d] * sizeof(acc_t));
-        if (_accs[d] == NULL) {
-            PRINT_ERROR("Could not allocate accelerators array");
-            goto init_alloc_acc_err;
-        }
-        _acc_types[d] = malloc(numAccTypes * sizeof(bit_acc_type_t));
-        if (_acc_types[d] == NULL) {
-            PRINT_ERROR("Could not allocate accelerator types array");
-            goto init_alloc_acctype_err;
-        }
 
-        bitinfo_init_acc_types(bitInfo, _acc_types[d]);
-        initAccList(d, _accs[d], _acc_types[d], numAccTypes, _cmdInSubqueueLen[d]);
+        if (_nnodes == 0) {
+            uint32_t numAccTypes = bitinfo_get_acc_type_count(bitInfo);
+            _accs[d] = malloc(_numAccs[d] * sizeof(acc_t));
+            if (_accs[d] == NULL) {
+                PRINT_ERROR("Could not allocate accelerators array");
+                goto init_alloc_acc_err;
+            }
+            _acc_types[d] = malloc(numAccTypes * sizeof(bit_acc_type_t));
+            if (_acc_types[d] == NULL) {
+                PRINT_ERROR("Could not allocate accelerator types array");
+                goto init_alloc_acctype_err;
+            }
+
+            bitinfo_init_acc_types(bitInfo, _acc_types[d]);
+            initAccList(d, _accs[d], _acc_types[d], numAccTypes, _cmdInSubqueueLen[d]);
+        }
 
         // Initialize command queues
         _cmdInQueue[d] = (uint64_t *)(_pciBar[d] + (cmdInAddr / sizeof(*_pciBar[0])));
@@ -205,6 +335,26 @@ xtasks_stat xtasksInit()
         }
     }
 
+    // Use the last bitinfo, assuming all FPGAs have the same bitstream
+    int curDevCluster = 0;
+    for (int d = 0; d < _cluster_size; ++curDevCluster, ++d) {
+        _numAccs[d] = bitinfo_get_acc_count(bitInfo);
+        uint32_t numAccTypes = bitinfo_get_acc_type_count(bitInfo);
+        _accs[d] = malloc(_numAccs[d] * sizeof(acc_t));
+        if (_accs[d] == NULL) {
+            PRINT_ERROR("Could not allocate accelerators array");
+            goto init_c_alloc_acc_err;
+        }
+        _acc_types[d] = malloc(numAccTypes * sizeof(bit_acc_type_t));
+        if (_acc_types[d] == NULL) {
+            PRINT_ERROR("Could not allocate accelerator types array");
+            goto init_c_alloc_acctype_err;
+        }
+
+        bitinfo_init_acc_types(bitInfo, _acc_types[d]);
+        initAccList(d, _accs[d], _acc_types[d], numAccTypes, _cmdInSubqueueLen[0]);
+    }
+
     // Allocate tasks array
     _tasks = malloc(NUM_RUN_TASKS * sizeof(task_t));
     if (_tasks == NULL) {
@@ -239,21 +389,36 @@ xtasks_stat xtasksInit()
 init_alloc_exec_tasks_err:
     free(_tasks);
 init_alloc_tasks_err:
+init_c_alloc_acctype_err:
+    if (_nnodes != 0 && curDevCluster < _cluster_size) free(_accs[curDevCluster]);
+init_c_alloc_acc_err:
+    for (int d = 0; d < curDevCluster; ++d) {
+        free(_accs[d]);
+        free(_acc_types[d]);
+    }
 init_alloc_acctype_err:
     if (curdevBitinfo < ndevs) free(_accs[curdevBitinfo]);
 init_alloc_acc_err:
 init_compat_err:
     for (int d = 0; d < curdevBitinfo; ++d) {
-        free(_accs[d]);
-        free(_acc_types[d]);
+        if (_nnodes == 0) {
+            free(_accs[d]);
+            free(_acc_types[d]);
+        }
     }
     free(bitInfo);
 init_alloc_bitinfo_err:
 init_map_bar_err:
     for (int d = 0; d < curdevMap; ++d) unmapPciDev((uint32_t *)_pciBar[d]);
+    if (_nodeid == _client_node)
+        for (int n = 0; n < _nnodes; ++n) {
+            if (n != _nodeid) close(_sockfd[n]);
+        }
+init_sockets_err:
     xdmaFini();
 init_xdma_err:
     free(devNames);
+init_read_cluster_config_err:
 init_pci_dev_list_err:
     free(pciDevListStr);
     return ret;
@@ -353,10 +518,19 @@ xtasks_stat xtasksFini()
     free(_tasks);
     for (int d = 0; d < _ndevs; ++d) {
         unmapPciDev((uint32_t *)_pciBar[d]);  // Need the cast to drop volatile qualifier
+        if (_nnodes == 0) {
+            free(_acc_types[d]);
+            free(_accs[d]);
+        }
+    }
+    for (int d = 0; d < _cluster_size; ++d) {
         free(_acc_types[d]);
         free(_accs[d]);
     }
-
+    if (_nodeid == _client_node)
+        for (int n = 0; n < _nnodes; ++n) {
+            if (n != _nodeid) close(_sockfd[n]);
+        }
     xdmaFini();
     return XTASKS_SUCCESS;
 }
@@ -378,13 +552,18 @@ xtasks_stat xtasksGetBackend(const char **name)
 xtasks_stat xtasksGetNumDevices(int *numDevices)
 {
     if (numDevices == NULL) return XTASKS_EINVAL;
-    *numDevices = _ndevs;
+    if (_nnodes == 0) {
+        *numDevices = _ndevs;
+    } else {
+        *numDevices = _cluster_size;
+    }
     return XTASKS_SUCCESS;
 }
 
 xtasks_stat xtasksGetNumAccs(int devId, size_t *count)
 {
-    if (devId >= _ndevs || count == NULL) return XTASKS_EINVAL;
+    int maxDevs = _nnodes == 0 ? _ndevs : _cluster_size;
+    if (devId >= maxDevs || count == NULL) return XTASKS_EINVAL;
     *count = _numAccs[devId];
     return XTASKS_SUCCESS;
 }
@@ -401,6 +580,7 @@ xtasks_stat xtasksGetAccs(int devId, size_t const maxCount, xtasks_acc_handle *a
 
     return XTASKS_SUCCESS;
 }
+
 xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *info)
 {
     if (info == NULL) return XTASKS_EINVAL;
@@ -500,7 +680,42 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     uint8_t const argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
     size_t const numHeaderBytes = task->periTask ? sizeof(cmd_peri_task_header_t) : sizeof(cmd_exec_task_header_t);
     size_t const numCmdWords = (numHeaderBytes + sizeof(cmd_exec_task_arg_t) * argsCnt) / sizeof(uint64_t);
-    return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue[devId], _cmdInSubqueueLen[devId]);
+
+    int localId;
+    int nodeId;
+    if (_nnodes != 0) {
+        localId = _fpgaid2localid[devId];
+        nodeId = _fpgaid2nodeid[devId];
+    } else {
+        localId = devId;
+        nodeId = _nodeid;
+    }
+
+    if (nodeId != _nodeid) {
+        int sockfd = _sockfd[nodeId];
+        uint32_t header = 1;  // Submit task code
+        header |= (uint32_t)argsCnt << 16;
+        ssize_t n = send(sockfd, &header, sizeof(header), MSG_MORE);
+        n += send(sockfd, task->cmdHeader, numCmdWords * sizeof(uint64_t), MSG_MORE);
+        if ((size_t)n != sizeof(header) + numCmdWords * sizeof(uint64_t)) {
+            fprintf(stderr, "Expected to send %lu bytes but found %ld\n",
+                sizeof(header) + numCmdWords * sizeof(uint64_t), n);
+            return XTASKS_ERROR;
+        }
+        int accid = (int)(acc - _accs[devId]);
+        uint64_t data[2];
+        data[0] = devId | ((uint64_t)accid << 32);
+        data[1] = (uint64_t)handle;
+        n = send(sockfd, data, sizeof(data), 0);
+        if (n < 0) {
+            perror("Error in send");
+            return XTASKS_ERROR;
+        }
+        return XTASKS_SUCCESS;
+    }
+
+    return submitCommand(
+        acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue[localId], _cmdInSubqueueLen[localId]);
 }
 
 xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id)
@@ -508,6 +723,7 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id 
     if (handle == NULL || id == NULL) {
         return XTASKS_EINVAL;
     }
+    if (_nnodes != 0) return XTASKS_ENOSYS;
 
     xtasks_stat ret = XTASKS_PENDING;
     for (int d = 0; d < _ndevs; ++d) {
@@ -524,6 +740,29 @@ xtasks_stat xtasksTryGetFinishedTaskDev(int devId, xtasks_task_handle *handle, x
         return XTASKS_EINVAL;
     }
 
+    if (_nnodes != 0 && _fpgaid2nodeid[devId] != _nodeid) {
+        const int nodeId = _fpgaid2nodeid[devId];
+        const int sockfd = _sockfd[nodeId];
+        uint64_t taskID;
+        ssize_t n = recv(sockfd, &taskID, sizeof(taskID), MSG_DONTWAIT);
+        if (n < 0) {
+            if (errno == EAGAIN) return XTASKS_PENDING;
+            fprintf(stderr, "Error in recv\n");
+            return XTASKS_ERROR;
+        } else if (n != sizeof(taskID)) {
+            fprintf(stderr, "Expected to receive %lu but found %ld\n", sizeof(taskID), n);
+            return XTASKS_ERROR;
+        }
+        uintptr_t taskPtr = (uintptr_t)taskID;
+        task_t *task = (task_t *)taskPtr;
+        *handle = (xtasks_task_handle)task;
+        *id = task->id;
+
+        // Mark the task as executed (using the valid field as it is not used in the cached copy)<
+        task->cmdHeader->valid = QUEUE_INVALID;
+        return XTASKS_SUCCESS;
+    }
+
     xtasks_stat ret = XTASKS_PENDING;
     size_t i = 0;
     do {
@@ -537,7 +776,8 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
 {
     acc_t *acc = (acc_t *)accel;
     int devId = acc->devId;
-    volatile uint64_t *const subqueue = _cmdOutQueue[devId] + acc->info.id * _cmdOutSubqueueLen[devId];
+    int localId = _nnodes == 0 ? devId : _fpgaid2localid[devId];
+    volatile uint64_t *const subqueue = _cmdOutQueue[localId] + acc->info.id * _cmdOutSubqueueLen[localId];
 
     if (handle == NULL || id == NULL || acc == NULL) {
         return XTASKS_EINVAL;
@@ -567,7 +807,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
 #endif /* XTASKS_DEBUG */
 
             // Read the command payload (task identifier)
-            size_t const dataIdx = (idx + 1) % _cmdOutSubqueueLen[devId];
+            size_t const dataIdx = (idx + 1) % _cmdOutSubqueueLen[localId];
             uint64_t const taskID = subqueue[dataIdx];
             subqueue[dataIdx] = 0;  //< Clean the buffer slot
 
@@ -576,7 +816,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
             cmd->valid = QUEUE_INVALID;
 
             // Update the read index and release the lock
-            acc->cmdOutIdx = (idx + sizeof(cmd_out_exec_task_t) / sizeof(uint64_t)) % _cmdOutSubqueueLen[devId];
+            acc->cmdOutIdx = (idx + sizeof(cmd_out_exec_task_t) / sizeof(uint64_t)) % _cmdOutSubqueueLen[localId];
             __sync_lock_release(&acc->cmdOutLock);
 
 #ifdef XTASKS_DEBUG
