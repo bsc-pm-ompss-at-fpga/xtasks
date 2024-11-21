@@ -13,14 +13,6 @@ LIBXDMA_LIBS_     = -L$(LIBXDMA_LIB_DIR) -lxdma
 LIBXDMA_SUPPORT_ = $(if $(and $(wildcard $(LIBXDMA_INC_DIR)/libxdma.h ), \
 	$(wildcard $(LIBXDMA_LIB_DIR)/libxdma.so )),YES,NO)
 
-## Append needed things to CFLAGS, LDFLAGS and TARGETS
-ifeq ($(LIBXDMA_SUPPORT_),YES)
-	CFLAGS_  += $(LIBXDMA_INCS_)
-	LDFLAGS_ += $(LIBXDMA_LIBS_)
-else
-    $(error No XDMA library detected)
-endif
-
 .PHONY: all
 all: libxtasks-hwruntime.so read_bitinfo power_monitor
 
@@ -37,11 +29,16 @@ xtasks_server: ../util/xtasks_server/xtasks_server.c
 	mv ../util/xtasks_server/xtasks_server $@
 
 libxtasks-hwruntime.o: libxtasks-hwruntime.c
-	$(CC_) $(CFLAGS_) -c $^
-
+ifneq ($(LIBXDMA_SUPPORT_),YES)
+	$(error No XDMA library detected)
+endif
+	$(CC_) $(CFLAGS_) $(LIBXDMA_INCS_) -c $^
 
 libxtasks-hwruntime.so: libxtasks-hwruntime.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
+ifneq ($(LIBXDMA_SUPPORT_),YES)
+	$(error No XDMA library detected)
+endif
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_) $(LIBXDMA_LIBS_)
 
 .PHONY: libxtasks_version.h
 libxtasks_version.h: ../libxtasks_version_template.h

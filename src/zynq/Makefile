@@ -3,7 +3,6 @@ CC_ = $(CROSS_COMPILE)$(CC)
 
 CFLAGS_  = $(CFLAGS) -O3 -std=gnu99 -Wall -g -fpic -Werror -Wno-unused-result
 LDFLAGS_ = $(LDFLAGS)
-TARGETS_ = read_bitinfo
 
 ## Check libxdma installation
 #LIBXDMA_DIR      ?= /opt/install-arm/libxdma
@@ -14,25 +13,24 @@ LIBXDMA_LIBS_     = -L$(LIBXDMA_LIB_DIR) -lxdma
 LIBXDMA_SUPPORT_ = $(if $(and $(wildcard $(LIBXDMA_INC_DIR)/libxdma.h ), \
 	$(wildcard $(LIBXDMA_LIB_DIR)/libxdma.so )),YES,NO)
 
-## Append needed things to CFLAGS, LDFLAGS and TARGETS
-ifeq ($(LIBXDMA_SUPPORT_),YES)
-	CFLAGS_  += $(LIBXDMA_INCS_)
-	LDFLAGS_ += $(LIBXDMA_LIBS_)
-	TARGETS_ += libxtasks-hwruntime.so
-endif
-
 .PHONY: all
-all: $(TARGETS_)
+all: libxtasks-hwruntime.so read_bitinfo
 
 read_bitinfo: ../util/read_bitinfo/read_bitinfo_zynq.c ../util/read_bitinfo/read_bitinfo.c
 	$(MAKE) -C ../util/read_bitinfo/ read_bitinfo_zynq
 	mv ../util/read_bitinfo/read_bitinfo_zynq $@
 
 libxtasks-hwruntime.o: libxtasks-hwruntime.c
-	$(CC_) $(CFLAGS_) -c $^
+ifneq ($(LIBXDMA_SUPPORT_),YES)
+	$(error No XDMA library detected)
+endif
+	$(CC_) $(CFLAGS_) $(LIBXDMA_INCS_) -c $^
 
 libxtasks-hwruntime.so: libxtasks-hwruntime.o
-	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_)
+ifneq ($(LIBXDMA_SUPPORT_),YES)
+	$(error No XDMA library detected)
+endif
+	$(CC_) -shared -Wl,-rpath=$(LIBXDMA_LIB_DIR),-soname,libxtasks.so -o $@ $^ $(LDFLAGS_) $(LIBXDMA_LIBS_)
 
 .PHONY: libxtasks_version.h
 libxtasks_version.h: ../libxtasks_version_template.h
@@ -53,7 +51,7 @@ else
 endif
 	@tail -n 2 $^ >>$@
 
-install: $(TARGETS_) ../libxtasks.h libxtasks_version.h
+install: libxtasks-hwruntime.so read_bitinfo ../libxtasks.h libxtasks_version.h
 	mkdir -p $(PREFIX)/lib
 	cp libxtasks-*.so $(PREFIX)/lib
 	ln -s $(PREFIX)/lib/libxtasks-hwruntime.so $(PREFIX)/lib/libxtasks.so || true
