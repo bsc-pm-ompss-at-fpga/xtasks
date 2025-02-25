@@ -836,6 +836,12 @@ xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_ti
     return toXtasksStat(status);
 }
 
+xtasks_stat xtasksGetMemorySize(int devId, uint32_t *size)
+{
+    *size = 0;
+    return XTASKS_SUCCESS;
+}
+
 xtasks_stat xtasksMalloc(int devId, size_t len, xtasks_mem_handle *handle)
 {
     if (handle == NULL) return XTASKS_EINVAL;

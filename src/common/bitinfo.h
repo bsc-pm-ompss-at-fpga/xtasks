@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define BITINFO_MIN_REV 13
+#define BITINFO_MIN_REV 14
 #define BITINFO_MAX_SIZE 4096
 #define BITINFO_MAX_WORDS (BITINFO_MAX_SIZE / sizeof(uint32_t))
 
@@ -34,6 +34,7 @@
 #define BIT_HWR_VLNV_IDX 31
 #define BIT_NOTES_IDX 32
 #define BITSTREAM_USERID_IDX 33
+#define BITINFO_MEMORY_SIZE_IDX 34
 
 typedef enum {
     BIT_FEATURE_INST,
@@ -196,5 +197,7 @@ static inline void bitinfo_get_notes(const uint32_t* bitinfo, char* notes)
 }
 
 static inline uint32_t bitinfo_get_interleaving_stride(const uint32_t* bitinfo) { return bitinfo[BITINFO_STRIDE_IDX]; }
+
+static inline uint32_t bitinfo_get_memory_size(const uint32_t* bitinfo) { return bitinfo[BITINFO_MEMORY_SIZE_IDX]; }
 
 #endif  // BITINFO_H

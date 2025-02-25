@@ -50,6 +50,7 @@ static acc_t *_accs[MAX_CLUSTER];
 static bit_acc_type_t *_acc_types[MAX_CLUSTER];
 static task_t *_tasks;
 static unsigned int _numAccs[MAX_CLUSTER];
+static uint32_t _memorySizes[MAX_DEVICES];
 
 static int _sockfd[MAX_NODES];
 static int _nodeid;
@@ -266,6 +267,7 @@ xtasks_stat xtasksInit()
         uint64_t hwruntime_rst_address = bitinfo_get_managed_rstn_addr(bitInfo);
         _hwcounter_address[d] = bitinfo_get_hwcounter_addr(bitInfo);
         _numAccs[d] = bitinfo_get_acc_count(bitInfo);
+        _memorySizes[d] = bitinfo_get_memory_size(bitInfo);
 
         if (_nnodes == 0) {
             uint32_t numAccTypes = bitinfo_get_acc_type_count(bitInfo);
@@ -378,6 +380,23 @@ xtasks_stat xtasksInit()
 
     // Check for instrumentation
     _instrAvail = bitinfo_get_feature(bitInfo, BIT_FEATURE_INST);
+
+    // Set the memory size in xdma
+    if (_nnodes == 0) {
+        xdmaSetMemorySizes(_memorySizes);
+    } else {
+        // For the moment, we can't get the bitinfo from remote FPGAs.
+        // Assume all FPGAs have the same memory.
+        uint32_t size = _memorySizes[0];
+        for (int i = 0; i < _cluster_size; ++i) {
+            uint32_t s;
+            if (_fpgaid2nodeid[i] == _nodeid)
+                s = _memorySizes[_fpgaid2localid[i]];
+            else
+                s = size;
+            xdmaSetMemorySize(i, s);
+        }
+    }
 
     free(bitInfo);
     free(devNames);
@@ -915,6 +934,15 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id
     __sync_synchronize();
     entryHeader->valid = QUEUE_VALID;
 
+    return XTASKS_SUCCESS;
+}
+
+xtasks_stat xtasksGetMemorySize(int devId, uint32_t *size)
+{
+    if (_fpgaid2nodeid[devId] != _nodeid) return XTASKS_ENOSYS;
+    int localId = _fpgaid2localid[devId];
+
+    *size = _memorySizes[localId];
     return XTASKS_SUCCESS;
 }
 

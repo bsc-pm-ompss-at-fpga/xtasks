@@ -351,6 +351,13 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id
 xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp *timestamp);
 
 /*!
+ * \brief   Get the device memory size (0 if shared with host)
+ * \param[in]   devId   Device ID
+ * \param[out]  size    Memory size in GB
+ */
+xtasks_stat xtasksGetMemorySize(int devId, uint32_t *size);
+
+/*!
  * \brief Allocate memory in the accelerators address space
  * \param[in] devId       Device id
  * \param[in]  len        Amount of bytes that will be allocated

@@ -62,6 +62,7 @@ int read_bitinfo(const uint32_t* bitinfo)
     printf("Thermal monitor (sysmon) ");
     bitinfo_get_sysmon_addr(bitinfo) ? printf("addr 0x%" PRIX64 "\n", bitinfo_get_sysmon_addr(bitinfo))
                                      : printf("not enabled\n");
+    printf("Memory size %" PRIu32 " GB\n", bitinfo_get_memory_size(bitinfo));
 
     int nacc_types = bitinfo_get_acc_type_count(bitinfo);
     bit_acc_type_t* accs = malloc(nacc_types * sizeof(bit_acc_type_t));
