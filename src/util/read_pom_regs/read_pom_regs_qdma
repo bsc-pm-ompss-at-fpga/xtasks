@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+
+import mmap
+import regs
+import os
+
+BITINFO_ADDR = 0
+MAX_BITINFO_SIZE = 1024
+PCI_BAR_SIZE = 2097152 # 2MB
+bitinfos = []
+
+XTASKS_PCI_DEV = os.environ['XTASKS_PCI_DEV']
+
+for dev in XTASKS_PCI_DEV.split():
+	with open(f'/sys/bus/pci/devices/{dev}/resource2', 'r+b') as pciF:
+		regs.mmap_fpgas.append(mmap.mmap(pciF.fileno(), PCI_BAR_SIZE, prot=mmap.PROT_READ|mmap.PROT_WRITE, flags=mmap.MAP_SHARED))
+
+for mmap_fpga in regs.mmap_fpgas:
+	bitinfos.append(mmap_fpga[BITINFO_ADDR:BITINFO_ADDR+MAX_BITINFO_SIZE])
+
+regs.complete_regs_pom(bitinfos[0])
+vals = regs.read_regs(regs.regs_pom, [])
+regs.print_regs(regs.regs_pom, vals, len(regs.mmap_fpgas), False)
+
+for mmap_fpga in regs.mmap_fpgas:
+	mmap_fpga.close()
+

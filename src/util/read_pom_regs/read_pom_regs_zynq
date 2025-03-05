@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+
+import mmap
+import regs
+
+BITINFO_PATH = '/dev/ompss_fpga/bitinfo'
+MAX_BITINFO_SIZE = 4096
+
+with open(BITINFO_PATH, 'rb') as bitinfoFd:
+	bitinfo = bitinfoFd.read(MAX_BITINFO_SIZE)
+	regs.complete_regs_pom(bitinfo)
+	regs.mmap_fpgas = [mmap.mmap(bitinfoFd.fileno(), MAX_BITINFO_SIZE, prot=mmap.PROT_READ, flags=mmap.MAP_SHARED, offset=regs.regs_pom['base_addr'])]
+
+# The regs.read_regs function uses 'base_addr' as the initial offset to read the registers from mmap_fpgas.
+# However, for zynq we include this offset in the mmap itself, so we have to start reading from offset 0.
+regs.regs_pom['base_addr'] = 0
+
+vals = regs.read_regs(regs.regs_pom, [])
+regs.print_regs(regs.regs_pom, vals, len(regs.mmap_fpgas), False)
+
+regs.mmap_fpgas[0].close()

@@ -469,8 +469,7 @@ int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numI
         return -1;
     }
     // Count valid events
-    for (i = 0; i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID; i++)
-        ;
+    for (i = 0; i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID; i++);
 
     // Push event invalidation to the device
     if (i > 0) {
