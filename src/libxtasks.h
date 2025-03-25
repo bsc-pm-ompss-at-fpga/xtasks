@@ -77,10 +77,10 @@ typedef struct {
 } xtasks_acc_info;
 
 typedef struct {
-    uint64_t value;      ///< Event value
-    uint64_t timestamp;  ///< Event timestamp
     uint32_t eventId;    ///< Event id
     uint32_t eventType;  ///< Event type (one of xtasks_event_type)
+    uint64_t timestamp;  ///< Event timestamp
+    uint64_t value;      ///< Event value
 } xtasks_ins_event;
 
 typedef enum {

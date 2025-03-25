@@ -79,7 +79,6 @@ static uint32_t *_cmsAddr[MAX_DEVICES];
 static bool _instrAvail;
 static size_t _numInstrEvents;
 static xtasks_ins_event *_instrBuffPhy;
-static xtasks_ins_event *_invalBuffer;
 static xdma_buf_handle _instrBuffHandle;
 static volatile uint64_t *_instrCounter;
 
@@ -468,12 +467,12 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
     _instrBuffPhy = (xtasks_ins_event *)((uintptr_t)phyAddr);
 
     // Invalidate all entries
-    _invalBuffer = (xtasks_ins_event *)malloc(insBufferSize);
+    xtasks_ins_event *_invalBuffer = (xtasks_ins_event *)malloc(insBufferSize);
     for (unsigned int i = 0; i < _numInstrEvents * _numAccs[0]; ++i) {
         _invalBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
     }
     s = xdmaMemcpy(_invalBuffer, _instrBuffHandle, insBufferSize, 0, XDMA_TO_DEVICE);
-
+    free(_invalBuffer);
     if (s != XDMA_SUCCESS) {
         PRINT_ERROR("Could not initialize instrumentation buffer");
         ret = XTASKS_ERROR;
@@ -512,22 +511,18 @@ xtasks_stat xtasksInitHWIns(const size_t nEvents)
 hwins_no_pcibar:
 hwins_cmd_err:
 hwins_buff_init_err:
-    free(_invalBuffer);
     xdmaFree(_instrBuffHandle);
     _numInstrEvents = 0;
     _instrBuffPhy = NULL;
-    _invalBuffer = NULL;
     return ret;
 }
 
 xtasks_stat xtasksFiniHWIns()
 {
-    if (_invalBuffer == NULL || _numInstrEvents == 0) return XTASKS_SUCCESS;  // Instrumentation is not initialized
-    free(_invalBuffer);
+    if (_numInstrEvents == 0) return XTASKS_SUCCESS;  // Instrumentation is not initialized
     xdmaFree(_instrBuffHandle);
     _numInstrEvents = 0;
     _instrBuffPhy = NULL;
-    _invalBuffer = NULL;
     return XTASKS_SUCCESS;
 }
 
@@ -865,13 +860,10 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
     size_t count, validEvents;
     int devId = acc->devId;
 
-    if (events == NULL || (acc - _accs[devId]) >= _numAccs[devId] || maxCount <= 0)
-        return XTASKS_EINVAL;
-    else if (_invalBuffer == NULL)
-        return XTASKS_ENOAV;
+    if (events == NULL || (acc - _accs[devId]) >= _numAccs[devId] || maxCount <= 0) return XTASKS_EINVAL;
 
     count = min(maxCount, _numInstrEvents - acc->instrIdx);
-    validEvents = getAccEvents(acc, events, count, _numInstrEvents, _instrBuffHandle, _invalBuffer);
+    validEvents = getAccEvents(acc, events, count, _numInstrEvents, _instrBuffHandle);
     if (validEvents < 0) {
         return XTASKS_ERROR;
     }

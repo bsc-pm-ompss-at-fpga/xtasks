@@ -85,7 +85,6 @@ static size_t _numInstrEvents;            ///< Number of instrumentation events 
 static xtasks_ins_event *_instrBuff;      ///< Buffer of instrumentation events
 static xtasks_ins_event *_instrBuffPhy;   ///< Physical address of _instrBuff
 static xdma_buf_handle _instrBuffHandle;  ///< Handle of _instrBuff in libxdma
-static xtasks_ins_event *_invalBuffer;    ///< Invalidated event buffer used to push invalidations into device mem
 
 /*!
  * \brief Set n times the byte c in dst
@@ -136,7 +135,6 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     _numInstrEvents = nEvents;
     insBufferSize = _numInstrEvents * _numAccs * sizeof(xtasks_ins_event);
     s = xdmaAllocateHost(0, (void **)&_instrBuff, &_instrBuffHandle, insBufferSize);
-    _invalBuffer = malloc(_numInstrEvents * sizeof(*_invalBuffer));
     if (s != XDMA_SUCCESS) {
         ret = XTASKS_ENOMEM;
         goto instrAllocErr;
@@ -153,11 +151,6 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     // Invalidate all entries
     for (size_t i = 0; i < _numInstrEvents * _numAccs; ++i) {
         _instrBuff[i].eventType = XTASKS_EVENT_TYPE_INVALID;
-    }
-
-    // Initialize invalidation buffer
-    for (size_t i = 0; i < _numInstrEvents; ++i) {
-        _invalBuffer[i].eventType = XTASKS_EVENT_TYPE_INVALID;
     }
 
     // Send the instrumentation buffer to each accelerator
@@ -763,7 +756,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
         return XTASKS_ENOAV;
 
     count = min(maxCount, _numInstrEvents - acc->instrIdx);
-    validEvents = getAccEvents(acc, events, count, _numInstrEvents, _instrBuffHandle, _invalBuffer);
+    validEvents = getAccEvents(acc, events, count, _numInstrEvents, _instrBuffHandle);
     if (validEvents < 0) {
         return XTASKS_ERROR;
     }

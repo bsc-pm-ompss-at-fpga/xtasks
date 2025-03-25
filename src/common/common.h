@@ -63,7 +63,7 @@
 #define CMD_SETUP_INS_CODE 0x02              ///< Command code for setup instrumentation info
 #define CMD_FINI_EXEC_CODE 0x03              ///< Command code for finished execute task commands
 #define CMD_PERI_TASK_CODE 0x05              ///< Command code for execute periodic task commands
-#define CMD_SETUP_INS_ARGS_NUMEVS_BYTES 3    ///< Number of bytes used by Num. Events argument in the commandArgs array
+#define CMD_SETUP_INS_ARGS_NUMEVS_BYTES 4    ///< Number of bytes used by Num. Events argument in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET 0  ///< Offset of Num. Args. field in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_COMP_OFFSET 3     ///< Offset of Compute flag in the commandArgs array
 #define CMD_EXEC_TASK_ARGS_DESTID_OFFSET \
@@ -433,12 +433,10 @@ xtasks_stat submitCommand(
         __sync_synchronize();
         ticketLockRelease(&acc->cmdInLock);
 
-        // Do no write the header (1st word pointer by command ptr) until all payload is write
-        // Check if 2 writes have to be done because there is not enough space at the end of subqueue
-        const size_t count = min(cmdInSubqueueLen - idx - 1, length - 1);
-        memcpy((void *)&queue[offset + idx + 1], command + 1, count * sizeof(uint64_t));
-        if ((length - 1) > count) {
-            memcpy((void *)&queue[offset], command + 1 + count, (length - 1 - count) * sizeof(uint64_t));
+        // Do no write the header (1st word pointer by command ptr) until all payload is written
+        for (size_t i = 1, idxMod = idx + 1 == cmdInSubqueueLen ? 0 : idx + 1; i < length;
+             ++i, idxMod = idxMod + 1 == cmdInSubqueueLen ? 0 : idxMod + 1) {
+            queue[offset + idxMod] = command[i];
         }
         cmdHeader = *command;
         cmdHeaderPtr->valid = QUEUE_VALID;
@@ -455,8 +453,8 @@ xtasks_stat submitCommand(
     return XTASKS_SUCCESS;
 }
 
-int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numInstrEvents,
-    xdma_buf_handle instrBuffHandle, xtasks_ins_event *invalidEv)
+int getAccEvents(
+    acc_t *acc, xtasks_ins_event *events, size_t count, size_t numInstrEvents, xdma_buf_handle instrBuffHandle)
 {
     size_t devInstroff;
     devInstroff = (acc->info.id * numInstrEvents + acc->instrIdx) * sizeof(xtasks_ins_event);
@@ -469,13 +467,18 @@ int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numI
         return -1;
     }
     // Count valid events
-    for (i = 0; i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID; i++);
+    for (i = 0; i < count && events[i].eventType != XTASKS_EVENT_TYPE_INVALID; i++)
+        ;
 
     // Push event invalidation to the device
     if (i > 0) {
-        stat = xdmaMemcpy(invalidEv, instrBuffHandle, i * sizeof(xtasks_ins_event), devInstroff, XDMA_TO_DEVICE);
-        if (stat != XDMA_SUCCESS) {
-            return -1;
+        uint32_t invEvent = XTASKS_EVENT_TYPE_INVALID;
+        for (int e = 0; e < i; ++e) {
+            stat = xdmaMemcpy(&invEvent, instrBuffHandle, sizeof(uint32_t),
+                devInstroff + e * sizeof(xtasks_ins_event) + 1 * sizeof(uint32_t), XDMA_TO_DEVICE);
+            if (stat != XDMA_SUCCESS) {
+                return -1;
+            }
         }
     }
     acc->instrIdx = (acc->instrIdx + i) % numInstrEvents;
