@@ -453,8 +453,8 @@ xtasks_stat submitCommand(
     return XTASKS_SUCCESS;
 }
 
-int getAccEvents(
-    acc_t *acc, xtasks_ins_event *events, size_t count, size_t numInstrEvents, xdma_buf_handle instrBuffHandle, int invalidate)
+int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numInstrEvents,
+    xdma_buf_handle instrBuffHandle, int invalidate)
 {
     size_t devInstroff;
     devInstroff = (acc->info.id * numInstrEvents + acc->instrIdx) * sizeof(xtasks_ins_event);
