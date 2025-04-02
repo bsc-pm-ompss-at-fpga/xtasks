@@ -756,7 +756,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
         return XTASKS_ENOAV;
 
     count = min(maxCount, _numInstrEvents - acc->instrIdx);
-    validEvents = getAccEvents(acc, events, count, _numInstrEvents, _instrBuffHandle);
+    validEvents = getAccEvents(acc, events, count, _numInstrEvents, _instrBuffHandle, 1);
     if (validEvents < 0) {
         return XTASKS_ERROR;
     }

@@ -454,7 +454,7 @@ xtasks_stat submitCommand(
 }
 
 int getAccEvents(
-    acc_t *acc, xtasks_ins_event *events, size_t count, size_t numInstrEvents, xdma_buf_handle instrBuffHandle)
+    acc_t *acc, xtasks_ins_event *events, size_t count, size_t numInstrEvents, xdma_buf_handle instrBuffHandle, int invalidate)
 {
     size_t devInstroff;
     devInstroff = (acc->info.id * numInstrEvents + acc->instrIdx) * sizeof(xtasks_ins_event);
@@ -471,7 +471,7 @@ int getAccEvents(
         ;
 
     // Push event invalidation to the device
-    if (i > 0) {
+    if (invalidate && i > 0) {
         uint32_t invEvent = XTASKS_EVENT_TYPE_INVALID;
         for (int e = 0; e < i; ++e) {
             stat = xdmaMemcpy(&invEvent, instrBuffHandle, sizeof(uint32_t),
