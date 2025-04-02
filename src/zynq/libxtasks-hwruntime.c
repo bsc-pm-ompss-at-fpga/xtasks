@@ -18,10 +18,7 @@
   License along with this code. If not, see <www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
-#include "../common/common.h"
-#include "../common/ticket-lock.h"
-#include "../libxtasks.h"
-
+#include <assert.h>
 #include <elf.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -34,7 +31,9 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include <assert.h>
+#include "../common/common.h"
+#include "../common/ticket-lock.h"
+#include "../libxtasks.h"
 
 #define DEF_ACCS_LEN 8  ///< Def. allocated slots in the accs array
 
@@ -50,7 +49,7 @@
 #define LIBXTASKS_MIN_MAJOR 3
 #define LIBXTASKS_MIN_MINOR 1
 #if !defined(LIBXDMA_VERSION_MAJOR) || !defined(LIBXDMA_VERSION_MINOR) || \
-    LIBXDMA_VERSION_MAJOR < LIBXTASKS_MIN_MAJOR || \
+    LIBXDMA_VERSION_MAJOR < LIBXTASKS_MIN_MAJOR ||                        \
     (LIBXDMA_VERSION_MAJOR == LIBXTASKS_MIN_MAJOR && LIBXDMA_VERSION_MINOR < LIBXTASKS_MIN_MINOR)
 #error Installed libxdma is not supported (use >= 3.1)
 #endif
@@ -93,8 +92,7 @@ static xdma_buf_handle _instrBuffHandle;  ///< Handle of _instrBuff in libxdma
  *       some fast copy instructions over non-cacheable memory
  */
 void _memset(volatile void *dst, int c, size_t n);
-inline void __attribute__((optimize("O1"))) _memset(volatile void *dst, int c, size_t n)
-{
+inline void __attribute__((optimize("O1"))) _memset(volatile void *dst, int c, size_t n) {
 #if __aarch64__
     uint32_t *d = (uint32_t *)dst;
     char cc = c;
@@ -111,8 +109,7 @@ inline void __attribute__((optimize("O1"))) _memset(volatile void *dst, int c, s
 #endif
 }
 
-xtasks_stat xtasksInitHWIns(size_t const nEvents)
-{
+xtasks_stat xtasksInitHWIns(size_t const nEvents) {
     xtasks_stat ret = XTASKS_SUCCESS;
     xdma_status s;
     size_t insBufferSize;
@@ -160,8 +157,8 @@ xtasks_stat xtasksInitHWIns(size_t const nEvents)
     for (size_t i = 0; i < _numAccs; ++i) {
         cmd.bufferAddr = (uintptr_t)(_instrBuffPhy + _numInstrEvents * i);
 
-        ret = submitCommand(
-            _accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t), _cmdInQueue, _cmdInSubqueueLen);
+        ret = submitCommand(_accs + i, (uint64_t *)&cmd, sizeof(cmd_setup_hw_ins_t) / sizeof(uint64_t), _cmdInQueue,
+                            _cmdInSubqueueLen);
 
         if (ret != XTASKS_SUCCESS) {
             goto instrSendInit;
@@ -183,8 +180,7 @@ instrAllocErr:
     return ret;
 }
 
-xtasks_stat xtasksFiniHWIns()
-{
+xtasks_stat xtasksFiniHWIns() {
     xdma_status s0 = XDMA_SUCCESS;
     xdma_status s1 = XDMA_SUCCESS;
 
@@ -201,8 +197,7 @@ xtasks_stat xtasksFiniHWIns()
     return (s0 == XDMA_SUCCESS && s1 == XDMA_SUCCESS) ? XTASKS_SUCCESS : XTASKS_ERROR;
 }
 
-xtasks_stat xtasksInit()
-{
+xtasks_stat xtasksInit() {
     // Handle multiple inits
     int init_cnt = __sync_fetch_and_add(&_init_cnt, 1);
     if (init_cnt > 0) return XTASKS_SUCCESS;
@@ -236,7 +231,7 @@ xtasks_stat xtasksInit()
     if (driver_supported_version > BITINFO_MIN_REV) {
         PRINT_ERROR_ARGS("Found bitinfo version %" PRIu64
                          " which is older than the driver minimum supported version %u\n",
-            driver_supported_version, BITINFO_MIN_REV);
+                         driver_supported_version, BITINFO_MIN_REV);
         ret = XTASKS_ERROR;
         close(bitinfo_fd);
         goto err_bitinfo_driver_version;
@@ -292,8 +287,8 @@ xtasks_stat xtasksInit()
         PRINT_ERROR("Cannot open basic hwruntime device files");
         goto err_cmdin_open;
     }
-    _cmdInQueue = (uint64_t *)mmap(
-        NULL, _cmdInSubqueueLen * _numAccs * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, cmdInQFd, 0);
+    _cmdInQueue = (uint64_t *)mmap(NULL, _cmdInSubqueueLen * _numAccs * sizeof(uint64_t), PROT_READ | PROT_WRITE,
+                                   MAP_SHARED, cmdInQFd, 0);
     close(cmdInQFd);
     if (_cmdInQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
@@ -306,8 +301,8 @@ xtasks_stat xtasksInit()
         PRINT_ERROR("Cannot open basic hwruntime device files");
         goto err_cmdout_open;
     }
-    _cmdOutQueue = (uint64_t *)mmap(
-        NULL, _cmdOutSubqueueLen * _numAccs * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, cmdOutQFd, 0);
+    _cmdOutQueue = (uint64_t *)mmap(NULL, _cmdOutSubqueueLen * _numAccs * sizeof(uint64_t), PROT_READ | PROT_WRITE,
+                                    MAP_SHARED, cmdOutQFd, 0);
     close(cmdOutQFd);
     if (_cmdOutQueue == MAP_FAILED) {
         ret = XTASKS_EFILE;
@@ -326,8 +321,8 @@ xtasks_stat xtasksInit()
             PRINT_ERROR("Cannot open hwruntime/spawn_out_queue device file");
             goto err_spawnout_open;
         }
-        _spawnOutQueue = (uint64_t *)mmap(
-            NULL, _spawnOutQueueLen * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, spawnOutQFd, 0);
+        _spawnOutQueue = (uint64_t *)mmap(NULL, _spawnOutQueueLen * sizeof(uint64_t), PROT_READ | PROT_WRITE,
+                                          MAP_SHARED, spawnOutQFd, 0);
         close(spawnOutQFd);
         if (_spawnOutQueue == MAP_FAILED) {
             ret = XTASKS_EFILE;
@@ -341,8 +336,8 @@ xtasks_stat xtasksInit()
             PRINT_ERROR("Cannot open hwruntime/spawn_in_queue device file");
             goto err_spawnin_open;
         }
-        _spawnInQueue = (uint64_t *)mmap(
-            NULL, _spawnInQueueLen * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED, spawnInQFd, 0);
+        _spawnInQueue = (uint64_t *)mmap(NULL, _spawnInQueueLen * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_SHARED,
+                                         spawnInQFd, 0);
         if (_spawnInQueue == MAP_FAILED) {
             ret = XTASKS_EFILE;
             PRINT_ERROR("Cannot map hwruntime/spawn_in_queue");
@@ -438,8 +433,7 @@ err_bitinfo_malloc:
     return ret;
 }
 
-xtasks_stat xtasksFini()
-{
+xtasks_stat xtasksFini() {
     // Handle multiple inits
     int init_cnt = __sync_sub_and_fetch(&_init_cnt, 1);
     if (init_cnt > 0) return XTASKS_SUCCESS;
@@ -485,36 +479,31 @@ xtasks_stat xtasksFini()
     return ret;
 }
 
-xtasks_stat xtasksGetPlatform(const char **name)
-{
+xtasks_stat xtasksGetPlatform(const char **name) {
     if (name == NULL) return XTASKS_EINVAL;
     *name = _platformName;
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetBackend(const char **name)
-{
+xtasks_stat xtasksGetBackend(const char **name) {
     if (name == NULL) return XTASKS_EINVAL;
     *name = _backendName;
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetNumDevices(int *numDevices)
-{
+xtasks_stat xtasksGetNumDevices(int *numDevices) {
     if (numDevices == NULL) return XTASKS_EINVAL;
     *numDevices = _ndevs;
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetNumAccs(int devId, size_t *count)
-{
+xtasks_stat xtasksGetNumAccs(int devId, size_t *count) {
     if (devId >= _ndevs || count == NULL) return XTASKS_EINVAL;
     *count = _numAccs;
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetAccs(int devId, size_t const maxCount, xtasks_acc_handle *array, size_t *count)
-{
+xtasks_stat xtasksGetAccs(int devId, size_t const maxCount, xtasks_acc_handle *array, size_t *count) {
     if (array == NULL || count == NULL) return XTASKS_EINVAL;
 
     size_t tmp = maxCount > _numAccs ? _numAccs : maxCount;
@@ -526,8 +515,7 @@ xtasks_stat xtasksGetAccs(int devId, size_t const maxCount, xtasks_acc_handle *a
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *info)
-{
+xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *info) {
     if (info == NULL) return XTASKS_EINVAL;
 
     acc_t *ptr = (acc_t *)handle;
@@ -537,8 +525,7 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *in
 }
 
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId, xtasks_task_id const parent,
-    xtasks_comp_flags const compute, xtasks_task_handle *handle)
-{
+                             xtasks_comp_flags const compute, xtasks_task_handle *handle) {
     int idx = getFreeTaskEntry(_tasks);
     if (idx < 0) {
         return XTASKS_ENOMEM;
@@ -551,9 +538,9 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
 }
 
 xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_task_id const parent, xtasks_comp_flags const compute, unsigned int const numReps, unsigned int const period,
-    xtasks_task_handle *handle)
-{
+                                     xtasks_task_id const parent, xtasks_comp_flags const compute,
+                                     unsigned int const numReps, unsigned int const period,
+                                     xtasks_task_handle *handle) {
     int idx = getFreeTaskEntry(_tasks);
     if (idx < 0) {
         return XTASKS_ENOMEM;
@@ -565,8 +552,7 @@ xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle 
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle)
-{
+xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle) {
     task_t *task = (task_t *)(*handle);
     *handle = NULL;
     task->id = 0;
@@ -574,9 +560,8 @@ xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle)
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksAddArg(
-    xtasks_arg_id const id, xtasks_arg_flags const flags, xtasks_arg_val const value, xtasks_task_handle const handle)
-{
+xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags, xtasks_arg_val const value,
+                         xtasks_task_handle const handle) {
     task_t *task = (task_t *)(handle);
     uint8_t argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
     if (argsCnt >= EXT_HW_TASK_ARGS_LEN) {
@@ -595,9 +580,8 @@ xtasks_stat xtasksAddArg(
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksAddArgs(
-    size_t const num, xtasks_arg_flags const flags, xtasks_arg_val *const values, xtasks_task_handle const handle)
-{
+xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags, xtasks_arg_val *const values,
+                          xtasks_task_handle const handle) {
     task_t *task = (task_t *)(handle);
     uint8_t argsCnt = task->cmdHeader->commandArgs[CMD_EXEC_TASK_ARGS_NUMARGS_OFFSET];
     if (num > EXT_HW_TASK_ARGS_LEN - argsCnt) {
@@ -631,8 +615,7 @@ xtasks_stat xtasksAddArgs(
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
-{
+xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle) {
     task_t *task = (task_t *)(handle);
     acc_t *acc = (acc_t *)task->accel;
 
@@ -649,8 +632,7 @@ xtasks_stat xtasksSubmitTask(xtasks_task_handle const handle)
     return submitCommand(acc, (uint64_t *)task->cmdHeader, numCmdWords, _cmdInQueue, _cmdInSubqueueLen);
 }
 
-xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id)
-{
+xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id *id) {
     if (handle == NULL || id == NULL) {
         return XTASKS_EINVAL;
     }
@@ -664,8 +646,7 @@ xtasks_stat xtasksTryGetFinishedTask(xtasks_task_handle *handle, xtasks_task_id 
     return ret;
 }
 
-xtasks_stat xtasksTryGetFinishedTaskDev(int devId, xtasks_task_handle *handle, xtasks_task_id *id)
-{
+xtasks_stat xtasksTryGetFinishedTaskDev(int devId, xtasks_task_handle *handle, xtasks_task_id *id) {
     if (handle == NULL || id == NULL || devId >= _ndevs) {
         return XTASKS_EINVAL;
     }
@@ -679,8 +660,8 @@ xtasks_stat xtasksTryGetFinishedTaskDev(int devId, xtasks_task_handle *handle, x
     return ret;
 }
 
-xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id)
-{
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle,
+                                          xtasks_task_id *id) {
     acc_t *acc = (acc_t *)accel;
     volatile uint64_t *const subqueue = _cmdOutQueue + acc->info.id * _cmdOutSubqueueLen;
 
@@ -745,8 +726,7 @@ xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_
     return XTASKS_PENDING;
 }
 
-xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount)
-{
+xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_event *events, size_t const maxCount) {
     acc_t *acc = (acc_t *)(accel);
     size_t count, validEvents;
 
@@ -768,8 +748,7 @@ xtasks_stat xtasksGetInstrumentData(xtasks_acc_handle const accel, xtasks_ins_ev
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
-{
+xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task) {
     if (_spawnOutQueue == NULL) return XTASKS_PENDING;
 
     // Get a non-empty slot into the spawn out queue
@@ -783,7 +762,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
         }
         taskSize =
             (sizeof(new_task_header_t) + sizeof(uint64_t) * hwTaskHeader->numArgs +
-                sizeof(new_task_dep_t) * hwTaskHeader->numDeps + sizeof(new_task_copy_t) * hwTaskHeader->numCopies) /
+             sizeof(new_task_dep_t) * hwTaskHeader->numDeps + sizeof(new_task_copy_t) * hwTaskHeader->numCopies) /
             sizeof(uint64_t);
         next = (idx + taskSize) % _spawnOutQueueLen;
     } while (!__sync_bool_compare_and_swap(&_spawnOutQueueIdx, idx, next));
@@ -793,8 +772,7 @@ xtasks_stat xtasksTryGetNewTask(xtasks_newtask **task)
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id)
-{
+xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id const id) {
     // Get an empty slot into the TM remote finished queue
     size_t idx, next;
     rem_fini_task_t *entryHeader;
@@ -821,36 +799,31 @@ xtasks_stat xtasksNotifyFinishedTask(xtasks_task_id const parent, xtasks_task_id
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp *timestamp)
-{
+xtasks_stat xtasksGetAccCurrentTime(xtasks_acc_handle const accel, xtasks_ins_timestamp *timestamp) {
     if (timestamp == NULL) return XTASKS_EINVAL;
 
     xdma_status status = xdmaGetDeviceTime(0, timestamp);
     return toXtasksStat(status);
 }
 
-xtasks_stat xtasksGetMemorySize(int devId, uint32_t *size)
-{
+xtasks_stat xtasksGetMemorySize(int devId, uint32_t *size) {
     *size = 0;
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat xtasksMalloc(int devId, size_t len, xtasks_mem_handle *handle)
-{
+xtasks_stat xtasksMalloc(int devId, size_t len, xtasks_mem_handle *handle) {
     if (handle == NULL) return XTASKS_EINVAL;
 
     xdma_status status = xdmaAllocate(0, handle, len);
     return toXtasksStat(status);
 }
 
-xtasks_stat xtasksFree(xtasks_mem_handle handle)
-{
+xtasks_stat xtasksFree(xtasks_mem_handle handle) {
     xdma_status status = xdmaFree(handle);
     return toXtasksStat(status);
 }
 
-xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t *addr)
-{
+xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t *addr) {
     if (addr == NULL) return XTASKS_EINVAL;
 
     unsigned long devAddr = 0;
@@ -859,17 +832,15 @@ xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t *addr)
     return toXtasksStat(status);
 }
 
-xtasks_stat xtasksMemcpy(
-    xtasks_mem_handle const handle, size_t offset, size_t len, void *usr, xtasks_memcpy_kind const kind)
-{
+xtasks_stat xtasksMemcpy(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+                         xtasks_memcpy_kind const kind) {
     xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
     xdma_status status = xdmaMemcpy(usr, handle, len, offset, mode);
     return toXtasksStat(status);
 }
 
 xtasks_stat xtasksMemcpyAsync(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
-    xtasks_memcpy_kind const kind, xtasks_memcpy_handle *cpyHandle)
-{
+                              xtasks_memcpy_kind const kind, xtasks_memcpy_handle *cpyHandle) {
     if (handle == NULL) return XTASKS_EINVAL;
 
     xdma_dir mode = kind == XTASKS_ACC_TO_HOST ? XDMA_FROM_DEVICE : XDMA_TO_DEVICE;
@@ -877,16 +848,14 @@ xtasks_stat xtasksMemcpyAsync(xtasks_mem_handle const handle, size_t offset, siz
     return toXtasksStat(status);
 }
 
-xtasks_stat xtasksTestCopy(xtasks_memcpy_handle *handle)
-{
+xtasks_stat xtasksTestCopy(xtasks_memcpy_handle *handle) {
     if (handle == NULL) return XTASKS_EINVAL;
 
     xdma_status status = xdmaTestTransfer(handle);
     return toXtasksStat(status);
 }
 
-xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle *handle)
-{
+xtasks_stat xtasksSyncCopy(xtasks_memcpy_handle *handle) {
     if (handle == NULL) return XTASKS_EINVAL;
 
     xdma_status status = xdmaWaitTransfer(handle);
@@ -902,18 +871,16 @@ uint64_t spawnOutQueue(size_t const idx) { return _spawnOutQueue[idx]; }
 
 uint64_t spawnInQueue(size_t const idx) { return _spawnInQueue[idx]; }
 
-xtasks_ins_event accelGetEvent(size_t const aIdx, size_t const evIdx)
-{
+xtasks_ins_event accelGetEvent(size_t const aIdx, size_t const evIdx) {
     return _instrBuff[aIdx * _numInstrEvents + evIdx];
 }
 
-void accelPrintInstrBuffer(size_t const aIdx)
-{
+void accelPrintInstrBuffer(size_t const aIdx) {
     xtasks_ins_event *event = _instrBuff + aIdx * _numInstrEvents;
     fprintf(stderr, "timestamp, accid, eventid, value\n");
     while (event->eventId != XTASKS_EVENT_TYPE_INVALID) {
         fprintf(stderr, "%llu,\t%u,\t%u,\t%llu\n", (unsigned long long int)event->timestamp, event->eventType,
-            event->eventId, (unsigned long long int)event->value);
+                event->eventId, (unsigned long long int)event->value);
         event++;
     }
 }

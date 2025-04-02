@@ -12,8 +12,7 @@ static uint32_t *bitinfo;
 int read_bitinfo(const uint32_t *bitinfo);
 int read_bitstream_userid(const uint32_t *bitinfo);
 
-int init()
-{
+int init() {
     bitinfo = malloc(BITINFO_MAX_SIZE);
     if (bitinfo == NULL) {
         perror("Unable to allocate memory for the bitinfo");
@@ -39,8 +38,7 @@ err_bitinfo_read:
     return 1;
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     int opt;
     int ret = 0;
     int read_userid = 0;

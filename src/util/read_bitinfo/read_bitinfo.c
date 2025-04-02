@@ -1,16 +1,16 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+
 #include "../../common/bitinfo.h"
 
-int read_bitinfo(const uint32_t* bitinfo)
-{
+int read_bitinfo(const uint32_t* bitinfo) {
     // Check if bitstream is compatible
     uint32_t bitinfoRev = bitinfo_get_version(bitinfo);
     // The bitinfo version is old
     if (bitinfoRev < BITINFO_MIN_REV) {
         fprintf(stderr, "Found bitinfo version %u, which is older than minimum supported version %u\n", bitinfoRev,
-            BITINFO_MIN_REV);
+                BITINFO_MIN_REV);
         return 1;
     }
     printf("Bitinfo version:\t%d\n", bitinfoRev);
@@ -28,8 +28,8 @@ int read_bitinfo(const uint32_t* bitinfo)
     printf("[%c] Instrumentation\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_INST) ? 'x' : ' ');
     printf("[%c] Hardware counter\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_HWCOUNTER) ? 'x' : ' ');
     printf("[%c] Performance interconnect\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_INTERCONNECT_OPT) ? 'x' : ' ');
-    printf(
-        "[%c] Simplified interconnection\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_INTERCONNECT_SIMPL) ? 'x' : ' ');
+    printf("[%c] Simplified interconnection\n",
+           bitinfo_get_feature(bitinfo, BIT_FEATURE_INTERCONNECT_SIMPL) ? 'x' : ' ');
     printf("[%c] POM AXI-Lite\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_POM_AXILITE) ? 'x' : ' ');
     printf("[%c] POM task creation\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_POM_TASK_CREATE) ? 'x' : ' ');
     printf("[%c] POM dependencies\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_POM_DEPS) ? 'x' : ' ');
@@ -98,14 +98,13 @@ int read_bitinfo(const uint32_t* bitinfo)
     return 0;
 }
 
-int read_bitstream_userid(const uint32_t* bitinfo)
-{
+int read_bitstream_userid(const uint32_t* bitinfo) {
     // Check if bitstream is compatible
     uint32_t bitinfoRev = bitinfo_get_version(bitinfo);
     // The bitinfo version is old
     if (bitinfoRev < BITINFO_MIN_REV) {
         fprintf(stderr, "Found bitinfo version %u, which is older than minimum supported version %u\n", bitinfoRev,
-            BITINFO_MIN_REV);
+                BITINFO_MIN_REV);
         return 1;
     }
 

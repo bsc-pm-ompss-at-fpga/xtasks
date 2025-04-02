@@ -40,8 +40,7 @@ typedef struct {
 /**
  * Create and initialize a new queue
  */
-queue_t *queueInit()
-{
+queue_t *queueInit() {
     queue_t *ret = (queue_t *)malloc(sizeof(queue_t));
     if (ret == NULL) return NULL;
 
@@ -59,8 +58,7 @@ queue_t *queueInit()
 /**
  * Atomically insert a new element in the queue
  */
-void queuePush(queue_t *const q, void *elem)
-{
+void queuePush(queue_t *const q, void *elem) {
     node_t *n = (node_t *)malloc(sizeof(node_t));
     if (n == NULL) return;
 
@@ -95,8 +93,7 @@ void queuePush(queue_t *const q, void *elem)
  * NOTE: The function is not thread-safe and a race condition may appear if queueTryPop is called
  *       at the same time
  */
-void *queueFront(queue_t *const q)
-{
+void *queueFront(queue_t *const q) {
     node_t *n = q->_head->_next;
     return n == NULL ? n : n->_data;
 }
@@ -106,8 +103,7 @@ void *queueFront(queue_t *const q)
  * NOTE: The function is not thread-safe and a race condition may appear if queueTryPop is called
  *       at the same time
  */
-void queuePop(queue_t *const q)
-{
+void queuePop(queue_t *const q) {
     node_t *l = q->_head->_next;
     if (l == NULL) return;
 
@@ -119,8 +115,7 @@ void queuePop(queue_t *const q)
  * Atomically extracts from the queue the next element and returns it.
  * If the queue is empty returns NULL
  */
-void *queueTryPop(queue_t *const q)
-{
+void *queueTryPop(queue_t *const q) {
     node_t *l;
     do {
         l = q->_head;
@@ -140,8 +135,7 @@ void *queueTryPop(queue_t *const q)
 /**
  * Finalize the queue
  */
-void queueFini(queue_t *q)
-{
+void queueFini(queue_t *q) {
     for (node_t *n = q->_head->_next, *l = NULL; n != NULL; n = l) {
         l = n->_next;
         free(n);

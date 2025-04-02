@@ -21,8 +21,7 @@ int read_bitinfo(const uint32_t *bitinfo);
 int read_bitstream_userid(const uint32_t *bitinfo);
 
 // Open devices and copy bitinfo data
-int init()
-{
+int init() {
     xtasks_stat stat;
 
     char *pciDevListStr;
@@ -49,8 +48,7 @@ int init()
     return 0;
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     int opt;
     int read_userid = 0;
 

@@ -34,14 +34,13 @@
  *                               variable
  * \returns     XTASKS_SUCCESS on success, XTASKS_ENODEV if XTASKS_PCI_DEV is not defined
  */
-static xtasks_stat getPciDevListStr(char **pciDevListStr)
-{
+static xtasks_stat getPciDevListStr(char **pciDevListStr) {
     char *pciDevListEnv = getenv(XTASKS_PCIDEV_ENV);
     if (pciDevListEnv == NULL) {
         fprintf(stderr,
-            "Environment variable XTASKS_PCIDEV_ENV"
-            " not found, set it to the pci device ID list,"
-            " in the form of xxxx:xx:xx.x see `lspci -Dd 10ee:`\n");
+                "Environment variable XTASKS_PCIDEV_ENV"
+                " not found, set it to the pci device ID list,"
+                " in the form of xxxx:xx:xx.x see `lspci -Dd 10ee:`\n");
         return XTASKS_ENODEV;
     }
     size_t envlen = strlen(pciDevListEnv);
@@ -58,8 +57,7 @@ static xtasks_stat getPciDevListStr(char **pciDevListStr)
  * \param[out]  devNames         Reference to an array of device names, allocated by this function
  * \returns     XTASKS_SUCCESS on success, error code otherwise
  */
-static xtasks_stat getPciDevList(char *pciDevListStr, int *nDevices, char ***devNames)
-{
+static xtasks_stat getPciDevList(char *pciDevListStr, int *nDevices, char ***devNames) {
     int ndevs = 0;
     char *pciDevName;
     char **names;
@@ -93,8 +91,7 @@ static xtasks_stat getPciDevList(char *pciDevListStr, int *nDevices, char ***dev
  * \param   pcibar[out]     Pointer pointing to PCIe BAR
  * \returns                 XTASKS_SUCCESS on success, error code otherwise
  */
-static xtasks_stat mapPciDevice(char *pciDevName, uint32_t **pciBar)
-{
+static xtasks_stat mapPciDevice(char *pciDevName, uint32_t **pciBar) {
     char pciBarPath[PCI_MAX_PATH_LEN];
     snprintf(pciBarPath, PCI_MAX_PATH_LEN, "%s/%s/%s", PCI_DEV_BASE_PATH, pciDevName, PCI_BAR_FILE);
     int pciBarFd = open(pciBarPath, O_RDWR);
@@ -125,22 +122,19 @@ init_open_bar_err:
  * \param   pciBar[in]  Pointer to PCIe bar
  * \returns XTASKS_SUCCESS
  */
-static xtasks_stat unmapPciDev(uint32_t *pciBar)
-{
+static xtasks_stat unmapPciDev(uint32_t *pciBar) {
     munmap((void *)pciBar, PCI_BAR_SIZE);
     return XTASKS_SUCCESS;
 }
 
-uint32_t pci_read(uint32_t *bar, off_t offset)
-{
+uint32_t pci_read(uint32_t *bar, off_t offset) {
     uint32_t val = bar[offset / sizeof(*bar)];
     return val;
 }
 
 void pci_write(uint32_t *bar, off_t offset, uint32_t val) { bar[offset / sizeof(*bar)] = val; }
 
-static int cms_enable_power_monitor(uint32_t *cms)
-{
+static int cms_enable_power_monitor(uint32_t *cms) {
     // TODO: Check for a proper software profile (board code + sw version)
     // uint32_t software_profile = pci_read(cms, CMS_REG_MAP + 0x0014);
     // Get the cms out of reset status
@@ -163,16 +157,14 @@ static int cms_enable_power_monitor(uint32_t *cms)
 
 static void cms_disable_power_monitor(uint32_t *cms) { pci_write(cms, MB_RESETN_REG, 0x00); }
 
-static int cms_reset_power_monitor(uint32_t *cms)
-{
+static int cms_reset_power_monitor(uint32_t *cms) {
     cms_disable_power_monitor(cms);
     return cms_enable_power_monitor(cms);
 }
 
 static void cms_stop_power_monitor(uint32_t *cms) { cms_disable_power_monitor(cms); }
 
-static int cms_power_monitor_read_values(uint32_t *cmsAddr, xtasks_monitor_info *info)
-{
+static int cms_power_monitor_read_values(uint32_t *cmsAddr, xtasks_monitor_info *info) {
     // XXX TODO u200/u280/... logic
     // XXX TODO move hex values to constats
 

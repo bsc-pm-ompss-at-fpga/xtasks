@@ -218,7 +218,7 @@ xtasks_stat xtasksGetAccInfo(xtasks_acc_handle const handle, xtasks_acc_info *in
  * \param[out] handle     Pointer to a valid xtasks_task_handle where the task handle will be set
  */
 xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const accId, xtasks_task_id const parent,
-    xtasks_comp_flags const compute, xtasks_task_handle *handle);
+                             xtasks_comp_flags const compute, xtasks_task_handle *handle);
 
 /*!
  * \brief Create a new periodic task
@@ -231,8 +231,8 @@ xtasks_stat xtasksCreateTask(xtasks_task_id const id, xtasks_acc_handle const ac
  * \param[out] handle     Pointer to a valid xtasks_task_handle where the task handle will be set
  */
 xtasks_stat xtasksCreatePeriodicTask(xtasks_task_id const id, xtasks_acc_handle const accId,
-    xtasks_task_id const parent, xtasks_comp_flags const compute, unsigned int const numReps, unsigned int const period,
-    xtasks_task_handle *handle);
+                                     xtasks_task_id const parent, xtasks_comp_flags const compute,
+                                     unsigned int const numReps, unsigned int const period, xtasks_task_handle *handle);
 
 /*!
  * \brief Delete a task
@@ -247,8 +247,8 @@ xtasks_stat xtasksDeleteTask(xtasks_task_handle *handle);
  * \param[in]  value      Argument value
  * \param[in]  handle     Task handle where the argument will be added
  */
-xtasks_stat xtasksAddArg(
-    xtasks_arg_id const id, xtasks_arg_flags const flags, xtasks_arg_val const value, xtasks_task_handle const handle);
+xtasks_stat xtasksAddArg(xtasks_arg_id const id, xtasks_arg_flags const flags, xtasks_arg_val const value,
+                         xtasks_task_handle const handle);
 
 /*!
  * \brief Append an array of arguments to a task all with the same flags
@@ -258,8 +258,8 @@ xtasks_stat xtasksAddArg(
  * \param[in]  values     Array of argument values
  * \param[in]  handle     Task handle where the arguments will be added
  */
-xtasks_stat xtasksAddArgs(
-    size_t const num, xtasks_arg_flags const flags, xtasks_arg_val *const values, xtasks_task_handle const handle);
+xtasks_stat xtasksAddArgs(size_t const num, xtasks_arg_flags const flags, xtasks_arg_val *const values,
+                          xtasks_task_handle const handle);
 
 /*!
  * \brief Submit the task to the FPGA
@@ -300,8 +300,8 @@ xtasks_stat xtasksTryGetFinishedTaskDev(int devId, xtasks_task_handle *handle, x
  * \returns    XTASKS_PENDING if no task has been synchronized,
  *             XTASKS_SUCCESS if a task has been synchronized and output parameter have been set
  */
-xtasks_stat xtasksTryGetFinishedTaskAccel(
-    xtasks_acc_handle const accel, xtasks_task_handle *handle, xtasks_task_id *id);
+xtasks_stat xtasksTryGetFinishedTaskAccel(xtasks_acc_handle const accel, xtasks_task_handle *handle,
+                                          xtasks_task_id *id);
 
 /*!
  * \brief Get instrumentation events buffer for an accelerator
@@ -386,8 +386,8 @@ xtasks_stat xtasksGetAccAddress(xtasks_mem_handle const handle, uint64_t *addr);
  * \param[in]  usr        Pointer to the user space memory that will be copied from/to
  * \param[in]  kind       Kind of copy that will be done
  */
-xtasks_stat xtasksMemcpy(
-    xtasks_mem_handle const handle, size_t offset, size_t len, void *usr, xtasks_memcpy_kind const kind);
+xtasks_stat xtasksMemcpy(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
+                         xtasks_memcpy_kind const kind);
 
 /*!
  * \brief Asynchronously copy data to/from an allocation
@@ -400,7 +400,7 @@ xtasks_stat xtasksMemcpy(
  *                        will be set
  */
 xtasks_stat xtasksMemcpyAsync(xtasks_mem_handle const handle, size_t offset, size_t len, void *usr,
-    xtasks_memcpy_kind const kind, xtasks_memcpy_handle *cpyHandle);
+                              xtasks_memcpy_kind const kind, xtasks_memcpy_handle *cpyHandle);
 
 /*!
  * \brief Test the status of a copy operation

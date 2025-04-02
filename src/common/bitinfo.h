@@ -66,66 +66,55 @@ static inline uint32_t bitinfo_get_wrapper_version(const uint32_t* bitinfo) { re
 
 static inline uint32_t bitinfo_get_acc_count(const uint32_t* bitinfo) { return bitinfo[BITINFO_NUMACCS_IDX]; }
 
-static inline uint64_t bitinfo_get_cmd_in_addr(const uint32_t* bitinfo)
-{
+static inline uint64_t bitinfo_get_cmd_in_addr(const uint32_t* bitinfo) {
     return bitinfo[CMD_IN_BITINFO_ADDR_IDX] | ((uint64_t)bitinfo[CMD_IN_BITINFO_ADDR_IDX + 1] << 32);
 }
 
 static inline uint32_t bitinfo_get_cmd_in_len(const uint32_t* bitinfo) { return bitinfo[CMD_IN_BITINFO_LEN_IDX]; }
 
-static inline uint64_t bitinfo_get_cmd_out_addr(const uint32_t* bitinfo)
-{
+static inline uint64_t bitinfo_get_cmd_out_addr(const uint32_t* bitinfo) {
     return bitinfo[CMD_OUT_BITINFO_ADDR_IDX] | ((uint64_t)bitinfo[CMD_OUT_BITINFO_ADDR_IDX + 1] << 32);
 }
 
 static inline uint32_t bitinfo_get_cmd_out_len(const uint32_t* bitinfo) { return bitinfo[CMD_OUT_BITINFO_LEN_IDX]; }
 
-static inline uint64_t bitinfo_get_spawn_in_addr(const uint32_t* bitinfo)
-{
+static inline uint64_t bitinfo_get_spawn_in_addr(const uint32_t* bitinfo) {
     return bitinfo[SPWN_IN_BITINFO_ADDR_IDX] | ((uint64_t)bitinfo[SPWN_IN_BITINFO_ADDR_IDX + 1] << 32);
 }
 
 static inline uint32_t bitinfo_get_spawn_in_len(const uint32_t* bitinfo) { return bitinfo[SPWN_IN_BITINFO_LEN_IDX]; }
 
-static inline uint64_t bitinfo_get_spawn_out_addr(const uint32_t* bitinfo)
-{
+static inline uint64_t bitinfo_get_spawn_out_addr(const uint32_t* bitinfo) {
     return bitinfo[SPWN_OUT_BITINFO_ADDR_IDX] | ((uint64_t)bitinfo[SPWN_OUT_BITINFO_ADDR_IDX + 1] << 32);
 }
 
 static inline uint32_t bitinfo_get_spawn_out_len(const uint32_t* bitinfo) { return bitinfo[SPWN_OUT_BITINFO_LEN_IDX]; }
 
-static inline uint64_t bitinfo_get_managed_rstn_addr(const uint32_t* bitinfo)
-{
+static inline uint64_t bitinfo_get_managed_rstn_addr(const uint32_t* bitinfo) {
     return bitinfo[RST_BITINFO_ADDR_IDX] | ((uint64_t)bitinfo[RST_BITINFO_ADDR_IDX + 1] << 32);
 }
 
-static inline uint64_t bitinfo_get_hwcounter_addr(const uint32_t* bitinfo)
-{
+static inline uint64_t bitinfo_get_hwcounter_addr(const uint32_t* bitinfo) {
     return bitinfo[HWCOUNTER_BITINFO_ADDR_IDX] | ((uint64_t)bitinfo[HWCOUNTER_BITINFO_ADDR_IDX + 1] << 32);
 }
 
-static inline uint64_t bitinfo_get_pom_axilite_addr(const uint32_t* bitinfo)
-{
+static inline uint64_t bitinfo_get_pom_axilite_addr(const uint32_t* bitinfo) {
     return bitinfo[POM_AXILITE_BITINFO_ADDR_IDX] | ((uint64_t)bitinfo[POM_AXILITE_BITINFO_ADDR_IDX + 1] << 32);
 }
 
-static inline uint64_t bitinfo_get_cms_addr(const uint32_t* bitinfo)
-{
+static inline uint64_t bitinfo_get_cms_addr(const uint32_t* bitinfo) {
     return bitinfo[CMS_BITINFO_ADDR_IDX] | ((uint64_t)bitinfo[CMS_BITINFO_ADDR_IDX + 1] << 32);
 }
 
-static inline uint64_t bitinfo_get_sysmon_addr(const uint32_t* bitinfo)
-{
+static inline uint64_t bitinfo_get_sysmon_addr(const uint32_t* bitinfo) {
     return bitinfo[SYSMON_BITINFO_ADDR_IDX] | ((uint64_t)bitinfo[SYSMON_BITINFO_ADDR_IDX + 1] << 32);
 }
 
-static inline uint32_t bitinfo_get_acc_type_count(const uint32_t* bitinfo)
-{
+static inline uint32_t bitinfo_get_acc_type_count(const uint32_t* bitinfo) {
     return (bitinfo[BIT_XTASKS_CONFIG_IDX] & 0xFFFF) / 44;  // 44 bytes per acc type
 }
 
-static inline void bitinfo_init_acc_types(const uint32_t* bitinfo, bit_acc_type_t* acc_types)
-{
+static inline void bitinfo_init_acc_types(const uint32_t* bitinfo, bit_acc_type_t* acc_types) {
     int count = bitinfo_get_acc_type_count(bitinfo);
     uint32_t offset = bitinfo[BIT_XTASKS_CONFIG_IDX] >> 16;
     const uint32_t* bit_acc_type = bitinfo + offset;
@@ -152,13 +141,11 @@ static inline void bitinfo_init_acc_types(const uint32_t* bitinfo, bit_acc_type_
     }
 }
 
-static inline int bitinfo_get_feature(const uint32_t* bitinfo, bit_feature_t feature)
-{
+static inline int bitinfo_get_feature(const uint32_t* bitinfo, bit_feature_t feature) {
     return (bitinfo[BITINFO_FEATURES_IDX] >> feature) & 0x1;
 }
 
-static inline void bitinfo_get_AIT_version(const uint32_t* bitinfo, int* major, int* minor, int* patch)
-{
+static inline void bitinfo_get_AIT_version(const uint32_t* bitinfo, int* major, int* minor, int* patch) {
     *patch = (bitinfo[BITINFO_AIT_VER_IDX] >> 0) & 0x7FF;
     *minor = (bitinfo[BITINFO_AIT_VER_IDX] >> 11) & 0x7FF;
     *major = (bitinfo[BITINFO_AIT_VER_IDX] >> 22) & 0x3FF;
@@ -172,24 +159,21 @@ static inline uint32_t bitinfo_get_hwr_vlnv_size(const uint32_t* bitinfo) { retu
 
 static inline uint32_t bitinfo_get_notes_size(const uint32_t* bitinfo) { return bitinfo[BIT_NOTES_IDX] & 0xFFFF; }
 
-static inline void bitinfo_get_ait_call(const uint32_t* bitinfo, char* ait_call)
-{
+static inline void bitinfo_get_ait_call(const uint32_t* bitinfo, char* ait_call) {
     const uint32_t* ait_call_ptr = bitinfo + (bitinfo[BIT_AIT_CALL_IDX] >> 16);
     int size = bitinfo_get_ait_call_size(bitinfo);
     memcpy(ait_call, ait_call_ptr, size);
     ait_call[size] = '\0';
 }
 
-static inline void bitinfo_get_hwr_vlnv(const uint32_t* bitinfo, char* hwr_vlnv)
-{
+static inline void bitinfo_get_hwr_vlnv(const uint32_t* bitinfo, char* hwr_vlnv) {
     const uint32_t* hwr_vlnv_ptr = bitinfo + (bitinfo[BIT_HWR_VLNV_IDX] >> 16);
     int size = bitinfo_get_hwr_vlnv_size(bitinfo);
     memcpy(hwr_vlnv, hwr_vlnv_ptr, size);
     hwr_vlnv[size] = '\0';
 }
 
-static inline void bitinfo_get_notes(const uint32_t* bitinfo, char* notes)
-{
+static inline void bitinfo_get_notes(const uint32_t* bitinfo, char* notes) {
     const uint32_t* notes_ptr = bitinfo + (bitinfo[BIT_NOTES_IDX] >> 16);
     int size = bitinfo_get_notes_size(bitinfo);
     memcpy(notes, notes_ptr, size);

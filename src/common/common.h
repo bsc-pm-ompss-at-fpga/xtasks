@@ -21,14 +21,14 @@
 #ifndef __LIBXTASKS_COMMON_H__
 #define __LIBXTASKS_COMMON_H__
 
-#include "../libxtasks.h"
-#include "libxdma.h"
-#include "ticket-lock.h"
-
 #include <libxdma.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>  //include index for old compilers
+
+#include "../libxtasks.h"
+#include "libxdma.h"
+#include "ticket-lock.h"
 //__USE_BSD is one of the defines needed to enable the usleep function, it seems
 // to not be enabled with old compilers
 #ifdef __USE_BSD
@@ -81,18 +81,18 @@
     32  ///< Offset of new_task_copy_t->size field in the 2nd word forming new_task_copy_t
 #define STR_BUFFER_SIZE 129
 
-#define max(a, b) \
-    ({ \
+#define max(a, b)               \
+    ({                          \
         __typeof__(a) _a = (a); \
         __typeof__(b) _b = (b); \
-        _a > _b ? _a : _b; \
+        _a > _b ? _a : _b;      \
     })
 
-#define min(a, b) \
-    ({ \
+#define min(a, b)               \
+    ({                          \
         __typeof__(a) _a = (a); \
         __typeof__(b) _b = (b); \
-        _a < _b ? _a : _b; \
+        _a < _b ? _a : _b;      \
     })
 
 //! \brief Internal library HW accelerator information
@@ -201,8 +201,7 @@ typedef struct __attribute__((__packed__)) {
 /*!
  * \brief Returns the length of command based on its header
  */
-uint8_t getCmdLength(cmd_header_t const *header)
-{
+uint8_t getCmdLength(cmd_header_t const *header) {
     uint8_t length = 0;
     uint8_t const cmdCode = header->commandCode;
     if (cmdCode == CMD_EXEC_TASK_CODE) {
@@ -224,8 +223,7 @@ uint8_t getCmdLength(cmd_header_t const *header)
 /*!
  * \brief Returns a xtasks_stat based on a xdma_status
  */
-xtasks_stat toXtasksStat(xdma_status const status)
-{
+xtasks_stat toXtasksStat(xdma_status const status) {
     xtasks_stat ret = XTASKS_ERROR;
     if (status == XDMA_SUCCESS) {
         ret = XTASKS_SUCCESS;
@@ -240,8 +238,7 @@ xtasks_stat toXtasksStat(xdma_status const status)
 /*!
  * \brief Prints an error message in STDERR about bitstream compatibility
  */
-void printErrorBitstreamVersionCompatibility(unsigned int bitinfoVersion)
-{
+void printErrorBitstreamVersionCompatibility(unsigned int bitinfoVersion) {
     fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
     fprintf(stderr, "       The compatible bitinfo version is: %d\n", BITINFO_MIN_REV);
     fprintf(stderr, "       Loaded FPGA bitstream bitinfo version is: %u\n", bitinfoVersion);
@@ -252,8 +249,7 @@ void printErrorBitstreamVersionCompatibility(unsigned int bitinfoVersion)
 /*!
  * \brief Prints an error message in STDERR about bitstream compatibility
  */
-void printErrorBitstreamWrapperCompatibility(unsigned int wrapperVersion)
-{
+void printErrorBitstreamWrapperCompatibility(unsigned int wrapperVersion) {
     fprintf(stderr, "ERROR: Loaded FPGA bitstream may not be compatible with this version of libxtasks.\n");
     fprintf(stderr, "       The compatible wrapper versions are: [%d, %d]\n", MIN_WRAPPER_VER, MAX_WRAPPER_VER);
     fprintf(stderr, "       Loaded FPGA bitstream wrapper version is: %u\n", wrapperVersion);
@@ -267,8 +263,7 @@ void printErrorBitstreamWrapperCompatibility(unsigned int wrapperVersion)
  *          BIT_COMPAT if the bitstream is compatible
  *          BIT_COMPAT_SKIP if the check was skipped due to user requirements
  */
-bit_compatibility_t checkbitstreamCompatibility(const uint32_t *bitinfo)
-{
+bit_compatibility_t checkbitstreamCompatibility(const uint32_t *bitinfo) {
     const char *compatCheck = getenv("XTASKS_COMPATIBILITY_CHECK");
     if (compatCheck != NULL && compatCheck[0] == '0') {
         return BIT_COMPAT_SKIP;
@@ -292,8 +287,7 @@ bit_compatibility_t checkbitstreamCompatibility(const uint32_t *bitinfo)
     return BIT_COMPAT;
 }
 
-void initAccList(int devId, acc_t *accs, const bit_acc_type_t *acc_types, int n_acc_types, uint32_t cmdInSubqueueLen)
-{
+void initAccList(int devId, acc_t *accs, const bit_acc_type_t *acc_types, int n_acc_types, uint32_t cmdInSubqueueLen) {
     int accid = 0;
     for (int i = 0; i < n_acc_types; ++i) {
         for (int j = 0; j < acc_types[i].count; ++j) {
@@ -313,16 +307,14 @@ void initAccList(int devId, acc_t *accs, const bit_acc_type_t *acc_types, int n_
     }
 }
 
-inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32_t *resetReg)
-{
+inline __attribute__((always_inline)) void resetHWRuntime(volatile uint32_t *resetReg) {
     // Nudge one register
     *resetReg = 0x00;
     usleep(1);  // Wait for the reset to propagate
     *resetReg = 0x01;
 }
 
-int getFreeTaskEntry(task_t *tasks)
-{
+int getFreeTaskEntry(task_t *tasks) {
     for (int i = 0; i < NUM_RUN_TASKS; ++i) {
         if (tasks[i].id == 0) {
             if (__sync_bool_compare_and_swap(&tasks[i].id, 0, 1)) {
@@ -334,8 +326,7 @@ int getFreeTaskEntry(task_t *tasks)
 }
 
 void initializeTask(task_t *task, const xtasks_task_id id, xtasks_acc_handle const accel, xtasks_task_id const parent,
-    xtasks_comp_flags const compute)
-{
+                    xtasks_comp_flags const compute) {
     task->id = id;
     task->accel = accel;
     task->periTask = 0;
@@ -350,8 +341,7 @@ void initializeTask(task_t *task, const xtasks_task_id id, xtasks_acc_handle con
 }
 
 void initializePeriodicTask(task_t *task, const xtasks_task_id id, xtasks_acc_handle const accel,
-    xtasks_task_id const parent, xtasks_comp_flags const compute, int numReps, int period)
-{
+                            xtasks_task_id const parent, xtasks_comp_flags const compute, int numReps, int period) {
     task->id = id;
     task->accel = accel;
     task->periTask = 1;
@@ -367,8 +357,7 @@ void initializePeriodicTask(task_t *task, const xtasks_task_id id, xtasks_acc_ha
     cmdHeader->period = period;
 }
 
-xtasks_stat setExtendedModeTask(task_t *task)
-{
+xtasks_stat setExtendedModeTask(task_t *task) {
     cmd_header_t *prevHeader = task->cmdHeader;
     task->cmdHeader = (cmd_header_t *)malloc(EXT_HW_TASK_SIZE);
     if (task->cmdHeader == NULL) {
@@ -383,9 +372,8 @@ xtasks_stat setExtendedModeTask(task_t *task)
     return XTASKS_SUCCESS;
 }
 
-xtasks_stat submitCommand(
-    acc_t *acc, uint64_t *command, const size_t length, volatile uint64_t *queue, uint32_t cmdInSubqueueLen)
-{
+xtasks_stat submitCommand(acc_t *acc, uint64_t *command, const size_t length, volatile uint64_t *queue,
+                          uint32_t cmdInSubqueueLen) {
     size_t idx;
     uint64_t cmdHeader;
     size_t const offset = acc->info.id * cmdInSubqueueLen;
@@ -454,8 +442,7 @@ xtasks_stat submitCommand(
 }
 
 int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numInstrEvents,
-    xdma_buf_handle instrBuffHandle, int invalidate)
-{
+                 xdma_buf_handle instrBuffHandle, int invalidate) {
     size_t devInstroff;
     devInstroff = (acc->info.id * numInstrEvents + acc->instrIdx) * sizeof(xtasks_ins_event);
 
@@ -475,7 +462,7 @@ int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numI
         uint32_t invEvent = XTASKS_EVENT_TYPE_INVALID;
         for (int e = 0; e < i; ++e) {
             stat = xdmaMemcpy(&invEvent, instrBuffHandle, sizeof(uint32_t),
-                devInstroff + e * sizeof(xtasks_ins_event) + 1 * sizeof(uint32_t), XDMA_TO_DEVICE);
+                              devInstroff + e * sizeof(xtasks_ins_event) + 1 * sizeof(uint32_t), XDMA_TO_DEVICE);
             if (stat != XDMA_SUCCESS) {
                 return -1;
             }
@@ -485,8 +472,7 @@ int getAccEvents(acc_t *acc, xtasks_ins_event *events, size_t count, size_t numI
     return i;
 }
 
-void getNewTaskFromQ(xtasks_newtask **task, volatile uint64_t *spawnQueue, int idx, uint32_t spawnOutQueueLen)
-{
+void getNewTaskFromQ(xtasks_newtask **task, volatile uint64_t *spawnQueue, int idx, uint32_t spawnOutQueueLen) {
     volatile new_task_header_t *hwTaskHeader = (new_task_header_t *)&spawnQueue[idx];
     // Extract the information from the new buffer
     *task = realloc(*task, sizeof(xtasks_newtask) + sizeof(xtasks_newtask_arg) * hwTaskHeader->numArgs +

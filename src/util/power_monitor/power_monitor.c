@@ -1,10 +1,9 @@
+#include <fcntl.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <fcntl.h>
-#include <signal.h>
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -31,8 +30,7 @@ volatile int _done;
 
 void handle_quit(int signal) { _done = 1; }
 
-float cms_read_power(uint32_t *cms_addr)
-{
+float cms_read_power(uint32_t *cms_addr) {
     // instant_voltage_12V_PEX = pci_read(REG_MAP + 0x0028);
     // instant_current_12V_PEX = pci_read(REG_MAP + 0x00D0);
     // instant_voltage_3V3_PEX = pci_read(REG_MAP + 0x0034);
@@ -58,15 +56,13 @@ float cms_read_power(uint32_t *cms_addr)
     return power_12v_pex + power_12v_aux + power_3v3_pex + power_3v3_aux;
 }
 
-static inline float get_sysmon_temp(int adc)
-{
+static inline float get_sysmon_temp(int adc) {
     // magic numbers are defined in xilinx's UG580
     // They are related to some physical constants and physical sensor properties
     return ((adc * 501.3743) / 65536) - 273.6777;
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     uint32_t **pciBar, **cmsAddr, **sysmonAddr;
     int nDevs;
     char **devList;

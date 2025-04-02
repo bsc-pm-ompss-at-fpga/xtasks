@@ -35,8 +35,7 @@ typedef struct {
 /**
  * Initialize the lock
  */
-static void ticketLockInit(ticketLock_t *const l)
-{
+static void ticketLockInit(ticketLock_t *const l) {
     if (l == NULL) return;
 
     l->current = 0;
@@ -46,8 +45,7 @@ static void ticketLockInit(ticketLock_t *const l)
 /**
  * Acquire the lock
  */
-static void ticketLockAcquire(ticketLock_t *const l)
-{
+static void ticketLockAcquire(ticketLock_t *const l) {
     unsigned long const mine = __sync_fetch_and_add(&l->next, 1);
     while (1) {
         if (mine == l->current) break;

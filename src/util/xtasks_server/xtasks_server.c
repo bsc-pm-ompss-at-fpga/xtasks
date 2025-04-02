@@ -27,8 +27,7 @@ static int xdma_connfd;
 static int end_server = 0;
 static int connected = 0;
 
-static void insert_list(xtasks_acc_handle handle)
-{
+static void insert_list(xtasks_acc_handle handle) {
     ListElem* newelem = malloc(sizeof(ListElem));
     newelem->handle = handle;
     newelem->next = NULL;
@@ -42,8 +41,7 @@ static void insert_list(xtasks_acc_handle handle)
     pending_tasks_end = newelem;
 }
 
-static void delete_list(ListElem** elem_ptr)
-{
+static void delete_list(ListElem** elem_ptr) {
     ListElem* elem = *elem_ptr;
     *elem_ptr = elem->next;
     if (elem->prev != NULL) {
@@ -63,15 +61,13 @@ static void delete_list(ListElem** elem_ptr)
     free(elem);
 }
 
-static void sig_handler(int signo)
-{
+static void sig_handler(int signo) {
     if (!connected) exit(signo);
     end_server = 1;
     printf("Signal %d caught, server will finish soon...\n", signo);
 }
 
-static int init_server(char* argv[])
-{
+static int init_server(char* argv[]) {
     uint32_t port = atoi(argv[2]);
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -105,8 +101,7 @@ static int init_server(char* argv[])
 
 static inline size_t min(size_t a, size_t b) { return a < b ? a : b; }
 
-static int wait_connection()
-{
+static int wait_connection() {
     xdma_connfd = accept(sockfd, NULL, 0);
     if (xdma_connfd < 0) {
         close(sockfd);
@@ -124,8 +119,7 @@ static int wait_connection()
     return 0;
 }
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]) {
     if (argc != 3) {
         fprintf(stderr, "Usage: %s [ip] [port]\n", argv[0]);
         return 1;
