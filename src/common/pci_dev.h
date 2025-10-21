@@ -38,7 +38,7 @@ static xtasks_stat getPciDevListStr(char **pciDevListStr) {
     char *pciDevListEnv = getenv(XTASKS_PCIDEV_ENV);
     if (pciDevListEnv == NULL) {
         fprintf(stderr,
-                "Environment variable XTASKS_PCIDEV_ENV"
+                "Environment variable XTASKS_PCI_DEV"
                 " not found, set it to the pci device ID list,"
                 " in the form of xxxx:xx:xx.x see `lspci -Dd 10ee:`\n");
         return XTASKS_ENODEV;
