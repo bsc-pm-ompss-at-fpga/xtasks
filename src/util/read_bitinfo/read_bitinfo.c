@@ -42,6 +42,7 @@ int read_bitinfo(const uint32_t* bitinfo) {
     printf("[%c] Power monitor (CMS)\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_CMS_EN) ? 'x' : ' ');
     printf("[%c] Thermal monitor (sysmon)\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_SYSMON_EN) ? 'x' : ' ');
     printf("[%c] OMPIF\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_OMPIF) ? 'x' : ' ');
+    printf("[%c] IMP\n", bitinfo_get_feature(bitinfo, BIT_FEATURE_IMP) ? 'x' : ' ');
     printf("\n");
     printf("Address map:\n");
     printf("Managed rstn - address 0x%" PRIX64 "\n", bitinfo_get_managed_rstn_addr(bitinfo));

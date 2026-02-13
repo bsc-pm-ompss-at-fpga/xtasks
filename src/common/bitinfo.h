@@ -48,7 +48,8 @@ typedef enum {
     BIT_FEATURE_SPAWN_Q,
     BIT_FEATURE_CMS_EN,
     BIT_FEATURE_SYSMON_EN,
-    BIT_FEATURE_OMPIF
+    BIT_FEATURE_OMPIF,
+    BIT_FEATURE_IMP
 } bit_feature_t;
 
 typedef struct {
